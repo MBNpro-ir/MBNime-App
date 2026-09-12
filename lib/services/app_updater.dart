@@ -278,14 +278,22 @@ class AppUpdater extends ChangeNotifier {
         );
         if (result == 'permission') {
           installationPermissionRequired = true;
+          phase = UpdatePhase.ready;
+        } else if (result == 'installing') {
+          // Android PackageInstaller owns the rest of the transaction. The
+          // process is replaced on success; cancellation is reported over the
+          // device channel and returns this state to ready for another attempt.
+          phase = UpdatePhase.installing;
         } else if (result != 'launched') {
           throw FormatException(
             result == 'signature'
                 ? 'امضای این APK با برنامهٔ نصب‌شده متفاوت است. نصب متوقف شد تا اطلاعاتت حفظ شود؛ با پشتیبانی تماس بگیر.'
                 : 'بستهٔ نصب معتبر نیست یا نسخهٔ جدیدتری ندارد.',
           );
+        } else {
+          // Compatibility path used by older integrations and unit tests.
+          phase = UpdatePhase.ready;
         }
-        phase = UpdatePhase.ready;
       } else if (Platform.isWindows) {
         final cache = await _cache();
         final stage = await createInstallStage(cache);
@@ -326,6 +334,14 @@ class AppUpdater extends ChangeNotifier {
       phase = UpdatePhase.ready;
     } finally {
       _busy = false;
+      notifyListeners();
+    }
+  }
+
+  void handleNativeInstallStatus(String? status) {
+    if (status == 'failed' && phase == UpdatePhase.installing) {
+      error = 'نصب کامل نشد. برای ادامه دوباره تلاش کن.';
+      phase = UpdatePhase.ready;
       notifyListeners();
     }
   }

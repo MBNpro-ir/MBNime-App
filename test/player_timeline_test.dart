@@ -102,14 +102,30 @@ void main() {
     );
   });
   test('gestures, brightness hold, and next episode stay deterministic', () {
-    expect(playerGestureValue(.5, -50, 100), 1);
-    expect(playerGestureValue(.5, 75, 100), 0);
     expect(
-      shouldRestoreSystemBrightness(0, const Duration(seconds: 2)),
+      playerTouchGesturesEnabled(
+        isAndroid: true,
+        isLocked: false,
+        controlsVisible: true,
+      ),
       isTrue,
     );
     expect(
-      shouldRestoreSystemBrightness(0, const Duration(milliseconds: 1999)),
+      playerTouchGesturesEnabled(
+        isAndroid: true,
+        isLocked: true,
+        controlsVisible: false,
+      ),
+      isFalse,
+    );
+    expect(playerGestureValue(.5, -50, 100), 1);
+    expect(playerGestureValue(.5, 75, 100), 0);
+    expect(
+      shouldRestoreSystemBrightness(0, const Duration(milliseconds: 1500)),
+      isTrue,
+    );
+    expect(
+      shouldRestoreSystemBrightness(0, const Duration(milliseconds: 1499)),
       isFalse,
     );
     const first = AnimeEpisode(id: '1', name: '1', fileUrl: 'one');

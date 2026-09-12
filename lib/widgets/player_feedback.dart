@@ -15,8 +15,19 @@ double playerGestureValue(
   double height,
 ) => (current - verticalDelta / height).clamp(0.0, 1.0);
 
+bool playerTouchGesturesEnabled({
+  required bool isAndroid,
+  required bool isLocked,
+  required bool controlsVisible,
+}) {
+  // Control visibility is deliberately not part of the decision: gestures
+  // must keep working over the player chrome, while the touch lock disables
+  // the complete gesture surface.
+  return isAndroid && !isLocked;
+}
+
 bool shouldRestoreSystemBrightness(double value, Duration held) =>
-    value <= .001 && held >= const Duration(seconds: 2);
+    value <= .001 && held >= const Duration(milliseconds: 1500);
 
 AnimeEpisode? nextEpisodeFor(AnimeContent content, AnimeEpisode current) {
   if (content.kind == ContentKind.movie) return null;

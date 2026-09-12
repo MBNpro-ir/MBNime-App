@@ -8,10 +8,12 @@ import 'package:window_manager/window_manager.dart';
 import 'app.dart';
 import 'screens/update_screen.dart';
 import 'services/download_manager.dart';
+import 'services/device_bridge.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  DeviceBridge.initialize();
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
     const options = WindowOptions(

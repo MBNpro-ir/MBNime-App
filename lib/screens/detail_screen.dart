@@ -1662,14 +1662,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _startVerticalGesture(DragStartDetails details, double width) {
-    if (!Platform.isAndroid || _touchLocked || _controlsVisible) return;
+    if (!playerTouchGesturesEnabled(
+      isAndroid: Platform.isAndroid,
+      isLocked: _touchLocked,
+      controlsVisible: _controlsVisible,
+    )) {
+      return;
+    }
     _brightnessGesture = details.localPosition.dx < width / 2;
     _brightnessRestored = false;
     _brightnessHoldTimer?.cancel();
   }
 
   void _updateVerticalGesture(DragUpdateDetails details, double height) {
-    if (!Platform.isAndroid || _touchLocked || _controlsVisible) return;
+    if (!playerTouchGesturesEnabled(
+      isAndroid: Platform.isAndroid,
+      isLocked: _touchLocked,
+      controlsVisible: _controlsVisible,
+    )) {
+      return;
+    }
     if (_brightnessGesture) {
       _screenBrightness = playerGestureValue(
         _screenBrightness,
@@ -1681,7 +1693,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _brightnessHoldTimer?.cancel();
       if (_screenBrightness <= .001) {
         _brightnessHoldTimer = Timer(
-          const Duration(seconds: 2),
+          const Duration(milliseconds: 1500),
           _restoreSystemBrightness,
         );
       }
@@ -1709,7 +1721,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _restoreSystemBrightness() {
     if (!shouldRestoreSystemBrightness(
       _screenBrightness,
-      const Duration(seconds: 2),
+      const Duration(milliseconds: 1500),
     )) {
       return;
     }
@@ -2367,8 +2379,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       _pokeCursor();
                       if (isDesktopWindow) {
                         _toggleFullscreen();
-                      } else if (!_controlsVisible &&
-                          _doubleTapPosition != null) {
+                      } else if (_doubleTapPosition != null) {
                         final forward =
                             _doubleTapPosition!.dx >=
                             MediaQuery.sizeOf(context).width / 2;

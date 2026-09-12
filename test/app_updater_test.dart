@@ -147,4 +147,27 @@ void main() {
     expect(downloads, 1);
     expect(instance.phase, UpdatePhase.ready);
   });
+  test('failed native install returns the mandatory flow to retry', () {
+    final instance = updater()..phase = UpdatePhase.installing;
+    instance.handleNativeInstallStatus('failed');
+    expect(instance.phase, UpdatePhase.ready);
+    expect(instance.error, contains('نصب کامل نشد'));
+  });
+  test(
+    'PackageInstaller transaction keeps the mandatory gate installing',
+    () async {
+      final instance = AppUpdater.testing(
+        currentVersion: '1.1.0',
+        cacheDirectory: directory,
+        platform: 'Windows-x64',
+        route: (uri) => Uri.http('127.0.0.1:${server.port}', uri.path),
+        requestInstallPermission: () async => true,
+        installApk: (_) async => 'installing',
+      );
+      await instance.initialize();
+      await instance.install();
+      expect(instance.phase, UpdatePhase.installing);
+      expect(instance.error, isNull);
+    },
+  );
 }

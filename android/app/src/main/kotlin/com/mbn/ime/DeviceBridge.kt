@@ -1,9 +1,11 @@
 package com.mbn.ime
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.Context
 import android.media.AudioManager
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -18,9 +20,24 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
-class DeviceBridge(private val activity: FlutterActivity) {
+class DeviceBridge(
+    private val activity: FlutterActivity,
+    private val channel: MethodChannel,
+) {
+    companion object {
+        internal const val installStatusAction = "com.mbn.ime.UPDATE_INSTALL_STATUS"
+        private var statusChannel: MethodChannel? = null
+
+        internal fun publishInstallStatus(status: String) {
+            statusChannel?.invokeMethod("updateInstallStatus", status)
+        }
+    }
     private var installPermissionResult: MethodChannel.Result? = null
     private val installPermissionRequestCode = 4119
+
+    init {
+        statusChannel = channel
+    }
 
     fun onActivityResult(requestCode: Int) {
         if (requestCode != installPermissionRequestCode) return
@@ -165,11 +182,52 @@ class DeviceBridge(private val activity: FlutterActivity) {
         val incoming = if (Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
         val installed = if (Build.VERSION.SDK_INT >= 28) current.signingInfo?.apkContentsSigners else current.signatures
         if (incoming.isNullOrEmpty() || installed.isNullOrEmpty() || incoming.toSet() != installed.toSet()) return "signature"
-        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", file)
-        activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        })
-        return "launched"
+        var sessionId = -1
+        try {
+            val params = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL,
+            ).apply {
+                setAppPackageName(activity.packageName)
+                setSize(file.length())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(
+                        PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED,
+                    )
+                }
+            }
+            val installer = pm.packageInstaller
+            sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                file.inputStream().use { input ->
+                    session.openWrite("base.apk", 0, file.length()).use { output ->
+                        input.copyTo(output)
+                        session.fsync(output)
+                    }
+                }
+                val callback = Intent(activity, UpdateInstallReceiver::class.java).apply {
+                    action = installStatusAction
+                    putExtra("sessionId", sessionId)
+                }
+                val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE
+                    } else {
+                        0
+                    }
+                val sender = PendingIntent.getBroadcast(
+                    activity,
+                    sessionId,
+                    callback,
+                    pendingFlags,
+                )
+                session.commit(sender.intentSender)
+            }
+            return "installing"
+        } catch (_: Exception) {
+            if (sessionId >= 0) {
+                try { pm.packageInstaller.abandonSession(sessionId) } catch (_: Exception) { }
+            }
+            return "failed"
+        }
     }
 }

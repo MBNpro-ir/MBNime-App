@@ -52,7 +52,10 @@ class _MbnimeAppState extends State<MbnimeApp> {
       theme: AnimeTheme.dark,
       locale: const Locale('fa', 'IR'),
       builder: (context, child) => DesktopWindowFrame(
-        child: Directionality(textDirection: TextDirection.rtl, child: child!),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: MandatoryUpdateGate(child: child!),
+        ),
       ),
       home: AnimatedSwitcher(
         duration: const Duration(milliseconds: 650),

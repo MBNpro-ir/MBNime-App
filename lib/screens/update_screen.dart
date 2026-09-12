@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/theme.dart';
 import '../services/app_updater.dart';
+import '../services/device_bridge.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 final appMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -66,27 +68,24 @@ Future<void> _openRelease(BuildContext context) async {
 }
 
 class UpdatePresentation {
-  static String? _prompted;
-  static bool _announced = false;
   static bool _dialog = false;
+  static bool _started = false;
   static void start() {
+    if (_started) return;
+    _started = true;
     AppUpdater.instance.addListener(_changed);
+    DeviceBridge.installStatus.addListener(_installStatusChanged);
     unawaited(AppUpdater.instance.initialize());
+  }
+
+  static void _installStatusChanged() {
+    AppUpdater.instance.handleNativeInstallStatus(
+      DeviceBridge.installStatus.value,
+    );
   }
 
   static void _changed() {
     final updater = AppUpdater.instance;
-    if (updater.phase == UpdatePhase.downloading && !_announced) {
-      _announced = true;
-      appMessengerKey.currentState?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            '✨ نسخهٔ جدید پیدا شد؛ بروزرسانی خودکار در حال دانلود است.',
-          ),
-          duration: Duration(seconds: 8),
-        ),
-      );
-    }
     final context = appNavigatorKey.currentContext;
     if (context == null || _dialog) return;
     if (updater.installedNotes != null) {
@@ -115,41 +114,227 @@ class UpdatePresentation {
           _changed();
         }),
       );
-    } else if (updater.phase == UpdatePhase.ready &&
-        _prompted != updater.release?.version.toString()) {
-      _prompted = updater.release!.version.toString();
-      _dialog = true;
-      unawaited(
-        showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(
-              '📦 بروزرسانی ${updater.release!.version} آمادهٔ نصب است',
+    }
+  }
+}
+
+class MandatoryUpdateGate extends StatefulWidget {
+  const MandatoryUpdateGate({super.key, required this.child, this.updater});
+
+  final Widget child;
+  final AppUpdater? updater;
+
+  @override
+  State<MandatoryUpdateGate> createState() => _MandatoryUpdateGateState();
+}
+
+class _MandatoryUpdateGateState extends State<MandatoryUpdateGate> {
+  AppUpdater get _updater => widget.updater ?? AppUpdater.instance;
+  String? _attemptedVersion;
+  bool _installing = false;
+
+  void _scheduleAutomaticInstall(AppUpdater updater) {
+    final version = updater.release?.version.toString();
+    if (version == null ||
+        _installing ||
+        updater.installationPermissionRequired ||
+        _attemptedVersion == version) {
+      return;
+    }
+    _attemptedVersion = version;
+    _installing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await updater.install();
+      if (mounted) setState(() => _installing = false);
+    });
+  }
+
+  Future<void> _retryInstall() async {
+    setState(() {
+      _attemptedVersion = null;
+      _installing = true;
+    });
+    await _updater.install();
+    if (mounted) setState(() => _installing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _updater,
+    builder: (context, _) {
+      final updater = _updater;
+      final required =
+          updater.release != null && updater.phase != UpdatePhase.idle;
+      if (!required) return widget.child;
+      if (updater.phase == UpdatePhase.ready) {
+        _scheduleAutomaticInstall(updater);
+      }
+      return Stack(
+        children: [
+          ExcludeSemantics(
+            child: IgnorePointer(
+              key: const Key('mandatory-update-blocked-content'),
+              child: widget.child,
             ),
-            content: const Text(
-              'فایل دانلود و بررسی شد. می‌توانی الان نصب کنی یا بعداً از منوی بروزرسانی برگردی.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('بعداً'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  appNavigatorKey.currentState?.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const UpdateScreen(),
+          ),
+          Positioned.fill(
+            child: PopScope(
+              canPop: false,
+              child: Material(
+                color: AnimeColors.background.withValues(alpha: .98),
+                child: SafeArea(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: _mandatoryCard(context, updater),
+                      ),
                     ),
-                  );
-                },
-                child: const Text('مشاهده و نصب'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  Widget _mandatoryCard(BuildContext context, AppUpdater updater) {
+    final downloading = updater.phase == UpdatePhase.downloading;
+    final checking = updater.phase == UpdatePhase.checking;
+    final installing = updater.phase == UpdatePhase.installing || _installing;
+    final needsPermission = updater.installationPermissionRequired;
+    final hasFailure =
+        updater.phase == UpdatePhase.failed || updater.error != null;
+    final title = checking
+        ? 'در حال بررسی دوبارهٔ به‌روزرسانی'
+        : downloading
+        ? 'به‌روزرسانی در حال دانلود است'
+        : installing
+        ? 'به‌روزرسانی در حال نصب است'
+        : needsPermission
+        ? 'اجازهٔ نصب Android لازم است'
+        : hasFailure
+        ? 'به‌روزرسانی کامل نشد'
+        : 'در حال آماده‌سازی نصب';
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AnimeColors.orange.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(
+                downloading
+                    ? Icons.downloading_rounded
+                    : installing
+                    ? Icons.install_desktop_rounded
+                    : hasFailure
+                    ? Icons.error_outline_rounded
+                    : Icons.system_update_alt_rounded,
+                size: 42,
+                color: hasFailure
+                    ? Theme.of(context).colorScheme.error
+                    : AnimeColors.orange,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              'نسخهٔ ${updater.release!.version} برای ادامهٔ استفاده از برنامه لازم است. این صفحه پس از تکمیل به‌روزرسانی خودکار بسته می‌شود.',
+              style: const TextStyle(color: AnimeColors.muted),
+            ),
+            if (checking || downloading || installing) ...[
+              const SizedBox(height: 22),
+              LinearProgressIndicator(
+                value: downloading ? updater.progress : null,
+                minHeight: 9,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                checking
+                    ? 'در حال اتصال به انتشار رسمی…'
+                    : downloading && updater.progress != null
+                    ? '${(updater.progress! * 100).clamp(0, 100).round()}٪ دانلود شده'
+                    : installing && Platform.isAndroid
+                    ? 'Android در حال بررسی و نصب بسته است…'
+                    : 'برنامه بسته و پس از نصب دوباره اجرا می‌شود…',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AnimeColors.muted),
               ),
             ],
-          ),
-        ).whenComplete(() => _dialog = false),
-      );
-    }
+            if (needsPermission) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'گزینهٔ «اجازه از این منبع» را فعال کن و به برنامه برگرد. بدون این اجازه Android نصب را آغاز نمی‌کند.',
+              ),
+            ],
+            if (updater.error != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                updater.error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (needsPermission || hasFailure) ...[
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _installing
+                    ? null
+                    : hasFailure && updater.phase == UpdatePhase.failed
+                    ? updater.check
+                    : _retryInstall,
+                icon: Icon(
+                  needsPermission
+                      ? Icons.security_rounded
+                      : Icons.refresh_rounded,
+                ),
+                label: Text(
+                  needsPermission ? 'فعال‌کردن اجازه و ادامه' : 'تلاش دوباره',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => _openRelease(context),
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: const Text('دانلود دستی از گیت‌هاب'),
+              ),
+            ],
+            const SizedBox(height: 14),
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 18,
+                  color: AnimeColors.cyan,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'فایل فقط پس از بررسی اندازه و SHA-256 نصب می‌شود.',
+                    style: TextStyle(color: AnimeColors.muted, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

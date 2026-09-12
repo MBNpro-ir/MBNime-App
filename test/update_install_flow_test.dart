@@ -1,10 +1,58 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mbnime/core/release_update.dart';
 import 'package:mbnime/services/app_updater.dart';
 import 'package:mbnime/screens/update_screen.dart';
+import 'release_update_test.dart' show releaseJson;
 
 void main() {
+  testWidgets('known update blocks the app with a non-dismissible gate', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync(
+      'mbnime-mandatory-update-',
+    );
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final updater =
+        AppUpdater.testing(
+            currentVersion: '1.0.0',
+            cacheDirectory: directory,
+            route: (uri) => uri,
+            platform: 'Windows-x64',
+          )
+          ..release = ReleaseUpdate.fromGitHub(
+            releaseJson(version: '2.0.0'),
+            repository: AppUpdater.repository,
+            platform: 'Windows-x64',
+          )
+          ..phase = UpdatePhase.downloading
+          ..progress = .42;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MandatoryUpdateGate(
+          updater: updater,
+          child: const Scaffold(body: Text('محتوای برنامه')),
+        ),
+      ),
+    );
+    expect(find.text('به‌روزرسانی در حال دانلود است'), findsOneWidget);
+    expect(find.text('42٪ دانلود شده'), findsOneWidget);
+    expect(
+      tester.widget<PopScope<dynamic>>(find.byType(PopScope)).canPop,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find.byKey(const Key('mandatory-update-blocked-content')),
+          )
+          .ignoring,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in const [Size(320, 568), Size(390, 844), Size(1440, 900)]) {
     testWidgets('update screen is responsive at $size', (tester) async {
       tester.view.physicalSize = size;

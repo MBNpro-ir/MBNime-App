@@ -1,9 +1,23 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DeviceBridge {
   static const channel = MethodChannel('com.mbn.ime/device');
+  static final installStatus = ValueNotifier<String?>(null);
+  static bool _initialized = false;
+
+  static void initialize() {
+    if (_initialized || !Platform.isAndroid) return;
+    _initialized = true;
+    channel.setMethodCallHandler((call) async {
+      if (call.method == 'updateInstallStatus') {
+        installStatus.value = call.arguments as String?;
+      }
+    });
+  }
+
   static Future<bool> wirelessDisplay() async {
     if (Platform.isAndroid) {
       return await channel.invokeMethod<bool>('wirelessDisplay') ?? false;

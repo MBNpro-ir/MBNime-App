@@ -37,10 +37,13 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val bridge = DeviceBridge(this)
+        val deviceChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.mbn.ime/device",
+        )
+        val bridge = DeviceBridge(this, deviceChannel)
         deviceBridge = bridge
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.mbn.ime/device")
-            .setMethodCallHandler(bridge::handle)
+        deviceChannel.setMethodCallHandler(bridge::handle)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, downloadsChannel)
             .setMethodCallHandler { call, result ->
                 if (call.method == "saveImage") saveImage(call, result)
