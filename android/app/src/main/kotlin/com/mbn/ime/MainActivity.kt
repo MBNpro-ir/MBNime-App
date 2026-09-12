@@ -19,6 +19,12 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
+    private var deviceBridge: DeviceBridge? = null
+    @Deprecated("Delegates the install permission settings result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        deviceBridge?.onActivityResult(requestCode)
+    }
     private val downloadsChannel = "com.mbn.ime/downloads"
     private val pipChannelName = "com.mbn.ime/pip"
     private val storageRequestCode = 4107
@@ -31,9 +37,10 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val deviceBridge = DeviceBridge(this)
+        val bridge = DeviceBridge(this)
+        deviceBridge = bridge
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.mbn.ime/device")
-            .setMethodCallHandler(deviceBridge::handle)
+            .setMethodCallHandler(bridge::handle)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, downloadsChannel)
             .setMethodCallHandler { call, result ->
                 if (call.method == "saveImage") saveImage(call, result)

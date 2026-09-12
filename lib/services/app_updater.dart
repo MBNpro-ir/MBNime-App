@@ -24,9 +24,15 @@ class AppUpdater extends ChangeNotifier {
     required Directory cacheDirectory,
     required Uri Function(Uri) route,
     required String platform,
+    Future<bool> Function()? requestInstallPermission,
+    Future<String> Function(String)? installApk,
   }) : _testCache = cacheDirectory,
        _testRoute = route,
-       _testPlatform = platform;
+       _testPlatform = platform,
+       _testRequestInstallPermission = requestInstallPermission,
+       _testInstallApk = installApk;
+  Future<bool> Function()? _testRequestInstallPermission;
+  Future<String> Function(String)? _testInstallApk;
   Directory? _testCache;
   Uri Function(Uri)? _testRoute;
   String? _testPlatform;
@@ -38,6 +44,7 @@ class AppUpdater extends ChangeNotifier {
   String? error, installedNotes;
   double? progress;
   bool _busy = false;
+  bool installationPermissionRequired = false;
   File? _package;
 
   Future<Directory> _cache() async {
@@ -250,16 +257,27 @@ class AppUpdater extends ChangeNotifier {
     _busy = true;
     phase = UpdatePhase.installing;
     error = null;
+    installationPermissionRequired = false;
     notifyListeners();
     try {
+      final android =
+          Platform.isAndroid || _testRequestInstallPermission != null;
+      if (android &&
+          !await (_testRequestInstallPermission ??
+              DeviceBridge.requestInstallPermission)()) {
+        installationPermissionRequired = true;
+        phase = UpdatePhase.ready;
+        return;
+      }
       if (!await _validPackage(_package!, release!)) {
         throw const FormatException('فایل تغییر کرده است؛ دوباره دانلود کن.');
       }
-      if (Platform.isAndroid) {
-        final result = await DeviceBridge.installApk(_package!.path);
+      if (android) {
+        final result = await (_testInstallApk ?? DeviceBridge.installApk)(
+          _package!.path,
+        );
         if (result == 'permission') {
-          error =
-              'اجازهٔ نصب از این برنامه را فعال کن، سپس دوباره «نصب بروزرسانی» را بزن.';
+          installationPermissionRequired = true;
         } else if (result != 'launched') {
           throw FormatException(
             result == 'signature'
@@ -270,9 +288,7 @@ class AppUpdater extends ChangeNotifier {
         phase = UpdatePhase.ready;
       } else if (Platform.isWindows) {
         final cache = await _cache();
-        final stage = await Directory(
-          p.join(cache.path, 'stage-'),
-        ).createTemp();
+        final stage = await createInstallStage(cache);
         await compute(extractBundle, (_package!.path, stage.path));
         final root = p.dirname(Platform.resolvedExecutable);
         final updater = File(p.join(root, 'updater.exe'));
@@ -312,6 +328,12 @@ class AppUpdater extends ChangeNotifier {
       _busy = false;
       notifyListeners();
     }
+  }
+
+  @visibleForTesting
+  static Future<Directory> createInstallStage(Directory cache) async {
+    await cache.create(recursive: true);
+    return cache.createTemp('stage-');
   }
 
   @visibleForTesting

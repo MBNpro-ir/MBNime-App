@@ -17,10 +17,36 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class DeviceBridge(private val activity: FlutterActivity) {
+    private var installPermissionResult: MethodChannel.Result? = null
+    private val installPermissionRequestCode = 4119
+
+    fun onActivityResult(requestCode: Int) {
+        if (requestCode != installPermissionRequestCode) return
+        val pending = installPermissionResult
+        installPermissionResult = null
+        pending?.success(Build.VERSION.SDK_INT < 26 || activity.packageManager.canRequestPackageInstalls())
+    }
+
     @Suppress("DEPRECATION")
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
+                "requestInstallPermission" -> {
+                    if (Build.VERSION.SDK_INT < 26 || activity.packageManager.canRequestPackageInstalls()) {
+                        result.success(true)
+                    } else if (installPermissionResult != null) {
+                        result.success(false)
+                    } else {
+                        installPermissionResult = result
+                        try {
+                            activity.startActivityForResult(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:${activity.packageName}")), installPermissionRequestCode)
+                        } catch (_: Exception) {
+                            installPermissionResult = null
+                            result.success(false)
+                        }
+                    }
+                }
                 "abi" -> result.success(when {
                     Build.SUPPORTED_ABIS.contains("arm64-v8a") -> "arm64-v8a"
                     Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "armeabi-v7a"
@@ -94,6 +120,7 @@ class DeviceBridge(private val activity: FlutterActivity) {
 
     @Suppress("DEPRECATION")
     private fun installApk(path: String): String {
+        if (Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) return "permission"
         val file = File(path).canonicalFile
         val updates = File(activity.filesDir, "updates").canonicalFile
         if (!file.path.startsWith(updates.path + File.separator) || !file.isFile || file.extension != "apk") return "invalid"
@@ -108,11 +135,6 @@ class DeviceBridge(private val activity: FlutterActivity) {
         val incoming = if (Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
         val installed = if (Build.VERSION.SDK_INT >= 28) current.signingInfo?.apkContentsSigners else current.signatures
         if (incoming.isNullOrEmpty() || installed.isNullOrEmpty() || incoming.toSet() != installed.toSet()) return "signature"
-        if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
-            activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${activity.packageName}")))
-            return "permission"
-        }
         val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", file)
         activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")

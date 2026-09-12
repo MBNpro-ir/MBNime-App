@@ -27,6 +27,8 @@ class DeviceBridge {
   static Future<String> installApk(String path) async =>
       await channel.invokeMethod<String>('installApk', {'path': path}) ??
       'failed';
+  static Future<bool> requestInstallPermission() async =>
+      await channel.invokeMethod<bool>('requestInstallPermission') == true;
   static Future<void> openFolder(String path) async {
     if (Platform.isWindows) {
       await Directory(path).create(recursive: true);

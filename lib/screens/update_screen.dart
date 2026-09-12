@@ -1,9 +1,68 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/app_updater.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 final appMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+Future<String?> showInstallPermissionPrompt(
+  BuildContext context,
+) => showDialog<String>(
+  context: context,
+  builder: (context) => AlertDialog(
+    title: const Text('اجازهٔ نصب لازم است'),
+    content: const Text(
+      'برای نصب بروزرسانی، گزینهٔ «اجازه از این منبع» را برای MBNime فعال کن و به برنامه برگرد. فایل دانلودشده محفوظ است. می‌توانی دوباره اجازه بدهی یا از گیت‌هاب دستی دانلود کنی.',
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('بعداً'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context, 'github'),
+        child: const Text('دانلود از گیت‌هاب'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, 'retry'),
+        child: const Text('درخواست دوباره'),
+      ),
+    ],
+  ),
+);
+
+Future<void> _installUpdate(BuildContext context, AppUpdater updater) async {
+  do {
+    await updater.install();
+    if (!context.mounted || !updater.installationPermissionRequired) return;
+    final choice = await showInstallPermissionPrompt(context);
+    if (!context.mounted) return;
+    if (choice == 'retry') continue;
+    if (choice == 'github') await _openRelease(context);
+    return;
+  } while (context.mounted);
+}
+
+Future<void> _openRelease(BuildContext context) async {
+  try {
+    if (await launchUrl(
+      Uri.https('github.com', '/${AppUpdater.repository}/releases/latest'),
+      mode: LaunchMode.externalApplication,
+    )) {
+      return;
+    }
+  } catch (_) {}
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'مرورگر باز نشد. آدرس: github.com/MBNpro-ir/MBNime-App/releases/latest',
+        ),
+      ),
+    );
+  }
+}
 
 class UpdatePresentation {
   static String? _prompted;
@@ -179,12 +238,19 @@ class UpdateScreen extends StatelessWidget {
                           ],
                         ),
                       );
-                      if (accepted == true) await updater.install();
+                      if (accepted == true && context.mounted) {
+                        await _installUpdate(context, updater);
+                      }
                     },
                     icon: const Icon(Icons.install_desktop),
                     label: const Text('نصب بروزرسانی'),
                   ),
                 const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => _openRelease(context),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('دانلود دستی از گیت‌هاب'),
+                ),
                 OutlinedButton.icon(
                   onPressed:
                       [

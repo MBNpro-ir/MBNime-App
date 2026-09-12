@@ -92,6 +92,39 @@ void main() {
     expect(instance.phase, UpdatePhase.ready);
   });
   test(
+    'permission denial preserves package and retry installs only after grant',
+    () async {
+      final calls = <String>[];
+      var granted = false;
+      final instance = AppUpdater.testing(
+        currentVersion: '1.1.0',
+        cacheDirectory: directory,
+        platform: 'Windows-x64',
+        route: (uri) => Uri.http('127.0.0.1:${server.port}', uri.path),
+        requestInstallPermission: () async {
+          calls.add('permission');
+          return granted;
+        },
+        installApk: (_) async {
+          calls.add('install');
+          return 'launched';
+        },
+      );
+      await instance.initialize();
+      await instance.install();
+      expect(calls, ['permission']);
+      expect(instance.error, isNull);
+      expect(instance.phase, UpdatePhase.ready);
+      expect(instance.installationPermissionRequired, isTrue);
+      granted = true;
+      await instance.install();
+      expect(calls, ['permission', 'permission', 'install']);
+      expect(instance.installationPermissionRequired, isFalse);
+      expect(instance.error, isNull);
+      expect(downloads, 1);
+    },
+  );
+  test(
     'does not downgrade; notes only shown after version really changes',
     () async {
       final old = updater();
