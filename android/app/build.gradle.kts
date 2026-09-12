@@ -25,6 +25,7 @@ android {
         targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = "MBNime"
     }
 
     val releaseStore = System.getenv("MBN_KEYSTORE_PATH")
@@ -40,6 +41,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep local/debug installs separate from the signed public app.
+            // Otherwise Flutter may uninstall the release build after an
+            // INSTALL_FAILED_UPDATE_INCOMPATIBLE error and erase user data.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "MBNime Debug"
+        }
         release {
             signingConfig = if (!releaseStore.isNullOrBlank()) signingConfigs.getByName("mbnimeRelease") else null
         }

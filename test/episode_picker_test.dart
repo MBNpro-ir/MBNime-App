@@ -20,7 +20,7 @@ const content = AnimeContent(
   seasons: [
     AnimeSeason(
       id: 'season1',
-      name: 'فصل اول 720p',
+      name: 'فصل 1 زیرنویس 720p',
       episodes: [
         AnimeEpisode(
           id: '1',
@@ -35,6 +35,26 @@ const content = AnimeContent(
           fileUrl: 'https://example.com/2.mkv',
           fileType: 'mkv',
           fileSize: '345',
+        ),
+      ],
+    ),
+    AnimeSeason(
+      id: 'season1-1080',
+      name: 'فصل 1 زیرنویس 1080p',
+      episodes: [
+        AnimeEpisode(
+          id: '101',
+          name: 'قسمت اول',
+          fileUrl: 'https://example.com/1-1080.mkv',
+          fileType: 'mkv',
+          fileSize: '680',
+        ),
+        AnimeEpisode(
+          id: '102',
+          name: 'قسمت دوم',
+          fileUrl: 'https://example.com/2-1080.mkv',
+          fileType: 'mkv',
+          fileSize: '690',
         ),
       ],
     ),
@@ -90,7 +110,11 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(GridView), findsOneWidget);
       expect(find.text('پخش'), findsNWidgets(2));
-      expect(find.text('دانلود'), findsNWidgets(2));
+      expect(find.byTooltip('دانلود با انتخاب کیفیت'), findsNWidgets(2));
+      expect(find.byType(Image), findsNothing);
+      expect(find.text('تماشا نشده'), findsNWidgets(2));
+      expect(find.text('720p'), findsWidgets);
+      expect(find.text('1080p'), findsWidgets);
       final first = tester.getCenter(find.text('قسمت اول'));
       final second = tester.getCenter(find.text('قسمت دوم'));
       expect(first.dy, second.dy);
@@ -171,13 +195,38 @@ void main() {
     expect(find.text('تماشا کردی'), findsOneWidget);
     expect(find.text('تقریباً تماشا کردی'), findsOneWidget);
     final card = tester.widget<Material>(
-      find.byKey(const Key('episode-card-1')),
+      find.byKey(const Key('episode-card-logical:season-1:episode-اول')),
     );
     expect(card.color, isNot(AnimeColors.surface));
     final almostCard = tester.widget<Material>(
-      find.byKey(const Key('episode-card-2')),
+      find.byKey(const Key('episode-card-logical:season-1:episode-دوم')),
     );
     expect(almostCard.color, isNot(AnimeColors.surface));
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+  });
+
+  testWidgets('one episode card selects quality without duplicating progress', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    AnimeEpisode? played;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EpisodePickerScreen(
+          content: content,
+          onPlay: (episode, _) async => played = episode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('قسمت اول'), findsOneWidget);
+    expect(find.text('قسمت دوم'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('quality-1080p')));
+    await tester.pump();
+    await tester.tap(find.text('پخش').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('پلیر داخلی (پیشنهادی)'));
+    await tester.pumpAndSettle();
+    expect(played?.fileUrl, 'https://example.com/1-1080.mkv');
   });
 }

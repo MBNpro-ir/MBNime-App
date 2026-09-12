@@ -9,6 +9,17 @@ enum PlayerFeedbackKind {
   systemBrightness,
 }
 
+const playerControlsAutoHideDelay = Duration(seconds: 2);
+const playerErrorGracePeriod = Duration(milliseconds: 1500);
+const windowsResizeSettleDelay = Duration(milliseconds: 140);
+
+bool compactPlayerControlsForWidth(double width) => width < 1180;
+
+bool playbackContinuedAfterError({
+  required Duration position,
+  required Duration positionAtError,
+}) => position > positionAtError + const Duration(milliseconds: 250);
+
 double playerGestureValue(
   double current,
   double verticalDelta,

@@ -102,6 +102,33 @@ void main() {
     );
   });
   test('gestures, brightness hold, and next episode stay deterministic', () {
+    expect(playerControlsAutoHideDelay, const Duration(seconds: 2));
+    expect(playerErrorGracePeriod, const Duration(milliseconds: 1500));
+    expect(windowsResizeSettleDelay, const Duration(milliseconds: 140));
+    expect(compactPlayerControlsForWidth(980), isTrue);
+    expect(compactPlayerControlsForWidth(1179), isTrue);
+    expect(compactPlayerControlsForWidth(1180), isFalse);
+    expect(
+      playbackContinuedAfterError(
+        position: const Duration(seconds: 1),
+        positionAtError: Duration.zero,
+      ),
+      isTrue,
+    );
+    expect(
+      playbackContinuedAfterError(
+        position: const Duration(seconds: 10),
+        positionAtError: const Duration(seconds: 9),
+      ),
+      isTrue,
+    );
+    expect(
+      playbackContinuedAfterError(
+        position: const Duration(seconds: 9),
+        positionAtError: const Duration(seconds: 9),
+      ),
+      isFalse,
+    );
     expect(
       playerTouchGesturesEnabled(
         isAndroid: true,

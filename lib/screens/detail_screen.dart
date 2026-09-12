@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../core/platform_ui.dart';
+import '../core/episode_catalog.dart';
 import '../core/player_preferences.dart';
 import '../core/subtitle_layout.dart';
 import '../core/theme.dart';
@@ -1238,9 +1239,10 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   late final Player _player;
   late final VideoController _video;
+  late final EpisodeCatalog _episodeCatalog;
   final PictureInPictureController _pip = PictureInPictureController();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final _progressStore = WatchProgressStore();
@@ -1250,6 +1252,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _cursorTimer;
   Timer? _feedbackTimer;
   Timer? _brightnessHoldTimer;
+  Timer? _playbackErrorTimer;
+  Timer? _windowResizeTimer;
   late AnimeEpisode _episode;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -1276,6 +1280,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double? _feedbackValue;
   bool _nextEpisodeVisible = false;
   bool _changingEpisode = false;
+  bool _switchingQuality = false;
+  bool _windowResizing = false;
   bool _exitingPlayer = false;
   bool _allowPlayerPop = false;
   Offset? _doubleTapPosition;
@@ -1284,11 +1290,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Track _track = const Track();
   SubtitlePreferences _subtitle = const SubtitlePreferences();
   String? _error;
+  Duration _positionAtLastError = Duration.zero;
 
   @override
   void initState() {
     super.initState();
     _episode = widget.episode;
+    _episodeCatalog = EpisodeCatalog.from(widget.content);
+    if (isDesktopWindow) windowManager.addListener(this);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
@@ -1433,7 +1442,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (position <= Duration.zero && !markWatched) return Future.value();
     return _progressStore.save(
       contentId: widget.content.id,
-      episodeId: _episode.id,
+      episodeId: _episodeCatalog.groupFor(_episode)?.id ?? _episode.id,
       position: position,
       duration: _duration,
       markWatched: markWatched,
@@ -1463,6 +1472,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     watchQuiet(_player.stream.position, (value) {
       _position = value;
+      if ((_playbackErrorTimer != null || _error != null) &&
+          playbackContinuedAfterError(
+            position: value,
+            positionAtError: _positionAtLastError,
+          )) {
+        _clearPlaybackError();
+      }
       final visible = shouldOfferNextEpisode(
         value,
         _duration,
@@ -1474,12 +1490,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
     watchQuiet(_player.stream.duration, (value) => _duration = value);
     watchQuiet(_player.stream.completed, (value) {
-      if (value) unawaited(_completeCurrentEpisode());
+      if (value && !_switchingQuality) unawaited(_completeCurrentEpisode());
     });
-    watch(_player.stream.playing, (value) {
-      _playing = value;
-      unawaited(_configurePictureInPicture());
-    });
+    _subscriptions.add(
+      _player.stream.playing.listen((value) {
+        if (!mounted) return;
+        setState(() => _playing = value);
+        if (value && _controlsVisible && !_touchLocked && !_isInPip) {
+          _armHideTimer();
+        } else if (!value) {
+          _hideTimer?.cancel();
+        }
+        unawaited(_configurePictureInPicture());
+      }),
+    );
     watch(_player.stream.buffering, (value) => _buffering = value);
     watch(_player.stream.volume, (value) => _volume = value);
     watch(_player.stream.rate, (value) => _rate = value);
@@ -1489,7 +1513,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _nativeSubtitleRendering = _requiresNativeSubtitle(value.subtitle);
       unawaited(_setNativeSubtitleVisibility(_nativeSubtitleRendering));
     });
-    watch(_player.stream.error, (value) => _error = value);
+    _subscriptions.add(_player.stream.error.listen(_handlePlaybackError));
     watch(_player.stream.subtitle, (value) => _subtitles = value);
     watchQuiet(_player.stream.videoParams, (value) {
       final aspect =
@@ -1502,6 +1526,45 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _pipAspectRatio = aspect;
       unawaited(_configurePictureInPicture());
     });
+  }
+
+  void _handlePlaybackError(String value) {
+    _playbackErrorTimer?.cancel();
+    _positionAtLastError = _player.state.position;
+    _playbackErrorTimer = Timer(playerErrorGracePeriod, () {
+      _playbackErrorTimer = null;
+      if (!mounted ||
+          playbackContinuedAfterError(
+            position: _player.state.position,
+            positionAtError: _positionAtLastError,
+          )) {
+        return;
+      }
+      setState(() => _error = value);
+    });
+  }
+
+  void _clearPlaybackError() {
+    _playbackErrorTimer?.cancel();
+    _playbackErrorTimer = null;
+    if (_error != null && mounted) setState(() => _error = null);
+  }
+
+  @override
+  void onWindowResize() {
+    if (!isDesktopWindow || !mounted) return;
+    _windowResizeTimer?.cancel();
+    if (!_windowResizing) setState(() => _windowResizing = true);
+    _windowResizeTimer = Timer(windowsResizeSettleDelay, _finishWindowResize);
+  }
+
+  @override
+  void onWindowResized() => _finishWindowResize();
+
+  void _finishWindowResize() {
+    _windowResizeTimer?.cancel();
+    _windowResizeTimer = null;
+    if (mounted && _windowResizing) setState(() => _windowResizing = false);
   }
 
   Future<void> _restoreSubtitlePrefs() async {
@@ -1578,6 +1641,129 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _systemMediaVolume = values[0];
     _screenBrightness = saved ?? values[1];
     if (saved != null) await DeviceBridge.setScreenBrightness(saved);
+  }
+
+  EpisodeGroup? get _currentEpisodeGroup => _episodeCatalog.groupFor(_episode);
+
+  EpisodeVariant? get _currentVariant {
+    final group = _currentEpisodeGroup;
+    if (group == null) return null;
+    for (final variant in group.variants) {
+      if (variant.episode.id == _episode.id &&
+          variant.episode.fileUrl == _episode.fileUrl) {
+        return variant;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _showQualityPicker() async {
+    final group = _currentEpisodeGroup;
+    if (group == null || group.variants.length < 2 || _switchingQuality) return;
+    _hideTimer?.cancel();
+    final selected = await showModalBottomSheet<EpisodeVariant>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AnimeColors.surface,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              leading: Icon(Icons.high_quality_rounded),
+              title: Text(
+                'کیفیت پخش',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text('زمان فعلی ویدیو هنگام تغییر حفظ می‌شود.'),
+            ),
+            for (final variant in group.variants)
+              ListTile(
+                key: Key('player-quality-${variant.quality}'),
+                leading: variant.episode.fileUrl == _episode.fileUrl
+                    ? const Icon(
+                        Icons.check_circle_rounded,
+                        color: AnimeColors.orange,
+                      )
+                    : const Icon(Icons.radio_button_unchecked_rounded),
+                title: Text(variant.quality, textDirection: TextDirection.ltr),
+                subtitle: Text(_playerVariantMeta(variant)),
+                onTap: () => Navigator.pop(context, variant),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (selected != null && selected.episode.fileUrl != _episode.fileUrl) {
+      await _switchQuality(selected);
+    }
+    _armHideTimer();
+  }
+
+  Future<void> _switchQuality(EpisodeVariant target) async {
+    if (_switchingQuality || target.episode.fileUrl == _episode.fileUrl) return;
+    final previous = _episode;
+    final position = _player.state.position;
+    final wasPlaying = _player.state.playing;
+    _switchingQuality = true;
+    await _persistProgress(at: position);
+    if (mounted) {
+      setState(() {
+        _buffering = true;
+        _error = null;
+      });
+    }
+    try {
+      await _player.open(
+        Media(
+          target.episode.fileUrl,
+          httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
+        ),
+        play: false,
+      );
+      await _waitUntilSeekable();
+      await _player.seek(_safeResumePosition(position));
+      if (wasPlaying) await _player.play();
+      _episode = target.episode;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('preferred_stream_quality', target.quality);
+      await _configurePictureInPicture();
+      if (mounted) {
+        setState(() {
+          _buffering = false;
+          _subtitles = const [];
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 2),
+            content: Text('کیفیت پخش روی ${target.quality} قرار گرفت.'),
+          ),
+        );
+      }
+    } catch (_) {
+      try {
+        await _player.open(
+          Media(
+            previous.fileUrl,
+            httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
+          ),
+          play: false,
+        );
+        await _player.seek(_safeResumePosition(position));
+        if (wasPlaying) await _player.play();
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _buffering = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تغییر کیفیت انجام نشد؛ پخش قبلی بازیابی شد.'),
+          ),
+        );
+      }
+    } finally {
+      _switchingQuality = false;
+    }
   }
 
   AnimeEpisode? get _nextEpisode => nextEpisodeFor(widget.content, _episode);
@@ -1837,6 +2023,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _cursorTimer?.cancel();
     _feedbackTimer?.cancel();
     _brightnessHoldTimer?.cancel();
+    _playbackErrorTimer?.cancel();
+    _windowResizeTimer?.cancel();
+    if (isDesktopWindow) windowManager.removeListener(this);
     if (Platform.isAndroid) unawaited(DeviceBridge.setScreenBrightness(null));
     _pip.removeListener(_handlePipModeChanged);
     unawaited(_pip.deactivate());
@@ -1867,8 +2056,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _armHideTimer() {
     _hideTimer?.cancel();
     if (!_playing) return;
-    _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _controlsVisible = false);
+    _hideTimer = Timer(playerControlsAutoHideDelay, () {
+      if (mounted && _playing) setState(() => _controlsVisible = false);
     });
   }
 
@@ -2136,6 +2325,55 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _showControls();
   }
 
+  List<Widget> _playerToolControls({required bool compact}) {
+    final quality = _currentVariant?.quality ?? 'کیفیت';
+    final rate = _rate == 1
+        ? '1×'
+        : '${_rate.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')}×';
+    return [
+      if ((_currentEpisodeGroup?.variants.length ?? 0) > 1) ...[
+        _PlayerToolControl(
+          icon: Icons.high_quality_rounded,
+          label: quality,
+          compact: compact,
+          compactLabel: quality,
+          onTap: _showQualityPicker,
+        ),
+        const SizedBox(width: 8),
+      ],
+      _PlayerToolControl(
+        icon: Icons.speed_rounded,
+        label: rate,
+        compact: compact,
+        compactLabel: rate,
+        onTap: _showSpeedPicker,
+      ),
+      const SizedBox(width: 8),
+      _PlayerToolControl(
+        icon: Icons.closed_caption_rounded,
+        label: 'تنظیم زیرنویس',
+        compact: compact,
+        onTap: _showSubtitleSettings,
+      ),
+      const SizedBox(width: 8),
+      _PlayerToolControl(
+        icon: Icons.sync_alt_rounded,
+        label: 'زمان زیرنویس',
+        badge:
+            '${_subtitle.delay >= 0 ? '+' : ''}${_subtitle.delay.toStringAsFixed(1)}s',
+        compact: compact,
+        onTap: _showSubtitleTiming,
+      ),
+      const SizedBox(width: 8),
+      _PlayerToolControl(
+        icon: Icons.graphic_eq_rounded,
+        label: 'صدا و زیرنویس',
+        compact: compact,
+        onTap: _showTrackPicker,
+      ),
+    ];
+  }
+
   Future<void> _loadSubtitleFile() async {
     const subtitleFiles = XTypeGroup(
       label: 'زیرنویس',
@@ -2389,259 +2627,265 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Video(
-                    controller: _video,
-                    fit: _fitCover ? BoxFit.cover : BoxFit.contain,
-                    controls: (_) => const SizedBox.shrink(),
-                    // Native subtitles are hidden; [_AnimeSubtitles] renders them
-                    // in one uniform rounded box instead (no stacked backgrounds).
-                    subtitleViewConfiguration: const SubtitleViewConfiguration(
-                      visible: false,
+                  RepaintBoundary(
+                    child: Video(
+                      controller: _video,
+                      fit: _fitCover ? BoxFit.cover : BoxFit.contain,
+                      controls: (_) => const SizedBox.shrink(),
+                      // Native subtitles are hidden; [_AnimeSubtitles] renders them
+                      // in one uniform rounded box instead (no stacked backgrounds).
+                      subtitleViewConfiguration:
+                          const SubtitleViewConfiguration(visible: false),
                     ),
                   ),
-                  if (!_nativeSubtitleRendering)
+                  if (!_windowResizing && !_nativeSubtitleRendering)
                     _AnimeSubtitles(
                       lines: _subtitles,
                       prefs: _subtitle,
                       isPictureInPicture: _isInPip,
                     ),
-                  if (_buffering && !_touchLocked)
+                  if (!_windowResizing && _buffering && !_touchLocked)
                     const Center(child: CircularProgressIndicator()),
-                  if (_error != null && !_touchLocked)
+                  if (!_windowResizing && _error != null && !_touchLocked)
                     _PlayerError(onBack: () => unawaited(_exitPlayer())),
-                  AnimatedOpacity(
-                    opacity: _controlsVisible && !_touchLocked && !_isInPip
-                        ? 1
-                        : 0,
-                    duration: const Duration(milliseconds: 240),
-                    child: IgnorePointer(
-                      ignoring: !_controlsVisible || _touchLocked || _isInPip,
-                      child: DecoratedBox(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xCC000000),
-                              Colors.transparent,
-                              Color(0xD9000000),
-                            ],
-                            stops: [0, .46, 1],
+                  if (!_windowResizing)
+                    AnimatedOpacity(
+                      opacity: _controlsVisible && !_touchLocked && !_isInPip
+                          ? 1
+                          : 0,
+                      duration: const Duration(milliseconds: 240),
+                      child: IgnorePointer(
+                        ignoring: !_controlsVisible || _touchLocked || _isInPip,
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xCC000000),
+                                Colors.transparent,
+                                Color(0xD9000000),
+                              ],
+                              stops: [0, .46, 1],
+                            ),
                           ),
-                        ),
-                        child: SafeArea(
-                          child: Stack(
-                            children: [
-                              Positioned(
-                                top: 6,
-                                right: 12,
-                                left: 12,
-                                child: Row(
-                                  children: [
-                                    _RoundControl(
-                                      icon: Icons.arrow_forward_rounded,
-                                      tooltip: 'بازگشت',
-                                      onTap: () => unawaited(_exitPlayer()),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            widget.content.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          Text(
-                                            _episode.name,
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    _RoundControl(
-                                      icon: _fitCover
-                                          ? Icons.fit_screen_rounded
-                                          : Icons.aspect_ratio_rounded,
-                                      tooltip: 'اندازهٔ تصویر (V)',
-                                      onTap: _toggleFit,
-                                    ),
-                                    if (isDesktopWindow) ...[
-                                      const SizedBox(width: 8),
+                          child: SafeArea(
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  top: 6,
+                                  right: 12,
+                                  left: 12,
+                                  child: Row(
+                                    children: [
                                       _RoundControl(
-                                        icon: _isFullScreen
-                                            ? Icons.fullscreen_exit_rounded
-                                            : Icons.fullscreen_rounded,
-                                        tooltip: 'تمام‌صفحه (F)',
-                                        onTap: _toggleFullscreen,
+                                        icon: Icons.arrow_forward_rounded,
+                                        tooltip: 'بازگشت',
+                                        onTap: () => unawaited(_exitPlayer()),
                                       ),
-                                      const SizedBox(width: 8),
-                                      _RoundControl(
-                                        icon: Icons.keyboard_rounded,
-                                        tooltip: 'راهنمای کیبورد (F1)',
-                                        onTap: () => _keyboardCommand(
-                                          PlayerCommand.help,
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              widget.content.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              _episode.name,
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                    if (!isDesktopWindow) ...[
-                                      const SizedBox(width: 8),
-                                      if (_pipSupported) ...[
+                                      _RoundControl(
+                                        icon: _fitCover
+                                            ? Icons.fit_screen_rounded
+                                            : Icons.aspect_ratio_rounded,
+                                        tooltip: 'اندازهٔ تصویر (V)',
+                                        onTap: _toggleFit,
+                                      ),
+                                      if (isDesktopWindow) ...[
+                                        const SizedBox(width: 8),
                                         _RoundControl(
-                                          icon: Icons
-                                              .picture_in_picture_alt_rounded,
-                                          tooltip: 'تصویر در تصویر',
-                                          onTap: _enterPictureInPicture,
+                                          icon: _isFullScreen
+                                              ? Icons.fullscreen_exit_rounded
+                                              : Icons.fullscreen_rounded,
+                                          tooltip: 'تمام‌صفحه (F)',
+                                          onTap: _toggleFullscreen,
                                         ),
                                         const SizedBox(width: 8),
-                                      ],
-                                      _RoundControl(
-                                        icon: Icons.lock_outline_rounded,
-                                        tooltip: 'قفل لمس',
-                                        onTap: _lockTouch,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              Center(
-                                child: Row(
-                                  textDirection: TextDirection.ltr,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _HeroControl(
-                                      icon: Icons.replay_10_rounded,
-                                      tooltip: '۱۰ ثانیه عقب (←)',
-                                      onTap: () => _seekBy(-10),
-                                      size: 32,
-                                    ),
-                                    const SizedBox(width: 16),
-                                    _HeroControl(
-                                      icon: _playing
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      tooltip: _playing
-                                          ? 'توقف (Space)'
-                                          : 'پخش (Space)',
-                                      onTap: _toggle,
-                                      size: 52,
-                                      primary: true,
-                                    ),
-                                    const SizedBox(width: 16),
-                                    _HeroControl(
-                                      icon: Icons.forward_10_rounded,
-                                      tooltip: '۱۰ ثانیه جلو (→)',
-                                      onTap: () => _seekBy(10),
-                                      size: 32,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Positioned(
-                                right: 18,
-                                left: 18,
-                                bottom: 10,
-                                child: Column(
-                                  children: [
-                                    _SeekBar(player: _player),
-                                    Row(
-                                      textDirection: TextDirection.ltr,
-                                      children: [
-                                        _BareControl(
-                                          onTap: _toggleMute,
-                                          tooltip: 'قطع و وصل صدا',
-                                          icon: Icon(
-                                            _volume == 0
-                                                ? Icons.volume_off_rounded
-                                                : Icons.volume_up_rounded,
-                                            size: 30,
+                                        _RoundControl(
+                                          icon: Icons.keyboard_rounded,
+                                          tooltip: 'راهنمای کیبورد (F1)',
+                                          onTap: () => _keyboardCommand(
+                                            PlayerCommand.help,
                                           ),
                                         ),
-                                        if (isDesktopWindow)
-                                          SizedBox(
-                                            key: const Key(
-                                              'player-volume-slider',
-                                            ),
-                                            width: 210,
-                                            child: Slider(
-                                              value: _volume.clamp(0, 100),
-                                              max: 100,
-                                              onChanged: _setVolume,
-                                            ),
+                                      ],
+                                      if (!isDesktopWindow) ...[
+                                        const SizedBox(width: 8),
+                                        if (_pipSupported) ...[
+                                          _RoundControl(
+                                            icon: Icons
+                                                .picture_in_picture_alt_rounded,
+                                            tooltip: 'تصویر در تصویر',
+                                            onTap: _enterPictureInPicture,
                                           ),
-                                        const Spacer(),
-                                        Expanded(
-                                          child: Wrap(
-                                            key: const Key(
-                                              'player-tool-controls',
-                                            ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        _RoundControl(
+                                          icon: Icons.lock_outline_rounded,
+                                          tooltip: 'قفل لمس',
+                                          onTap: _lockTouch,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                Center(
+                                  child: Row(
+                                    textDirection: TextDirection.ltr,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _HeroControl(
+                                        icon: Icons.replay_10_rounded,
+                                        tooltip: '۱۰ ثانیه عقب (←)',
+                                        onTap: () => _seekBy(-10),
+                                        size: 32,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      _HeroControl(
+                                        icon: _playing
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        tooltip: _playing
+                                            ? 'توقف (Space)'
+                                            : 'پخش (Space)',
+                                        onTap: _toggle,
+                                        size: 52,
+                                        primary: true,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      _HeroControl(
+                                        icon: Icons.forward_10_rounded,
+                                        tooltip: '۱۰ ثانیه جلو (→)',
+                                        onTap: () => _seekBy(10),
+                                        size: 32,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 18,
+                                  left: 18,
+                                  bottom: 10,
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final compact =
+                                          isDesktopWindow &&
+                                          compactPlayerControlsForWidth(
+                                            constraints.maxWidth,
+                                          );
+                                      final volumeWidth = compact
+                                          ? 150.0
+                                          : 210.0;
+                                      return Column(
+                                        children: [
+                                          _SeekBar(player: _player),
+                                          Row(
                                             textDirection: TextDirection.ltr,
-                                            crossAxisAlignment:
-                                                WrapCrossAlignment.center,
-                                            alignment: WrapAlignment.end,
-                                            runSpacing: 8,
                                             children: [
-                                              _PlayerToolControl(
-                                                icon: Icons.speed_rounded,
-                                                label: _rate == 1
-                                                    ? '1×'
-                                                    : '${_rate.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')}×',
-                                                onTap: _showSpeedPicker,
+                                              _BareControl(
+                                                onTap: _toggleMute,
+                                                tooltip: 'قطع و وصل صدا',
+                                                icon: Icon(
+                                                  _volume == 0
+                                                      ? Icons.volume_off_rounded
+                                                      : Icons.volume_up_rounded,
+                                                  size: 30,
+                                                ),
                                               ),
-                                              const SizedBox(width: 8),
-                                              _PlayerToolControl(
-                                                icon: Icons
-                                                    .closed_caption_rounded,
-                                                label: 'تنظیم زیرنویس',
-                                                onTap: _showSubtitleSettings,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              _PlayerToolControl(
-                                                icon: Icons.sync_alt_rounded,
-                                                label: 'زمان زیرنویس',
-                                                badge:
-                                                    '${_subtitle.delay >= 0 ? '+' : ''}${_subtitle.delay.toStringAsFixed(1)}s',
-                                                onTap: _showSubtitleTiming,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              _PlayerToolControl(
-                                                icon: Icons.graphic_eq_rounded,
-                                                label: 'صدا و زیرنویس',
-                                                onTap: _showTrackPicker,
+                                              if (isDesktopWindow)
+                                                SizedBox(
+                                                  key: const Key(
+                                                    'player-volume-slider',
+                                                  ),
+                                                  width: volumeWidth,
+                                                  child: Directionality(
+                                                    textDirection:
+                                                        TextDirection.ltr,
+                                                    child: Slider(
+                                                      value: _volume.clamp(
+                                                        0,
+                                                        100,
+                                                      ),
+                                                      max: 100,
+                                                      onChanged: _setVolume,
+                                                    ),
+                                                  ),
+                                                ),
+                                              Expanded(
+                                                child: Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: FittedBox(
+                                                    key: const Key(
+                                                      'player-tool-controls',
+                                                    ),
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: Row(
+                                                      textDirection:
+                                                          TextDirection.ltr,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children:
+                                                          _playerToolControls(
+                                                            compact: compact,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    child: _feedback == null
-                        ? const SizedBox(key: ValueKey('no-feedback'))
-                        : PlayerFeedbackOverlay(
-                            key: ValueKey(_feedback),
-                            kind: _feedback!,
-                            value: _feedbackValue,
-                          ),
-                  ),
-                  if (_nextEpisodeVisible && !_touchLocked && !_isInPip)
+                  if (!_windowResizing)
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: _feedback == null
+                          ? const SizedBox(key: ValueKey('no-feedback'))
+                          : PlayerFeedbackOverlay(
+                              key: ValueKey(_feedback),
+                              kind: _feedback!,
+                              value: _feedbackValue,
+                            ),
+                    ),
+                  if (!_windowResizing &&
+                      _nextEpisodeVisible &&
+                      !_touchLocked &&
+                      !_isInPip)
                     Positioned(
                       right: 18,
                       bottom: nextEpisodeOverlayBottom(_controlsVisible),
@@ -2652,7 +2896,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         label: Text('قسمت بعدی: ${_nextEpisode!.name}'),
                       ),
                     ),
-                  if (_touchLocked)
+                  if (!_windowResizing && _touchLocked)
                     // Small unlock button pinned top-left. Positioned (not Align)
                     // so it always sizes to its child instead of the full screen.
                     Positioned(
@@ -2818,27 +3062,44 @@ class _HeroControl extends StatelessWidget {
   );
 }
 
+String _playerVariantMeta(EpisodeVariant variant) {
+  final values = [
+    if (variant.episode.fileSize.isNotEmpty) '${variant.episode.fileSize} MB',
+    if (variant.episode.fileType.isNotEmpty)
+      variant.episode.fileType.toUpperCase(),
+  ];
+  return values.isEmpty ? 'سرور پخش آنلاین' : values.join(' · ');
+}
+
 class _PlayerToolControl extends StatelessWidget {
   const _PlayerToolControl({
     required this.icon,
     required this.label,
     required this.onTap,
     this.badge,
+    this.compact = false,
+    this.compactLabel,
   });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final String? badge;
+  final bool compact;
+  final String? compactLabel;
   @override
   Widget build(BuildContext context) => _InstantPlayerTap(
     onTap: onTap,
+    tooltip: label,
     decoration: BoxDecoration(
       color: const Color(0xE6262931),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: Colors.white24),
       boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 10)],
     ),
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    padding: EdgeInsets.symmetric(
+      horizontal: compact ? 8 : 10,
+      vertical: compact ? 7 : 7,
+    ),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2856,15 +3117,17 @@ class _PlayerToolControl extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          maxLines: 1,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
+        if (!compact || compactLabel != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            compact ? compactLabel! : label,
+            maxLines: 1,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
+        ],
       ],
     ),
   );
@@ -4018,7 +4281,9 @@ class _AnimeSubtitles extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 200),
+                duration: isDesktopWindow
+                    ? Duration.zero
+                    : const Duration(milliseconds: 200),
                 curve: Curves.easeOutCubic,
                 left: layout.horizontalInset,
                 right: layout.horizontalInset,

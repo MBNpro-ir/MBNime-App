@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/episode_catalog.dart';
 import '../core/theme.dart';
 import '../core/watch_progress.dart';
 import '../core/player_preferences.dart';
@@ -37,12 +39,14 @@ class EpisodePickerScreen extends StatefulWidget {
 class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   final _progress = WatchProgressStore();
   final _saved = <String, SavedWatchProgress>{};
-  late int _seasonIndex = _defaultSeason(widget.content.seasons);
+  late final EpisodeCatalog _catalog;
+  int _seasonIndex = 0;
+  String _selectedQuality = 'بدون برچسب کیفیت';
 
-  static int _defaultSeason(List<AnimeSeason> seasons) {
+  static int _defaultSeason(List<EpisodeSeasonGroup> seasons) {
     for (var i = 0; i < seasons.length; i++) {
       final hasRegular = seasons[i].episodes.any(
-        (e) => !e.name.contains('تیزر'),
+        (episode) => !episode.name.contains('تیزر'),
       );
       if (hasRegular) return i;
     }
@@ -52,18 +56,38 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   @override
   void initState() {
     super.initState();
+    _catalog = EpisodeCatalog.from(widget.content);
+    _seasonIndex = _defaultSeason(_catalog.seasons);
+    _selectedQuality = recommendedEpisodeQuality(
+      _catalog.seasons[_seasonIndex].qualities,
+    );
     _loadSaved();
+    _loadQualityPreference();
   }
 
   Future<void> _loadSaved() async {
     final entries = <String, SavedWatchProgress>{};
-    for (final season in widget.content.seasons) {
-      for (final episode in season.episodes) {
-        final saved = await _progress.load(
+    for (final group in _catalog.episodes) {
+      SavedWatchProgress? best = await _progress.load(
+        contentId: widget.content.id,
+        episodeId: group.id,
+      );
+      for (final variant in group.variants) {
+        final legacy = await _progress.load(
           contentId: widget.content.id,
-          episodeId: episode.id,
+          episodeId: variant.episode.id,
         );
-        if (saved != null) entries[episode.id] = saved;
+        best = _newerProgress(best, legacy);
+      }
+      if (best != null) {
+        entries[group.id] = best;
+        await _progress.save(
+          contentId: widget.content.id,
+          episodeId: group.id,
+          position: best.position,
+          duration: best.duration,
+          markWatched: best.watched,
+        );
       }
     }
     if (mounted) {
@@ -75,18 +99,51 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     }
   }
 
-  Future<void> _tapEpisode(AnimeEpisode episode) async {
-    final saved = _saved[episode.id];
+  SavedWatchProgress? _newerProgress(
+    SavedWatchProgress? current,
+    SavedWatchProgress? candidate,
+  ) {
+    if (candidate == null) return current;
+    if (current == null || candidate.watched && !current.watched) {
+      return candidate;
+    }
+    return candidate.positionMs > current.positionMs ? candidate : current;
+  }
+
+  Future<void> _loadQualityPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final quality = prefs.getString('preferred_stream_quality');
+    final available = _catalog.seasons[_seasonIndex].qualities;
+    if (!mounted || quality == null || !available.contains(quality)) {
+      return;
+    }
+    setState(() => _selectedQuality = quality);
+  }
+
+  Future<void> _setQuality(String quality) async {
+    setState(() => _selectedQuality = quality);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferred_stream_quality', quality);
+  }
+
+  void _selectSeason(int index) {
+    final qualities = _catalog.seasons[index].qualities;
+    setState(() {
+      _seasonIndex = index;
+      if (!qualities.contains(_selectedQuality)) {
+        _selectedQuality = recommendedEpisodeQuality(qualities);
+      }
+    });
+  }
+
+  Future<void> _tapEpisode(EpisodeGroup group, EpisodeVariant variant) async {
+    final saved = _saved[group.id];
     var startAt = Duration.zero;
     if (saved != null && saved.isResumable && mounted) {
       final resume = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(
-            episode.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(group.name, maxLines: 2, overflow: TextOverflow.ellipsis),
           content: Text(
             'آخرین بار تا ${_fmt(saved.position)} دیده‌ای. ادامه می‌دهی یا از اول؟',
           ),
@@ -105,11 +162,12 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
       if (resume == null) return;
       startAt = resume ? saved.position : Duration.zero;
     }
-    await widget.onPlay(episode, startAt);
+    await widget.onPlay(variant.episode, startAt);
     await _loadSaved();
   }
 
-  Future<void> _showPlayback(AnimeEpisode episode) async {
+  Future<void> _showPlayback(EpisodeGroup group) async {
+    final variant = group.variantFor(_selectedQuality);
     final allowedPlayers = <String>{
       PlaybackPreferenceStore.internalPlayer,
       ExternalVideoPlayer.vlc.name,
@@ -163,7 +221,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                           onCast: (initialDestination) => showSmartCastSheet(
                             context,
                             content: widget.content,
-                            episode: episode,
+                            episode: variant.episode,
                             initialDestination: initialDestination,
                           ),
                         );
@@ -189,11 +247,14 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
       if (!mounted) return;
     }
     if (choice == 'internal') {
-      await _tapEpisode(episode);
+      await _tapEpisode(group, variant);
     } else if (choice == 'wireless') {
-      await _tapEpisode(episode);
+      await _tapEpisode(group, variant);
     } else if (choice != 'cast') {
-      await _playExternal(episode, ExternalVideoPlayer.values.byName(choice));
+      await _playExternal(
+        variant.episode,
+        ExternalVideoPlayer.values.byName(choice),
+      );
     }
   }
 
@@ -217,12 +278,43 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     _showFailure('این روش پخش در دستگاه فعلی اجرا نشد.');
   }
 
-  Future<void> _downloadEpisode(AnimeEpisode episode) async {
+  Future<void> _downloadEpisode(EpisodeGroup group) async {
+    final variant = await _chooseDownloadVariant(group);
+    if (variant == null || !mounted) return;
     await showDownloadChoice(
       context,
       content: widget.content,
-      season: widget.content.seasons[_seasonIndex],
-      episodes: [episode],
+      season: variant.season,
+      episodes: [variant.episode],
+    );
+  }
+
+  Future<EpisodeVariant?> _chooseDownloadVariant(EpisodeGroup group) async {
+    if (group.variants.length == 1) return group.variants.single;
+    return showModalBottomSheet<EpisodeVariant>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              leading: Icon(Icons.download_rounded),
+              title: Text('کیفیت دانلود را انتخاب کن'),
+            ),
+            for (final variant in group.variants)
+              ListTile(
+                leading: const Icon(Icons.high_quality_rounded),
+                title: Text(variant.quality),
+                subtitle: Text(_variantMeta(variant)),
+                trailing: variant.quality == _selectedQuality
+                    ? const Icon(Icons.check_circle_rounded)
+                    : null,
+                onTap: () => Navigator.pop(context, variant),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -255,9 +347,202 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Widget _selectorRow({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) => Row(
+    children: [
+      Icon(icon, size: 20, color: AnimeColors.orange),
+      const SizedBox(width: 7),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      const SizedBox(width: 12),
+      Expanded(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: children),
+        ),
+      ),
+    ],
+  );
+
+  Widget _episodeCard(EpisodeGroup group) {
+    final variant = group.variantFor(_selectedQuality);
+    final saved = _saved[group.id];
+    final resumable = saved?.isResumable ?? false;
+    final watched = saved?.watched ?? false;
+    final almostWatched = saved?.almostWatched ?? false;
+    final ratio = (saved != null && saved.durationMs > 0)
+        ? (saved.positionMs / saved.durationMs).clamp(0.0, 1.0)
+        : null;
+    final statusColor = watched
+        ? AnimeColors.cyan
+        : almostWatched
+        ? const Color(0xFFFFD600)
+        : AnimeColors.orange;
+    final statusIcon = watched
+        ? Icons.check_circle_rounded
+        : almostWatched
+        ? Icons.timelapse_rounded
+        : resumable
+        ? Icons.play_circle_fill_rounded
+        : Icons.radio_button_unchecked_rounded;
+    final status = watched
+        ? 'تماشا کردی'
+        : almostWatched
+        ? 'تقریباً تماشا کردی'
+        : resumable
+        ? 'ادامه از ${_fmt(saved!.position)}'
+        : 'تماشا نشده';
+    return Material(
+      key: Key('episode-card-${group.id}'),
+      color: watched
+          ? AnimeColors.cyan.withValues(alpha: .10)
+          : almostWatched
+          ? const Color(0xFFFFD600).withValues(alpha: .10)
+          : AnimeColors.surface,
+      clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _showPlayback(group),
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      variant.quality,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(
+                    alpha: watched || almostWatched || resumable ? .16 : .07,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: statusColor.withValues(
+                      alpha: watched || almostWatched || resumable ? .45 : .18,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(statusIcon, size: 20, color: statusColor),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 9),
+              if (ratio != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 7,
+                    backgroundColor: Colors.white10,
+                    valueColor: AlwaysStoppedAnimation(statusColor),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _variantMeta(variant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AnimeColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${group.variants.length} کیفیت',
+                    style: const TextStyle(
+                      color: AnimeColors.muted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _showPlayback(group),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                      label: const Text('پخش'),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  IconButton.outlined(
+                    tooltip: 'دانلود با انتخاب کیفیت',
+                    onPressed: () => _downloadEpisode(group),
+                    color: AnimeColors.cyan,
+                    icon: const Icon(Icons.download_rounded),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final seasons = widget.content.seasons;
+    final seasons = _catalog.seasons;
     if (seasons.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('انتخاب قسمت')),
@@ -265,11 +550,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
       );
     }
     final season = seasons[_seasonIndex.clamp(0, seasons.length - 1)];
-    // Series episodes come newest-first from the API; show them first to
-    // last. The synthetic movie-quality list keeps its server order.
-    final episodes = season.id == 'movie'
-        ? season.episodes
-        : season.episodes.reversed.toList(growable: false);
+    final episodes = season.episodes;
     return Scaffold(
       appBar: AppBar(title: const Text('انتخاب قسمت')),
       body: AmbientBackground(
@@ -292,32 +573,49 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                 style: const TextStyle(color: AnimeColors.muted),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: DropdownButtonFormField<int>(
-                isExpanded: true,
-                initialValue: _seasonIndex,
-                decoration: const InputDecoration(
-                  labelText: 'فصل / کیفیت پخش',
-                  prefixIcon: Icon(Icons.layers_rounded),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                ),
-                items: [
-                  for (var i = 0; i < seasons.length; i++)
-                    DropdownMenuItem(
-                      value: i,
-                      child: Text(
-                        '${seasons[i].name} · ${seasons[i].episodes.length} مورد',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+            Container(
+              margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AnimeColors.surface.withValues(alpha: .92),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                children: [
+                  if (seasons.length > 1) ...[
+                    _selectorRow(
+                      title: 'فصل',
+                      icon: Icons.video_library_rounded,
+                      children: [
+                        for (var i = 0; i < seasons.length; i++) ...[
+                          ChoiceChip(
+                            label: Text(seasons[i].name),
+                            selected: i == _seasonIndex,
+                            onSelected: (_) => _selectSeason(i),
+                          ),
+                          const SizedBox(width: 7),
+                        ],
+                      ],
                     ),
+                    const SizedBox(height: 10),
+                  ],
+                  _selectorRow(
+                    title: 'کیفیت',
+                    icon: Icons.high_quality_rounded,
+                    children: [
+                      for (final quality in season.qualities) ...[
+                        ChoiceChip(
+                          key: Key('quality-$quality'),
+                          label: Text(quality),
+                          selected: quality == _selectedQuality,
+                          onSelected: (_) => _setQuality(quality),
+                        ),
+                        const SizedBox(width: 7),
+                      ],
+                    ],
+                  ),
                 ],
-                onChanged: (value) {
-                  if (value != null) setState(() => _seasonIndex = value);
-                },
               ),
             ),
             Expanded(
@@ -327,185 +625,17 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                   itemCount: episodes.length,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount:
-                        constraints.maxWidth < 340 ||
-                            MediaQuery.textScalerOf(context).scale(14) > 22
+                        MediaQuery.textScalerOf(context).scale(14) > 22
                         ? 1
-                        : (constraints.maxWidth / 260).floor().clamp(2, 5),
+                        : (constraints.maxWidth / 245).floor().clamp(2, 5),
                     mainAxisExtent:
-                        245 +
-                        (MediaQuery.textScalerOf(context).scale(14) - 14) * 6,
+                        210 +
+                        (MediaQuery.textScalerOf(context).scale(14) - 14) * 4,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
                   ),
                   itemBuilder: (_, i) {
-                    final episode = episodes[i];
-                    final saved = _saved[episode.id];
-                    final resumable = saved?.isResumable ?? false;
-                    final watched = saved?.watched ?? false;
-                    final almostWatched = saved?.almostWatched ?? false;
-                    final ratio = (saved != null && saved.durationMs > 0)
-                        ? (saved.positionMs / saved.durationMs).clamp(0.0, 1.0)
-                        : null;
-                    final meta = [
-                      if (episode.fileSize.isNotEmpty) '${episode.fileSize} MB',
-                      if (episode.fileType.isNotEmpty)
-                        episode.fileType.toUpperCase(),
-                    ].join(' · ');
-                    return Material(
-                      key: Key('episode-card-${episode.id}'),
-                      color: watched
-                          ? AnimeColors.cyan.withValues(alpha: .12)
-                          : almostWatched
-                          ? const Color(0xFFFFD600).withValues(alpha: .12)
-                          : AnimeColors.surface,
-                      borderRadius: BorderRadius.circular(18),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () => _showPlayback(episode),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 46,
-                                    height: 46,
-                                    decoration: BoxDecoration(
-                                      color:
-                                          (watched
-                                                  ? AnimeColors.cyan
-                                                  : almostWatched
-                                                  ? const Color(0xFFFFD600)
-                                                  : AnimeColors.orange)
-                                              .withValues(alpha: .16),
-                                      borderRadius: BorderRadius.circular(15),
-                                    ),
-                                    child: Icon(
-                                      watched
-                                          ? Icons.check_rounded
-                                          : almostWatched
-                                          ? Icons.timelapse_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: watched
-                                          ? AnimeColors.cyan
-                                          : almostWatched
-                                          ? const Color(0xFFFFD600)
-                                          : AnimeColors.orange,
-                                      size: 26,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          episode.name,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        if (meta.isNotEmpty) ...[
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            meta,
-                                            style: const TextStyle(
-                                              color: AnimeColors.muted,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                        if (watched ||
-                                            almostWatched ||
-                                            resumable) ...[
-                                          const SizedBox(height: 3),
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              if (watched || almostWatched)
-                                                Text(
-                                                  watched
-                                                      ? 'تماشا کردی'
-                                                      : 'تقریباً تماشا کردی',
-                                                  style: TextStyle(
-                                                    color: watched
-                                                        ? AnimeColors.cyan
-                                                        : const Color(
-                                                            0xFFFFD600,
-                                                          ),
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              if (resumable)
-                                                Text(
-                                                  'ادامه از ${_fmt(saved!.position)}',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: AnimeColors.cyan,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (ratio != null) ...[
-                                const SizedBox(height: 10),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: LinearProgressIndicator(
-                                    value: ratio,
-                                    minHeight: 4,
-                                    backgroundColor: Colors.white10,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      watched
-                                          ? AnimeColors.cyan
-                                          : almostWatched
-                                          ? const Color(0xFFFFD600)
-                                          : AnimeColors.orange,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              const Spacer(),
-                              Wrap(
-                                spacing: 7,
-                                runSpacing: 7,
-                                children: [
-                                  FilledButton.tonalIcon(
-                                    onPressed: () => _showPlayback(episode),
-                                    icon: const Icon(Icons.play_arrow_rounded),
-                                    label: const Text('پخش'),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: () => _downloadEpisode(episode),
-                                    icon: const Icon(Icons.download_rounded),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: AnimeColors.cyan,
-                                    ),
-                                    label: const Text('دانلود'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
+                    return _episodeCard(episodes[i]);
                   },
                 ),
               ),
@@ -522,4 +652,13 @@ String _fmt(Duration value) {
   final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
   return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+}
+
+String _variantMeta(EpisodeVariant variant) {
+  final values = [
+    if (variant.episode.fileSize.isNotEmpty) '${variant.episode.fileSize} MB',
+    if (variant.episode.fileType.isNotEmpty)
+      variant.episode.fileType.toUpperCase(),
+  ];
+  return values.isEmpty ? 'پخش آنلاین' : values.join(' · ');
 }
