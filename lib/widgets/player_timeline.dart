@@ -17,6 +17,7 @@ class PlayerTimeline extends StatefulWidget {
 
 class _PlayerTimelineState extends State<PlayerTimeline> {
   double? _drag;
+  bool _showRemaining = false;
   @override
   Widget build(BuildContext context) {
     final length = widget.duration.inMilliseconds;
@@ -31,6 +32,36 @@ class _PlayerTimelineState extends State<PlayerTimeline> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ExcludeSemantics(child: Text(playerTime(destination))),
+                Semantics(
+                  button: true,
+                  label: _showRemaining ? 'زمان باقی‌مانده' : 'زمان کل',
+                  child: InkWell(
+                    key: const Key('player-duration-toggle'),
+                    onTap: () =>
+                        setState(() => _showRemaining = !_showRemaining),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 3,
+                      ),
+                      child: Text(
+                        _showRemaining
+                            ? '-${playerTime(remainingPlayerTime(destination, widget.duration))}'
+                            : playerTime(widget.duration),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Semantics(
             label: 'زمان پخش',
             child: Slider(
@@ -57,23 +88,14 @@ class _PlayerTimelineState extends State<PlayerTimeline> {
                     },
             ),
           ),
-          ExcludeSemantics(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(playerTime(destination)),
-                  Text(playerTime(widget.duration)),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 }
+
+Duration remainingPlayerTime(Duration position, Duration duration) =>
+    duration > position ? duration - position : Duration.zero;
 
 String playerTime(Duration value) {
   final hours = value.inHours;

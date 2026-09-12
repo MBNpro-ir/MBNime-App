@@ -2,6 +2,8 @@ package com.mbn.ime
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
+import android.media.AudioManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -52,6 +54,28 @@ class DeviceBridge(private val activity: FlutterActivity) {
                     Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "armeabi-v7a"
                     else -> "unsupported"
                 })
+                "mediaVolume" -> result.success(mediaVolume())
+                "setMediaVolume" -> {
+                    val audio = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val maximum = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                    val value = (call.argument<Double>("value") ?: 1.0).coerceIn(0.0, 1.0)
+                    val flags = if (call.argument<Boolean>("showUi") != false) AudioManager.FLAG_SHOW_UI else 0
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC, (value * maximum).toInt(), flags)
+                    result.success(mediaVolume())
+                }
+                "screenBrightness" -> {
+                    val override = activity.window.attributes.screenBrightness
+                    val value = if (override >= 0f) override.toDouble() else
+                        Settings.System.getInt(activity.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128) / 255.0
+                    result.success(value.coerceIn(0.0, 1.0))
+                }
+                "setScreenBrightness" -> {
+                    val value = (call.argument<Double>("value") ?: -1.0).coerceIn(-1.0, 1.0)
+                    val attributes = activity.window.attributes
+                    attributes.screenBrightness = value.toFloat()
+                    activity.window.attributes = attributes
+                    result.success(null)
+                }
                 "wirelessDisplay" -> {
                     val intents = listOf(Intent(Settings.ACTION_CAST_SETTINGS), Intent(Settings.ACTION_DISPLAY_SETTINGS))
                     var opened = false
@@ -117,6 +141,12 @@ class DeviceBridge(private val activity: FlutterActivity) {
     private fun storageGranted(): Boolean = if (Build.VERSION.SDK_INT >= 30)
         Environment.isExternalStorageManager()
     else ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+    private fun mediaVolume(): Double {
+        val audio = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maximum = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        return audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / maximum
+    }
 
     @Suppress("DEPRECATION")
     private fun installApk(path: String): String {

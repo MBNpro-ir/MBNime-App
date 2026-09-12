@@ -5,6 +5,21 @@ import 'package:mbnime/services/app_updater.dart';
 import 'package:mbnime/screens/update_screen.dart';
 
 void main() {
+  for (final size in const [Size(320, 568), Size(390, 844), Size(1440, 900)]) {
+    testWidgets('update screen is responsive at $size', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(const MaterialApp(home: UpdateScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('به‌روزرسانی برنامه'), findsOneWidget);
+      expect(find.text('وضعیت به‌روزرسانی'), findsOneWidget);
+      expect(find.text('بررسی دوباره'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   test(
     'fresh Windows cache reproduces old failure and creates unique stages',
     () async {

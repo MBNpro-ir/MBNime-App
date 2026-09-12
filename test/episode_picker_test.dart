@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mbnime/core/theme.dart';
 import 'package:mbnime/models/anime_content.dart';
 import 'package:mbnime/screens/episode_picker_screen.dart';
+import 'package:mbnime/core/watch_progress.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mbnime/widgets/smart_cast_sheet.dart';
 
@@ -141,5 +143,41 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('watched episode has a distinct card and visible label', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await WatchProgressStore().save(
+      contentId: content.id,
+      episodeId: '1',
+      position: const Duration(minutes: 22),
+      duration: const Duration(minutes: 24),
+      markWatched: true,
+    );
+    await WatchProgressStore().save(
+      contentId: content.id,
+      episodeId: '2',
+      position: const Duration(minutes: 19),
+      duration: const Duration(minutes: 24),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EpisodePickerScreen(content: content, onPlay: (_, _) async {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('تماشا کردی'), findsOneWidget);
+    expect(find.text('تقریباً تماشا کردی'), findsOneWidget);
+    final card = tester.widget<Material>(
+      find.byKey(const Key('episode-card-1')),
+    );
+    expect(card.color, isNot(AnimeColors.surface));
+    final almostCard = tester.widget<Material>(
+      find.byKey(const Key('episode-card-2')),
+    );
+    expect(almostCard.color, isNot(AnimeColors.surface));
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
   });
 }

@@ -152,247 +152,513 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
               ..sort(
                 (a, b) => b.task.creationTime.compareTo(a.task.creationTime),
               );
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'جست‌وجو در دانلودها',
-                        prefixIcon: Icon(Icons.search),
+        final allRecords = manager.records.values.toList(growable: false);
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final desktop = constraints.maxWidth >= 1000;
+            final horizontal = desktop ? 28.0 : 12.0;
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1280),
+                child: CustomScrollView(
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontal,
+                        16,
+                        horizontal,
+                        10,
                       ),
-                      onChanged: (value) => setState(() => _search = value),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.start,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        FilterChip(
-                          label: const Text('دانلودهای جدید فقط با Wi‑Fi'),
-                          selected: manager.wifiOnly,
-                          onSelected: (value) => _action(() async {
-                            await manager.settings(wifi: value);
-                            return true;
-                          }),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Text('هم‌زمان: '),
-                            DropdownButton<int>(
-                              value: manager.concurrency,
-                              items: [
-                                for (var i = 1; i <= 4; i++)
-                                  DropdownMenuItem(value: i, child: Text('$i')),
+                            _overview(allRecords, desktop),
+                            const SizedBox(height: 12),
+                            _controlPanel(desktop),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'فهرست دانلودها',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                ),
+                                Text(
+                                  '${records.length} مورد',
+                                  style: const TextStyle(color: Colors.white60),
+                                ),
                               ],
-                              onChanged: (value) => _action(() async {
-                                await manager.settings(simultaneous: value);
-                                return true;
-                              }),
                             ),
                           ],
                         ),
-                        DropdownButton<String>(
-                          value: _filter,
-                          items: [
-                            for (final value in [
-                              'همه',
-                              'در صف',
-                              'در حال دانلود',
-                              'متوقف',
-                              'تکمیل‌شده',
-                              'ناموفق',
-                              'لغوشده',
-                            ])
-                              DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                          ],
-                          onChanged: (value) =>
-                              setState(() => _filter = value!),
-                        ),
-                        TextButton(
-                          onPressed: () => _action(() async {
-                            await manager.pauseAll();
-                            return true;
-                          }),
-                          child: const Text('توقف همه'),
-                        ),
-                        TextButton(
-                          onPressed: () => _action(() async {
-                            await manager.resumeAll();
-                            return true;
-                          }),
-                          child: const Text('ادامهٔ همه'),
-                        ),
-                        TextButton(
-                          onPressed: () => _action(() async {
-                            await manager.clearFinished();
-                            return true;
-                          }),
-                          child: const Text('پاک‌کردن سوابق تکمیل‌شده'),
-                        ),
-                      ],
+                      ),
                     ),
-                    const Text(
-                      'پوشه‌ها: Downloads/MBNime → Movies / Series / Anime → Title → Season\nپاک‌کردن سوابق، فایل‌ها را حذف نمی‌کند.',
-                      style: TextStyle(fontSize: 12),
-                    ),
+                    if (records.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _EmptyDownloads(),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontal,
+                          0,
+                          horizontal,
+                          24,
+                        ),
+                        sliver: SliverList.builder(
+                          itemCount: records.length,
+                          itemBuilder: (context, index) =>
+                              _downloadCard(records[index], desktop: desktop),
+                        ),
+                      ),
                   ],
                 ),
               ),
-            ),
-            if (records.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    'دانلودی در این بخش نیست. از صفحهٔ قسمت‌ها دانلود داخلی را انتخاب کن.',
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                sliver: SliverList.builder(
-                  itemCount: records.length,
-                  itemBuilder: (context, index) {
-                    final record = records[index];
-                    final task = record.task;
-                    final progress = manager.progress[task.taskId];
-                    String cover = '';
-                    try {
-                      cover =
-                          (jsonDecode(task.metaData) as Map)['coverPath']
-                              as String? ??
-                          '';
-                    } catch (_) {}
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (cover.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsetsDirectional.only(
-                                  end: 12,
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    File(cover),
-                                    width: 52,
-                                    height: 76,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
-                                        const Icon(Icons.movie),
-                                  ),
-                                ),
-                              ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    task.displayName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  LinearProgressIndicator(
-                                    value: record.progress.clamp(0, 1),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${downloadStatusLabel(record.status)} · ${(record.progress.clamp(0, 1) * 100).toStringAsFixed(0)}٪${record.expectedFileSize > 0 ? ' · ${(record.expectedFileSize / 1048576).toStringAsFixed(1)} MB' : ''}',
-                                  ),
-                                  if (record.status == TaskStatus.running &&
-                                      progress != null)
-                                    Text(
-                                      '${progress.networkSpeedAsString} · زمان باقی‌مانده ${progress.timeRemainingAsString}',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  if (record.exception != null)
-                                    const Text(
-                                      'دانلود متوقف شد؛ اتصال، اعتبار لینک و فضای ذخیره‌سازی را بررسی کن.',
-                                    ),
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      if (record.status == TaskStatus.running)
-                                        TextButton.icon(
-                                          onPressed: () => _action(
-                                            () => manager.pause(task),
-                                          ),
-                                          icon: const Icon(Icons.pause),
-                                          label: const Text('توقف'),
-                                        ),
-                                      if (record.status == TaskStatus.paused)
-                                        TextButton.icon(
-                                          onPressed: () => _action(
-                                            () => manager.resume(task),
-                                          ),
-                                          icon: const Icon(Icons.play_arrow),
-                                          label: const Text('ادامه'),
-                                        ),
-                                      if ([
-                                        TaskStatus.failed,
-                                        TaskStatus.notFound,
-                                        TaskStatus.canceled,
-                                      ].contains(record.status))
-                                        TextButton.icon(
-                                          onPressed: () => _action(
-                                            () => manager.retry(task),
-                                          ),
-                                          icon: const Icon(Icons.refresh),
-                                          label: const Text('تلاش مجدد'),
-                                        ),
-                                      if (![
-                                        TaskStatus.complete,
-                                        TaskStatus.failed,
-                                        TaskStatus.notFound,
-                                        TaskStatus.canceled,
-                                      ].contains(record.status))
-                                        TextButton.icon(
-                                          onPressed: () => _action(
-                                            () => manager.cancel(task),
-                                          ),
-                                          icon: const Icon(Icons.close),
-                                          label: const Text('لغو'),
-                                        ),
-                                      if (record.status == TaskStatus.complete)
-                                        TextButton.icon(
-                                          onPressed: () => _action(() async {
-                                            await _play(task);
-                                            return true;
-                                          }),
-                                          icon: const Icon(Icons.play_circle),
-                                          label: const Text('پخش'),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+            );
+          },
+        );
+      },
+    ),
+  );
+
+  Widget _overview(List<TaskRecord> records, bool desktop) {
+    int count(Iterable<TaskStatus> statuses) =>
+        records.where((record) => statuses.contains(record.status)).length;
+    final cards = [
+      _SummaryData('همه دانلودها', records.length, Icons.download_rounded),
+      _SummaryData(
+        'در حال دریافت',
+        count(const [TaskStatus.running]),
+        Icons.downloading_rounded,
+      ),
+      _SummaryData(
+        'در انتظار',
+        count(const [TaskStatus.enqueued, TaskStatus.paused]),
+        Icons.schedule_rounded,
+      ),
+      _SummaryData(
+        'تکمیل‌شده',
+        count(const [TaskStatus.complete]),
+        Icons.task_alt_rounded,
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = desktop
+            ? 205.0
+            : constraints.maxWidth < 420
+            ? constraints.maxWidth
+            : (constraints.maxWidth - 10) / 2;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final item in cards)
+              SizedBox(
+                width: width,
+                child: _SummaryCard(data: item),
               ),
           ],
         );
       },
+    );
+  }
+
+  Widget _controlPanel(bool desktop) => Card(
+    margin: EdgeInsets.zero,
+    clipBehavior: Clip.antiAlias,
+    child: Padding(
+      padding: EdgeInsets.all(desktop ? 18 : 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (desktop)
+            Row(
+              children: [
+                Expanded(child: _searchField()),
+                const SizedBox(width: 12),
+                SizedBox(width: 190, child: _filterField()),
+              ],
+            )
+          else ...[
+            _searchField(),
+            const SizedBox(height: 10),
+            _filterField(),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () => _action(() async {
+                  await manager.resumeAll();
+                  return true;
+                }),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('ادامه همه'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _action(() async {
+                  await manager.pauseAll();
+                  return true;
+                }),
+                icon: const Icon(Icons.pause_rounded),
+                label: const Text('توقف همه'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _action(() async {
+                  await manager.clearFinished();
+                  return true;
+                }),
+                icon: const Icon(Icons.cleaning_services_rounded),
+                label: const Text('پاک‌کردن تکمیل‌شده‌ها'),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.wifi_rounded, size: 18),
+                label: const Text('فقط Wi-Fi'),
+                selected: manager.wifiOnly,
+                onSelected: (value) => _action(() async {
+                  await manager.settings(wifi: value);
+                  return true;
+                }),
+              ),
+              SizedBox(
+                width: 190,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        isExpanded: true,
+                        value: manager.concurrency,
+                        hint: const Text('هم‌زمان'),
+                        items: [
+                          for (var i = 1; i <= 4; i++)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text('$i دانلود هم‌زمان'),
+                            ),
+                        ],
+                        onChanged: (value) => _action(() async {
+                          await manager.settings(simultaneous: value);
+                          return true;
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'مسیر ذخیره: Downloads/MBNime/Movies یا Series یا Anime  •  پاک‌کردن سابقه، فایل را حذف نمی‌کند.',
+            style: TextStyle(fontSize: 12, color: Colors.white60),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _searchField() => TextField(
+    decoration: const InputDecoration(
+      labelText: 'جست‌وجو در دانلودها',
+      prefixIcon: Icon(Icons.search_rounded),
+    ),
+    onChanged: (value) => setState(() => _search = value),
+  );
+
+  Widget _filterField() => DropdownButtonFormField<String>(
+    initialValue: _filter,
+    isExpanded: true,
+    decoration: const InputDecoration(
+      labelText: 'وضعیت',
+      prefixIcon: Icon(Icons.filter_list_rounded),
+    ),
+    items: [
+      for (final value in const [
+        'همه',
+        'در صف',
+        'در حال دانلود',
+        'متوقف',
+        'تکمیل‌شده',
+        'ناموفق',
+        'لغوشده',
+      ])
+        DropdownMenuItem(value: value, child: Text(value)),
+    ],
+    onChanged: (value) => setState(() => _filter = value ?? 'همه'),
+  );
+
+  Widget _downloadCard(TaskRecord record, {required bool desktop}) {
+    final task = record.task;
+    final live = manager.progress[task.taskId];
+    final cover = _coverPath(task);
+    final details = _downloadDetails(record, live);
+    final actions = _downloadActions(record);
+    return Card(
+      margin: const EdgeInsets.only(top: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: EdgeInsets.all(desktop ? 16 : 12),
+        child: desktop
+            ? Row(
+                children: [
+                  _cover(cover, 58, 82),
+                  const SizedBox(width: 14),
+                  Expanded(child: details),
+                  const SizedBox(width: 18),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 270),
+                    child: actions,
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _cover(cover, 46, 64),
+                      const SizedBox(width: 10),
+                      Expanded(child: details),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  actions,
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _downloadDetails(TaskRecord record, TaskProgressUpdate? live) {
+    final percent = (record.progress.clamp(0, 1) * 100).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          record.task.displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 9),
+        LinearProgressIndicator(
+          value: record.progress.clamp(0, 1),
+          minHeight: 7,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        const SizedBox(height: 7),
+        Wrap(
+          spacing: 8,
+          runSpacing: 3,
+          children: [
+            Text(
+              '${downloadStatusLabel(record.status)}  •  $percent٪',
+              style: TextStyle(color: _statusColor(record.status)),
+            ),
+            if (record.expectedFileSize > 0)
+              Text(
+                '${(record.expectedFileSize / 1048576).toStringAsFixed(1)} MB',
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: Colors.white60),
+              ),
+            if (record.status == TaskStatus.running && live != null)
+              Text(
+                '${live.networkSpeedAsString}  •  ${live.timeRemainingAsString} مانده',
+                style: const TextStyle(color: Colors.white60),
+              ),
+          ],
+        ),
+        if (record.exception != null) ...[
+          const SizedBox(height: 5),
+          const Text(
+            'دانلود متوقف شد؛ اتصال، اعتبار لینک و فضای ذخیره‌سازی را بررسی کن.',
+            style: TextStyle(color: Colors.redAccent, fontSize: 12),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _downloadActions(TaskRecord record) {
+    final task = record.task;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        if (record.status == TaskStatus.running)
+          FilledButton.tonalIcon(
+            onPressed: () => _action(() => manager.pause(task)),
+            icon: const Icon(Icons.pause_rounded),
+            label: const Text('توقف'),
+          ),
+        if (record.status == TaskStatus.paused)
+          FilledButton.tonalIcon(
+            onPressed: () => _action(() => manager.resume(task)),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('ادامه'),
+          ),
+        if (const [
+          TaskStatus.failed,
+          TaskStatus.notFound,
+          TaskStatus.canceled,
+        ].contains(record.status))
+          FilledButton.tonalIcon(
+            onPressed: () => _action(() => manager.retry(task)),
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('تلاش مجدد'),
+          ),
+        if (!const [
+          TaskStatus.complete,
+          TaskStatus.failed,
+          TaskStatus.notFound,
+          TaskStatus.canceled,
+        ].contains(record.status))
+          IconButton.outlined(
+            tooltip: 'لغو دانلود',
+            onPressed: () => _action(() => manager.cancel(task)),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        if (record.status == TaskStatus.complete)
+          FilledButton.icon(
+            onPressed: () => _action(() async {
+              await _play(task);
+              return true;
+            }),
+            icon: const Icon(Icons.play_circle_rounded),
+            label: const Text('پخش'),
+          ),
+      ],
+    );
+  }
+
+  String _coverPath(Task task) {
+    try {
+      return (jsonDecode(task.metaData) as Map)['coverPath'] as String? ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Widget _cover(String path, double width, double height) => ClipRRect(
+    borderRadius: BorderRadius.circular(10),
+    child: Container(
+      width: width,
+      height: height,
+      color: Colors.white10,
+      child: path.isEmpty
+          ? const Icon(Icons.movie_outlined, color: Colors.white38)
+          : Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  const Icon(Icons.movie_outlined, color: Colors.white38),
+            ),
+    ),
+  );
+
+  Color _statusColor(TaskStatus status) => switch (status) {
+    TaskStatus.complete => Colors.greenAccent,
+    TaskStatus.failed || TaskStatus.notFound => Colors.redAccent,
+    TaskStatus.running => Colors.orangeAccent,
+    _ => Colors.white70,
+  };
+}
+
+class _SummaryData {
+  const _SummaryData(this.label, this.value, this.icon);
+  final String label;
+  final int value;
+  final IconData icon;
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.data});
+  final _SummaryData data;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: Colors.white10),
+    ),
+    child: Row(
+      children: [
+        CircleAvatar(
+          backgroundColor: Colors.deepOrange.withValues(alpha: .16),
+          foregroundColor: Colors.orangeAccent,
+          child: Icon(data.icon),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${data.value}',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              Text(
+                data.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _EmptyDownloads extends StatelessWidget {
+  const _EmptyDownloads();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.download_done_rounded,
+            size: 58,
+            color: Colors.white38,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'هنوز دانلودی نداری',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'از صفحهٔ قسمت‌ها، دانلود داخلی را انتخاب کن.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white60),
+          ),
+        ],
+      ),
     ),
   );
 }

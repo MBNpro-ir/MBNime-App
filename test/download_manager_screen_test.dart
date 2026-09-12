@@ -4,16 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mbnime/screens/download_manager_screen.dart';
 import 'package:mbnime/services/download_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   for (final size in [
     const Size(320, 568),
     const Size(390, 844),
     const Size(844, 390),
+    const Size(1440, 900),
   ]) {
     testWidgets('download controls and playback chooser fit $size', (
       tester,
     ) async {
+      SharedPreferences.setMockInitialValues({});
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);

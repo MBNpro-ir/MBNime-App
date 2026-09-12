@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../core/watch_progress.dart';
+import '../core/player_preferences.dart';
 import '../models/anime_content.dart';
 import '../services/external_apps.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/smart_cast_sheet.dart';
 import '../widgets/download_choice.dart';
+import '../widgets/default_preference_prompt.dart';
 import '../widgets/wireless_display_sheet.dart';
 
 /// Clean season/episode picker opened from «شروع تماشا».
@@ -64,7 +66,13 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
         if (saved != null) entries[episode.id] = saved;
       }
     }
-    if (mounted) setState(() => _saved.addAll(entries));
+    if (mounted) {
+      setState(() {
+        _saved
+          ..clear()
+          ..addAll(entries);
+      });
+    }
   }
 
   Future<void> _tapEpisode(AnimeEpisode episode) async {
@@ -102,62 +110,87 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   }
 
   Future<void> _showPlayback(AnimeEpisode episode) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(18),
-                child: Text(
-                  'کجا پخش شود؟',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+    final allowedPlayers = <String>{
+      PlaybackPreferenceStore.internalPlayer,
+      ExternalVideoPlayer.vlc.name,
+      if (Platform.isAndroid) ExternalVideoPlayer.mxPlayer.name,
+      if (Platform.isAndroid) ExternalVideoPlayer.mxPlayerPro.name,
+    };
+    String? choice = await PlaybackPreferenceStore.defaultPlayer();
+    var selectedManually = false;
+    if (!allowedPlayers.contains(choice)) {
+      if (!mounted) return;
+      choice =
+          await showModalBottomSheet<String>(
+            context: context,
+            builder: (context) => SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(18),
+                      child: Text(
+                        'کجا پخش شود؟',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.play_circle_fill),
+                      title: const Text('پلیر داخلی (پیشنهادی)'),
+                      onTap: () => Navigator.pop(context, 'internal'),
+                    ),
+                    ExpansionTile(
+                      leading: const Icon(Icons.open_in_new),
+                      title: const Text('پلیرهای خارجی'),
+                      children: [
+                        for (final player in ExternalVideoPlayer.values)
+                          if (Platform.isAndroid ||
+                              player == ExternalVideoPlayer.vlc)
+                            ListTile(
+                              title: Text(ExternalApps.playerName(player)),
+                              onTap: () => Navigator.pop(context, player.name),
+                            ),
+                      ],
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.cast),
+                      title: const Text('تلویزیون یا مانیتور بدون سیم'),
+                      onTap: () async {
+                        // Keep this menu underneath its child: Back pops one level.
+                        final destination = await showWirelessDisplaySheet(
+                          context,
+                          onCast: (initialDestination) => showSmartCastSheet(
+                            context,
+                            content: widget.content,
+                            episode: episode,
+                            initialDestination: initialDestination,
+                          ),
+                        );
+                        if (destination != null && context.mounted) {
+                          Navigator.pop(context, destination);
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.play_circle_fill),
-                title: const Text('پلیر داخلی (پیشنهادی)'),
-                onTap: () => Navigator.pop(context, 'internal'),
-              ),
-              ExpansionTile(
-                leading: const Icon(Icons.open_in_new),
-                title: const Text('پلیرهای خارجی'),
-                children: [
-                  for (final player in ExternalVideoPlayer.values)
-                    if (Platform.isAndroid || player == ExternalVideoPlayer.vlc)
-                      ListTile(
-                        title: Text(ExternalApps.playerName(player)),
-                        onTap: () => Navigator.pop(context, player.name),
-                      ),
-                ],
-              ),
-              ListTile(
-                leading: const Icon(Icons.cast),
-                title: const Text('تلویزیون یا مانیتور بدون سیم'),
-                onTap: () async {
-                  // Keep this menu underneath its child: Back pops one level.
-                  final destination = await showWirelessDisplaySheet(
-                    context,
-                    onCast: () => showSmartCastSheet(
-                      context,
-                      content: widget.content,
-                      episode: episode,
-                    ),
-                  );
-                  if (destination != null && context.mounted) {
-                    Navigator.pop(context, destination);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (choice == null || !mounted) return;
+            ),
+          ) ??
+          '';
+      selectedManually = choice.isNotEmpty;
+    }
+    if (!mounted || choice.isEmpty) return;
+    if (selectedManually && allowedPlayers.contains(choice)) {
+      final label = choice == PlaybackPreferenceStore.internalPlayer
+          ? 'پلیر داخلی'
+          : ExternalApps.playerName(ExternalVideoPlayer.values.byName(choice));
+      await maybeSuggestDefaultPlayer(context, value: choice, label: label);
+      if (!mounted) return;
+    }
     if (choice == 'internal') {
+      await _tapEpisode(episode);
+    } else if (choice == 'wireless') {
       await _tapEpisode(episode);
     } else if (choice != 'cast') {
       await _playExternal(episode, ExternalVideoPlayer.values.byName(choice));
@@ -299,7 +332,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                         ? 1
                         : (constraints.maxWidth / 260).floor().clamp(2, 5),
                     mainAxisExtent:
-                        225 +
+                        245 +
                         (MediaQuery.textScalerOf(context).scale(14) - 14) * 6,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
@@ -308,6 +341,8 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                     final episode = episodes[i];
                     final saved = _saved[episode.id];
                     final resumable = saved?.isResumable ?? false;
+                    final watched = saved?.watched ?? false;
+                    final almostWatched = saved?.almostWatched ?? false;
                     final ratio = (saved != null && saved.durationMs > 0)
                         ? (saved.positionMs / saved.durationMs).clamp(0.0, 1.0)
                         : null;
@@ -317,7 +352,12 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                         episode.fileType.toUpperCase(),
                     ].join(' · ');
                     return Material(
-                      color: AnimeColors.surface,
+                      key: Key('episode-card-${episode.id}'),
+                      color: watched
+                          ? AnimeColors.cyan.withValues(alpha: .12)
+                          : almostWatched
+                          ? const Color(0xFFFFD600).withValues(alpha: .12)
+                          : AnimeColors.surface,
                       borderRadius: BorderRadius.circular(18),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(18),
@@ -333,14 +373,26 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                                     width: 46,
                                     height: 46,
                                     decoration: BoxDecoration(
-                                      color: AnimeColors.orange.withValues(
-                                        alpha: .16,
-                                      ),
+                                      color:
+                                          (watched
+                                                  ? AnimeColors.cyan
+                                                  : almostWatched
+                                                  ? const Color(0xFFFFD600)
+                                                  : AnimeColors.orange)
+                                              .withValues(alpha: .16),
                                       borderRadius: BorderRadius.circular(15),
                                     ),
-                                    child: const Icon(
-                                      Icons.play_arrow_rounded,
-                                      color: AnimeColors.orange,
+                                    child: Icon(
+                                      watched
+                                          ? Icons.check_rounded
+                                          : almostWatched
+                                          ? Icons.timelapse_rounded
+                                          : Icons.play_arrow_rounded,
+                                      color: watched
+                                          ? AnimeColors.cyan
+                                          : almostWatched
+                                          ? const Color(0xFFFFD600)
+                                          : AnimeColors.orange,
                                       size: 26,
                                     ),
                                   ),
@@ -368,15 +420,42 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                                             ),
                                           ),
                                         ],
-                                        if (resumable) ...[
+                                        if (watched ||
+                                            almostWatched ||
+                                            resumable) ...[
                                           const SizedBox(height: 3),
-                                          Text(
-                                            'ادامه از ${_fmt(saved!.position)}',
-                                            style: const TextStyle(
-                                              color: AnimeColors.cyan,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              if (watched || almostWatched)
+                                                Text(
+                                                  watched
+                                                      ? 'تماشا کردی'
+                                                      : 'تقریباً تماشا کردی',
+                                                  style: TextStyle(
+                                                    color: watched
+                                                        ? AnimeColors.cyan
+                                                        : const Color(
+                                                            0xFFFFD600,
+                                                          ),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              if (resumable)
+                                                Text(
+                                                  'ادامه از ${_fmt(saved!.position)}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: AnimeColors.cyan,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
                                         ],
                                       ],
@@ -392,10 +471,13 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                                     value: ratio,
                                     minHeight: 4,
                                     backgroundColor: Colors.white10,
-                                    valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
-                                          AnimeColors.orange,
-                                        ),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      watched
+                                          ? AnimeColors.cyan
+                                          : almostWatched
+                                          ? const Color(0xFFFFD600)
+                                          : AnimeColors.orange,
+                                    ),
                                   ),
                                 ),
                               ],

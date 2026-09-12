@@ -29,6 +29,23 @@ class DeviceBridge {
       'failed';
   static Future<bool> requestInstallPermission() async =>
       await channel.invokeMethod<bool>('requestInstallPermission') == true;
+  static Future<double> mediaVolume() async =>
+      await channel.invokeMethod<double>('mediaVolume') ?? 1;
+  static Future<double> setMediaVolume(
+    double value, {
+    bool showUi = true,
+  }) async =>
+      await channel.invokeMethod<double>('setMediaVolume', {
+        'value': value.clamp(0, 1),
+        'showUi': showUi,
+      }) ??
+      value.clamp(0, 1);
+  static Future<double> screenBrightness() async =>
+      await channel.invokeMethod<double>('screenBrightness') ?? .5;
+  static Future<void> setScreenBrightness(double? value) =>
+      channel.invokeMethod<void>('setScreenBrightness', {
+        'value': value?.clamp(0, 1) ?? -1.0,
+      });
   static Future<void> openFolder(String path) async {
     if (Platform.isWindows) {
       await Directory(path).create(recursive: true);

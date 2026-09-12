@@ -15,6 +15,7 @@ import '../widgets/content_art.dart';
 import '../widgets/pressable.dart';
 import 'detail_screen.dart';
 import 'download_manager_screen.dart';
+import 'settings_screen.dart';
 import 'update_screen.dart';
 
 /// Opens a content item along with its source card's Hero [tag] so the
@@ -181,6 +182,7 @@ class _MainShellState extends State<MainShell> {
         search: _openSearch,
         history: _openHistory,
         downloads: () => _push(const DownloadManagerScreen()),
+        settings: () => _push(const SettingsScreen()),
         updates: () => _push(const UpdateScreen()),
         genres: () =>
             _push(_GroupsPage(api: widget.api, country: false, onOpen: _open)),
@@ -383,6 +385,7 @@ class _MenuDrawer extends StatelessWidget {
     required this.countries,
     required this.logout,
     required this.downloads,
+    required this.settings,
     required this.updates,
   });
   final String email;
@@ -394,6 +397,7 @@ class _MenuDrawer extends StatelessWidget {
   final VoidCallback countries;
   final VoidCallback logout;
   final VoidCallback downloads;
+  final VoidCallback settings;
   final VoidCallback updates;
 
   @override
@@ -413,9 +417,11 @@ class _MenuDrawer extends StatelessWidget {
             style: const TextStyle(color: AnimeColors.muted),
           ),
           const SizedBox(height: 18),
+          _label('جست‌وجو و مرور'),
           _tile(Icons.manage_search_rounded, 'جست‌وجوی پیشرفته', search),
           _tile(Icons.theater_comedy_rounded, 'دسته‌بندی فیلم‌ها', genres),
           const Divider(height: 24),
+          _label('کتابخانه'),
           _tile(Icons.home_rounded, 'صفحه اصلی', () => select(0), index: 0),
           _tile(Icons.history_rounded, 'بازدیدشده‌ها', history),
           _tile(Icons.movie_rounded, 'فیلم‌ها', () => select(1), index: 1),
@@ -432,12 +438,42 @@ class _MenuDrawer extends StatelessWidget {
             index: 3,
           ),
           _tile(Icons.flag_rounded, 'کشورها', countries),
-          _tile(
-            Icons.download_for_offline_rounded,
-            'مدیریت دانلود ها',
-            downloads,
+          const SizedBox(height: 16),
+          _label('ابزارهای برنامه'),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AnimeColors.orange.withValues(alpha: .07),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: AnimeColors.orange.withValues(alpha: .22),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  children: [
+                    _tile(
+                      Icons.download_for_offline_rounded,
+                      'مدیریت دانلودها',
+                      downloads,
+                      tool: true,
+                    ),
+                    _toolDivider(),
+                    _tile(Icons.tune_rounded, 'تنظیمات', settings, tool: true),
+                    _toolDivider(),
+                    _tile(
+                      Icons.system_update_alt_rounded,
+                      'به‌روزرسانی برنامه',
+                      updates,
+                      tool: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          _tile(Icons.system_update_alt_rounded, 'بروزرسانی برنامه', updates),
           const Divider(height: 24),
           _tile(Icons.logout_rounded, 'خروج از حساب کاربری', logout),
         ],
@@ -445,23 +481,48 @@ class _MenuDrawer extends StatelessWidget {
     ),
   );
 
-  Widget _tile(IconData icon, String label, VoidCallback tap, {int? index}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: ListTile(
-          selected: index == selected,
-          selectedTileColor: AnimeColors.orange.withValues(alpha: .14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          leading: Icon(
-            icon,
-            color: index == selected ? AnimeColors.orange : AnimeColors.muted,
-          ),
-          title: Text(label),
-          onTap: tap,
-        ),
-      );
+  Widget _label(String label) => Padding(
+    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 14, 8),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: AnimeColors.muted,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  Widget _toolDivider() => Divider(
+    height: 1,
+    indent: 16,
+    endIndent: 16,
+    color: AnimeColors.orange.withValues(alpha: .14),
+  );
+
+  Widget _tile(
+    IconData icon,
+    String label,
+    VoidCallback tap, {
+    int? index,
+    bool tool = false,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: ListTile(
+      selected: index == selected,
+      selectedTileColor: AnimeColors.orange.withValues(alpha: .14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      leading: Icon(
+        icon,
+        color: index == selected || tool
+            ? AnimeColors.orange
+            : AnimeColors.muted,
+      ),
+      title: Text(label),
+      trailing: tool ? const Icon(Icons.chevron_left_rounded, size: 20) : null,
+      onTap: tap,
+    ),
+  );
 }
 
 class _HomePage extends StatefulWidget {

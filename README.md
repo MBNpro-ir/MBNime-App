@@ -30,7 +30,7 @@ login-code generator or signing keys are included. Account access and content
 availability depend on the upstream service. Only access content you are
 authorized to view/download.
 
-See [Persian release guide](docs/RELEASES_FA.md) and [release notes](changelogs/1.3.0.fa.md).
+See [Persian release guide](docs/RELEASES_FA.md) and [release notes](changelogs/1.4.0.fa.md).
 Official packages: [GitHub Releases](https://github.com/MBNpro-ir/MBNime-App/releases).
 
 `tools/Test-WindowsUpdater.ps1` tests replacement, rollback, relaunch and rejection

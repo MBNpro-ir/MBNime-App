@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../models/anime_content.dart';
+import 'default_preference_prompt.dart';
 
 enum TvDestination { googleCast, dlna, lgWebOs, airPlay, fireTv, rokuXbox }
 
@@ -47,12 +48,17 @@ Future<bool?> showSmartCastSheet(
   BuildContext context, {
   required AnimeContent content,
   required AnimeEpisode episode,
+  String? initialDestination,
 }) => showModalBottomSheet<bool>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: AnimeColors.surface,
-  builder: (_) => _SmartCastSheet(content: content, episode: episode),
+  builder: (_) => _SmartCastSheet(
+    content: content,
+    episode: episode,
+    initialDestination: initialDestination,
+  ),
 );
 
 class SmartCastController {
@@ -120,9 +126,14 @@ class SmartCastController {
 }
 
 class _SmartCastSheet extends StatefulWidget {
-  const _SmartCastSheet({required this.content, required this.episode});
+  const _SmartCastSheet({
+    required this.content,
+    required this.episode,
+    this.initialDestination,
+  });
   final AnimeContent content;
   final AnimeEpisode episode;
+  final String? initialDestination;
 
   @override
   State<_SmartCastSheet> createState() => _SmartCastSheetState();
@@ -136,8 +147,29 @@ class _SmartCastSheetState extends State<_SmartCastSheet> {
   String? _connectingId;
   Object? _error;
 
-  void _selectDestination(TvDestination destination) {
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialDestination;
+    if (initial != null) {
+      for (final destination in TvDestination.values) {
+        if (destination.name == initial) {
+          _destination = destination;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+          break;
+        }
+      }
+    }
+  }
+
+  Future<void> _selectDestination(TvDestination destination) async {
     setState(() => _destination = destination);
+    await maybeSuggestDefaultStreamer(
+      context,
+      value: destination.name,
+      label: destination.title,
+    );
+    if (!mounted) return;
     _scan();
   }
 

@@ -19,6 +19,38 @@ class _ReloadApi extends AnimeOnApi {
 }
 
 void main() {
+  testWidgets('drawer tool group paints ListTile ink above its decoration', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _ReloadApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MainShell(
+          email: 'test@example.com',
+          onLogout: () async {},
+          api: api,
+        ),
+      ),
+    );
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.scrollUntilVisible(
+      find.text('ابزارهای برنامه'),
+      180,
+      scrollable: find.descendant(
+        of: find.byType(Drawer),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.text('ابزارهای برنامه'), findsOneWidget);
+    expect(find.text('مدیریت دانلودها'), findsOneWidget);
+    expect(find.text('تنظیمات'), findsOneWidget);
+    expect(find.text('به‌روزرسانی برنامه'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('home retry handles consecutive failures and then recovers', (
     tester,
   ) async {
