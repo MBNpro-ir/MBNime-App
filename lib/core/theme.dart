@@ -18,6 +18,19 @@ abstract final class AnimeTheme {
     brightness: Brightness.dark,
     fontFamily: 'Vazirmatn',
     scaffoldBackgroundColor: AnimeColors.background,
+    sliderTheme: SliderThemeData(
+      // Flutter 3.44 still defaults to the legacy M3 slider. Explicit opt-in
+      // follows Flutter's updated-material-3-slider migration guide.
+      // ignore: deprecated_member_use
+      year2023: false,
+      trackHeight: 10,
+      trackGap: 6,
+      thumbSize: const WidgetStatePropertyAll(Size(4, 36)),
+      activeTrackColor: AnimeColors.orange,
+      secondaryActiveTrackColor: AnimeColors.orange.withValues(alpha: .35),
+      inactiveTrackColor: Colors.white12,
+      showValueIndicator: ShowValueIndicator.onDrag,
+    ),
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         // Android 14+ drives this transition directly from the edge-swipe

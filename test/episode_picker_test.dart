@@ -97,6 +97,26 @@ void main() {
       expect(find.text('پلیر داخلی (پیشنهادی)'), findsOneWidget);
       expect(find.text('پلیرهای خارجی'), findsOneWidget);
       expect(find.text('تلویزیون یا مانیتور بدون سیم'), findsOneWidget);
+      expect(find.text('بازگشت'), findsNothing);
+      await tester.tap(find.text('تلویزیون یا مانیتور بدون سیم'));
+      await tester.pumpAndSettle();
+      expect(find.text('پخش مستقیم روی تلویزیون'), findsOneWidget);
+      expect(find.text('بازگشت').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('پخش مستقیم روی تلویزیون'));
+      await tester.pumpAndSettle();
+      expect(find.text('نوع تلویزیون را انتخاب کن'), findsOneWidget);
+      await tester.tap(find.text('بازگشت').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.text('نوع تلویزیون را انتخاب کن'), findsNothing);
+      expect(
+        find.text('پخش مستقیم روی تلویزیون').hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('بازگشت').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.text('پخش مستقیم روی تلویزیون'), findsNothing);
+      expect(find.text('کجا پخش شود؟'), findsOneWidget);
+      expect(find.text('بازگشت'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }

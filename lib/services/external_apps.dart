@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'device_bridge.dart';
 
 enum ExternalVideoPlayer { vlc, mxPlayer, mxPlayerPro }
 
@@ -88,6 +89,31 @@ class ExternalApps {
       }
     }
     return ExternalLaunchResult.unsupported;
+  }
+
+  static Future<ExternalLaunchResult> playLocalVideo({
+    required ExternalVideoPlayer player,
+    required String path,
+    required String title,
+  }) async {
+    if (!await File(path).exists()) return ExternalLaunchResult.unavailable;
+    if (Platform.isAndroid) {
+      try {
+        final result = await DeviceBridge.channel.invokeMethod<String>(
+          'playLocalVideo',
+          {'path': path, 'player': player.name, 'title': title},
+        );
+        return result == 'launched'
+            ? ExternalLaunchResult.launched
+            : result == 'missing'
+            ? ExternalLaunchResult.missing
+            : ExternalLaunchResult.failed;
+      } catch (_) {
+        return ExternalLaunchResult.failed;
+      }
+    }
+    // Launch VLC directly with an argument list, never cmd/start or a shell.
+    return playVideo(player: player, url: path, title: title);
   }
 
   static Future<ExternalLaunchResult> downloadOne({

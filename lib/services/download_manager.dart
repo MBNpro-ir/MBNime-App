@@ -145,12 +145,10 @@ class DownloadManager extends ChangeNotifier {
       await downloader.permissions.request(PermissionType.notifications);
     }
     final root = await rootDirectory();
-    final directory = p.join(
+    final directory = p.joinAll([
       root,
-      safeDownloadComponent(content.kindLabel),
-      '${safeDownloadComponent(content.title)} (${content.year})',
-      safeDownloadComponent(season.name),
-    );
+      ...downloadFolderParts(content, season),
+    ]);
     await Directory(directory).create(recursive: true);
     final cover = await _cacheCover(content);
     var count = 0;
@@ -193,6 +191,8 @@ class DownloadManager extends ChangeNotifier {
           'title': content.title,
           'season': season.name,
           'episode': episode.name,
+          'contentId': content.id,
+          'episodeId': episode.id,
         }),
       );
       records[task.taskId] = TaskRecord(task, TaskStatus.enqueued, 0, -1);

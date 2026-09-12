@@ -24,6 +24,8 @@ import '../services/picture_in_picture.dart';
 import '../widgets/content_art.dart';
 import '../widgets/download_choice.dart';
 import '../widgets/player_keyboard.dart';
+import '../widgets/player_timeline.dart';
+import '../widgets/audio_source_actions.dart';
 import 'episode_picker_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -1689,16 +1691,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _seekBy(int seconds) {
-    final target = _position + Duration(seconds: seconds);
     _player.seek(
-      Duration(
-        milliseconds: target.inMilliseconds.clamp(
-          0,
-          _duration.inMilliseconds > 0
-              ? _duration.inMilliseconds
-              : target.inMilliseconds.abs(),
-        ),
-      ),
+      playerSeekTarget(_player.state.position, _player.state.duration, seconds),
     );
     _showControls();
   }
@@ -1823,10 +1817,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Expanded(
                   child: TabBarView(
                     children: [
-                      _AudioTracks(
-                        player: _player,
-                        tracks: _tracks.audio,
-                        selected: _track.audio,
+                      Column(
+                        children: [
+                          Expanded(
+                            child: _AudioTracks(
+                              player: _player,
+                              tracks: _tracks.audio,
+                              selected: _track.audio,
+                            ),
+                          ),
+                          AudioSourceActions(
+                            onSelected: (track) async {
+                              await _player.setAudioTrack(track);
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                          ),
+                        ],
                       ),
                       Column(
                         children: [
@@ -2202,15 +2208,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           ),
                           Center(
                             child: Row(
+                              textDirection: TextDirection.ltr,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 _HeroControl(
                                   icon: Icons.replay_10_rounded,
                                   tooltip: '۱۰ ثانیه عقب (←)',
                                   onTap: () => _seekBy(-10),
-                                  size: 48,
+                                  size: 32,
                                 ),
-                                const SizedBox(width: 34),
+                                const SizedBox(width: 16),
                                 _HeroControl(
                                   icon: _playing
                                       ? Icons.pause_rounded
@@ -2219,15 +2226,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       ? 'توقف (Space)'
                                       : 'پخش (Space)',
                                   onTap: _toggle,
-                                  size: 74,
+                                  size: 52,
                                   primary: true,
                                 ),
-                                const SizedBox(width: 34),
+                                const SizedBox(width: 16),
                                 _HeroControl(
                                   icon: Icons.forward_10_rounded,
                                   tooltip: '۱۰ ثانیه جلو (→)',
                                   onTap: () => _seekBy(10),
-                                  size: 48,
+                                  size: 32,
                                 ),
                               ],
                             ),
@@ -2239,8 +2246,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             child: Column(
                               children: [
                                 _SeekBar(player: _player),
-                                Row(
+                                Wrap(
                                   textDirection: TextDirection.ltr,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  alignment: WrapAlignment.center,
+                                  runSpacing: 8,
                                   children: [
                                     _BareControl(
                                       onTap: _toggleMute,
@@ -2261,7 +2271,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                           onChanged: _setVolume,
                                         ),
                                       ),
-                                    const Spacer(),
+                                    const SizedBox(width: 12),
                                     _PlayerToolControl(
                                       icon: Icons.speed_rounded,
                                       label: _rate == 1
@@ -2335,13 +2345,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   );
 }
 
-String _formatTime(Duration value) {
-  final hours = value.inHours;
-  final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-  final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
-}
-
 /// Seek bar isolated from the player page: it listens to the position
 /// stream itself, so playback ticks rebuild only this small row instead
 /// of the whole player (this is what made every button feel laggy).
@@ -2354,9 +2357,6 @@ class _SeekBar extends StatefulWidget {
 }
 
 class _SeekBarState extends State<_SeekBar> {
-  bool _seeking = false;
-  double _dragValue = 0;
-
   @override
   Widget build(BuildContext context) => StreamBuilder<Duration>(
     stream: widget.player.stream.position,
@@ -2365,50 +2365,11 @@ class _SeekBarState extends State<_SeekBar> {
       final position = snapshot.data ?? Duration.zero;
       final duration = widget.player.state.duration;
       final buffer = widget.player.state.buffer;
-      // Excluded from semantics on purpose: the time labels and slider
-      // value change every playback tick, which made the accessibility
-      // bridge re-emit the whole semantics tree each second (log spam
-      // plus wasted main-thread work). All player actions stay accessible.
-      return ExcludeSemantics(
-        child: Row(
-          children: [
-            Text(_formatTime(position), textDirection: TextDirection.ltr),
-            Expanded(
-              child: Slider(
-                // While dragging, show the finger value so playback ticks
-                // can't fight the gesture.
-                value: _seeking
-                    ? _dragValue
-                    : duration.inMilliseconds == 0
-                    ? 0
-                    : (position.inMilliseconds / duration.inMilliseconds).clamp(
-                        0,
-                        1,
-                      ),
-                secondaryTrackValue: duration.inMilliseconds == 0
-                    ? 0
-                    : (buffer.inMilliseconds / duration.inMilliseconds).clamp(
-                        0,
-                        1,
-                      ),
-                onChangeStart: (value) => setState(() {
-                  _seeking = true;
-                  _dragValue = value;
-                }),
-                onChanged: (value) => setState(() => _dragValue = value),
-                onChangeEnd: (value) {
-                  setState(() => _seeking = false);
-                  widget.player.seek(
-                    Duration(
-                      milliseconds: (duration.inMilliseconds * value).round(),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Text(_formatTime(duration), textDirection: TextDirection.ltr),
-          ],
-        ),
+      return PlayerTimeline(
+        position: position,
+        duration: duration,
+        buffer: buffer,
+        onSeek: (target) => widget.player.seek(target),
       );
     },
   );
@@ -2427,8 +2388,8 @@ class _RoundControl extends StatelessWidget {
   Widget build(BuildContext context) => _InstantPlayerTap(
     onTap: onTap,
     tooltip: tooltip,
-    decoration: const BoxDecoration(
-      shape: BoxShape.circle,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
       color: Color(0xCC252A35),
     ),
     padding: const EdgeInsets.all(11),
@@ -2492,7 +2453,7 @@ class _HeroControl extends StatelessWidget {
     onTap: onTap,
     tooltip: tooltip,
     decoration: BoxDecoration(
-      shape: BoxShape.circle,
+      borderRadius: BorderRadius.circular(primary ? 28 : 20),
       color: primary ? AnimeColors.orange : Colors.black54,
       border: Border.all(color: Colors.white24),
     ),

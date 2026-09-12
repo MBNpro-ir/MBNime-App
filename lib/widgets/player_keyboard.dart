@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+Duration playerSeekTarget(Duration position, Duration duration, int seconds) {
+  final target = position.inMilliseconds + seconds * 1000;
+  return Duration(
+    milliseconds: target.clamp(
+      0,
+      duration.inMilliseconds > 0 ? duration.inMilliseconds : target.abs(),
+    ),
+  );
+}
+
 enum PlayerCommand {
   toggle,
   back,
@@ -107,11 +117,11 @@ class _PlayerKeyScopeState extends State<_PlayerKeyScope> {
         HardwareKeyboard.instance.isMetaPressed) {
       return KeyEventResult.ignored;
     }
-    final command = switch (event.logicalKey) {
-      LogicalKeyboardKey.arrowRight => PlayerCommand.forward,
-      LogicalKeyboardKey.arrowLeft => PlayerCommand.back,
-      LogicalKeyboardKey.arrowUp => PlayerCommand.volumeUp,
-      LogicalKeyboardKey.arrowDown => PlayerCommand.volumeDown,
+    final command = switch (event.physicalKey) {
+      PhysicalKeyboardKey.arrowRight => PlayerCommand.forward,
+      PhysicalKeyboardKey.arrowLeft => PlayerCommand.back,
+      PhysicalKeyboardKey.arrowUp => PlayerCommand.volumeUp,
+      PhysicalKeyboardKey.arrowDown => PlayerCommand.volumeDown,
       _ => null,
     };
     if (command == null) return KeyEventResult.ignored;

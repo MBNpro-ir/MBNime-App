@@ -3,6 +3,44 @@ import 'package:mbnime/core/download_paths.dart';
 import 'package:mbnime/models/anime_content.dart';
 
 void main() {
+  test(
+    'all new folder components are ASCII and preserve quality identities',
+    () {
+      const content = AnimeContent(
+        id: '42',
+        title: 'عنوان فارسی',
+        alternateTitles: ['English Title'],
+        subtitle: '',
+        description: '',
+        year: 2026,
+        rating: 0,
+        kind: ContentKind.series,
+        colors: [],
+        genres: [],
+      );
+      const first = AnimeSeason(
+        id: '720',
+        name: 'فصل ۱ زیرنویس 720p',
+        episodes: [],
+      );
+      const second = AnimeSeason(
+        id: '1080',
+        name: 'فصل ۱ زیرنویس 1080p',
+        episodes: [],
+      );
+      final parts = downloadFolderParts(content, first);
+      expect(parts.first, 'Series');
+      expect(parts[1], startsWith('English Title (2026)'));
+      expect(parts.last, contains('720p'));
+      expect(parts.last, isNot(downloadFolderParts(content, second).last));
+      for (final part in parts) {
+        expect(RegExp(r'^[\x20-\x7e]+$').hasMatch(part), isTrue);
+        expect(part.contains('/'), isFalse);
+      }
+      expect(englishDownloadFolder('فارسی', 'Title'), 'Title');
+      expect(englishDownloadFolder('۱۲۳', 'Season'), '123');
+    },
+  );
   test('safe Persian paths, no traversal or reserved Windows filenames', () {
     expect(safeDownloadComponent('فصل اول'), 'فصل اول');
     for (final text in ['..', '', 'CON', 'NUL.txt', 'a/b:c*?', 'name. ']) {

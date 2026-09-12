@@ -43,11 +43,11 @@ extension TvDestinationInfo on TvDestination {
   };
 }
 
-Future<void> showSmartCastSheet(
+Future<bool?> showSmartCastSheet(
   BuildContext context, {
   required AnimeContent content,
   required AnimeEpisode episode,
-}) => showModalBottomSheet<void>(
+}) => showModalBottomSheet<bool>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
@@ -195,7 +195,7 @@ class _SmartCastSheetState extends State<_SmartCastSheet> {
         episode: widget.episode,
       );
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       messenger.showSnackBar(
         SnackBar(content: Text('پخش روی ${device.name} شروع شد.')),
       );

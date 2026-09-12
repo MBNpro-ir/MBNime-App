@@ -62,6 +62,27 @@ class DeviceBridge(private val activity: FlutterActivity) {
                     result.success(opened)
                 }
                 "installApk" -> result.success(installApk(call.argument<String>("path") ?: ""))
+                "playLocalVideo" -> {
+                    val file = File(call.argument<String>("path") ?: "").canonicalFile
+                    val root = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MBNime").canonicalFile
+                    require(file.isFile && file.path.startsWith(root.path + File.separator))
+                    val target = when (call.argument<String>("player")) {
+                        "vlc" -> "org.videolan.vlc"
+                        "mxPlayer" -> "com.mxtech.videoplayer.ad"
+                        "mxPlayerPro" -> "com.mxtech.videoplayer.pro"
+                        else -> throw IllegalArgumentException("Unknown player")
+                    }
+                    val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "video/*")
+                        setPackage(target)
+                        clipData = android.content.ClipData.newRawUri("video", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        putExtra("title", call.argument<String>("title"))
+                    }
+                    try { activity.startActivity(intent); result.success("launched") }
+                    catch (_: android.content.ActivityNotFoundException) { result.success("missing") }
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) { result.error("DEVICE", e.javaClass.simpleName, null) }

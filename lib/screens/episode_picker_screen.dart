@@ -121,14 +121,6 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                 title: const Text('پلیر داخلی (پیشنهادی)'),
                 onTap: () => Navigator.pop(context, 'internal'),
               ),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const BackButtonIcon(),
-                  label: const Text('بازگشت'),
-                ),
-              ),
               ExpansionTile(
                 leading: const Icon(Icons.open_in_new),
                 title: const Text('پلیرهای خارجی'),
@@ -144,7 +136,20 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
               ListTile(
                 leading: const Icon(Icons.cast),
                 title: const Text('تلویزیون یا مانیتور بدون سیم'),
-                onTap: () => Navigator.pop(context, 'remote'),
+                onTap: () async {
+                  // Keep this menu underneath its child: Back pops one level.
+                  final destination = await showWirelessDisplaySheet(
+                    context,
+                    onCast: () => showSmartCastSheet(
+                      context,
+                      content: widget.content,
+                      episode: episode,
+                    ),
+                  );
+                  if (destination != null && context.mounted) {
+                    Navigator.pop(context, destination);
+                  }
+                },
               ),
             ],
           ),
@@ -154,17 +159,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     if (choice == null || !mounted) return;
     if (choice == 'internal') {
       await _tapEpisode(episode);
-    } else if (choice == 'remote') {
-      await showWirelessDisplaySheet(
-        context,
-        onCast: () => showSmartCastSheet(
-          context,
-          content: widget.content,
-          episode: episode,
-        ),
-        onPlay: () => _tapEpisode(episode),
-      );
-    } else {
+    } else if (choice != 'cast') {
       await _playExternal(episode, ExternalVideoPlayer.values.byName(choice));
     }
   }

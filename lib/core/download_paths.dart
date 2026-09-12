@@ -2,6 +2,40 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import '../models/anime_content.dart';
 
+/// ASCII-only folder names; untranslated names get a stable unique fallback.
+String englishDownloadFolder(String input, String fallback) {
+  var text = input;
+  const digits = '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩';
+  for (var i = 0; i < digits.length; i++) {
+    text = text.replaceAll(digits[i], '${i % 10}');
+  }
+  text = text
+      .replaceAll(RegExp(r'[^A-Za-z0-9 ._-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (!RegExp(r'[A-Za-z0-9]').hasMatch(text)) text = fallback;
+  return safeDownloadComponent(text);
+}
+
+List<String> downloadFolderParts(AnimeContent content, AnimeSeason season) {
+  final titles = [content.title, ...content.alternateTitles];
+  final title = titles.firstWhere(
+    (value) =>
+        RegExp(r'^[\x20-\x7e]+$').hasMatch(value) &&
+        RegExp(r'[A-Za-z]').hasMatch(value),
+    orElse: () => 'Title',
+  );
+  return [
+    switch (content.kind) {
+      ContentKind.movie => 'Movies',
+      ContentKind.series => 'Series',
+      ContentKind.anime => 'Anime',
+    },
+    '${englishDownloadFolder(title, 'Title')} (${content.year})-${downloadIdentity(content.id, '', '').substring(0, 8)}',
+    'Season-${englishDownloadFolder(season.name, 'Unknown')}-${downloadIdentity(content.id, season.id, '').substring(0, 8)}',
+  ];
+}
+
 String safeDownloadComponent(String input) {
   var value = input
       .replaceAll(RegExp(r'[\x00-\x1f\\/:*?"<>|]'), '-')
