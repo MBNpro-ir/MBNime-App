@@ -1,0 +1,133 @@
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+
+import 'theme.dart';
+
+/// True on desktop window builds (custom title bar, no bottom nav).
+bool get isDesktopWindow => Platform.isWindows;
+
+/// When true (desktop), the custom window title bar is hidden — used for
+/// distraction-free fullscreen video. Only the player toggles this.
+final hideWindowChrome = ValueNotifier<bool>(false);
+
+/// Bottom breathing room: lists reserve space for the mobile nav bar,
+/// which is hidden on desktop.
+double get bottomListGap => isDesktopWindow ? 28 : 110;
+
+/// Shared route for inner pages. Android deliberately uses a Material route so
+/// its predictive-back transition can follow the system edge-swipe in real
+/// time; desktop keeps the custom slide/fade transition.
+PageRoute<void> slideUpRoute(Widget page, {int durationMs = 380}) {
+  if (Platform.isAndroid) {
+    return _MbnimeAndroidPageRoute(page: page, durationMs: durationMs);
+  }
+  return PageRouteBuilder<void>(
+    transitionDuration: Duration(milliseconds: durationMs),
+    reverseTransitionDuration: const Duration(milliseconds: 260),
+    pageBuilder: (_, _, _) => page,
+    transitionsBuilder: (_, animation, _, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0, .1),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+class _MbnimeAndroidPageRoute extends MaterialPageRoute<void> {
+  _MbnimeAndroidPageRoute({required Widget page, required this.durationMs})
+    : super(builder: (_) => page);
+
+  final int durationMs;
+
+  @override
+  Duration get transitionDuration => Duration(milliseconds: durationMs);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 320);
+}
+
+/// Desktop-only large modal host: centered and only closable via in-page
+/// navigation (outside taps do nothing).
+Future<T?> showDesktopPopup<T>(BuildContext context, Widget child) {
+  final size = MediaQuery.sizeOf(context);
+  return Navigator.of(context).push<T>(
+    PageRouteBuilder<T>(
+      opaque: false,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: .72),
+      transitionDuration: const Duration(milliseconds: 260),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, _, _) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        backgroundColor: AnimeColors.background,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 1200,
+            maxHeight: size.height * .96,
+            minWidth: math.min(720.0, size.width * .9),
+          ),
+          child: SizedBox(
+            width: math.min(1200.0, size.width * .96),
+            height: size.height * .96,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: ScaffoldMessenger(child: child),
+            ),
+          ),
+        ),
+      ),
+      transitionsBuilder: (_, animation, _, routeChild) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInOutCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .965, end: 1).animate(curved),
+            child: routeChild,
+          ),
+        );
+      },
+    ),
+  );
+}
+
+/// A center-arc flight feels natural when a poster moves into the portrait
+/// summary slot and follows the same path in reverse when the page closes.
+RectTween smoothHeroRectTween(Rect? begin, Rect? end) =>
+    MaterialRectCenterArcTween(begin: begin, end: end);
+
+/// Always paints the detail-side artwork during a Hero flight. The catalog
+/// card also contains labels and badges; letting Flutter switch between those
+/// two different trees mid-flight causes a visible image/text flash.
+Widget portraitHeroFlightShuttle(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection direction,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final detailHero =
+      (direction == HeroFlightDirection.push
+              ? toHeroContext.widget
+              : fromHeroContext.widget)
+          as Hero;
+  return Material(type: MaterialType.transparency, child: detailHero.child);
+}
