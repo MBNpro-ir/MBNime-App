@@ -1,11 +1,11 @@
-name: Build and release
+name: Build MBNime release
 run-name: Release ${{ inputs.release_tag }} from master
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Release tag matching the version in pubspec.yaml
+        description: Stable release tag matching pubspec.yaml and Persian changelog
         required: true
         default: v1.1.0
         type: string

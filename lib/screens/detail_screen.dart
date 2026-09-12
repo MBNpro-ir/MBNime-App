@@ -2128,6 +2128,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               children: [
                                 _RoundControl(
                                   icon: Icons.arrow_forward_rounded,
+                                  tooltip: 'بازگشت',
                                   onTap: () => Navigator.pop(context),
                                 ),
                                 const SizedBox(width: 14),
@@ -2158,6 +2159,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   icon: _fitCover
                                       ? Icons.fit_screen_rounded
                                       : Icons.aspect_ratio_rounded,
+                                  tooltip: 'اندازهٔ تصویر (V)',
                                   onTap: () =>
                                       setState(() => _fitCover = !_fitCover),
                                 ),
@@ -2167,7 +2169,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     icon: _isFullScreen
                                         ? Icons.fullscreen_exit_rounded
                                         : Icons.fullscreen_rounded,
+                                    tooltip: 'تمام‌صفحه (F)',
                                     onTap: _toggleFullscreen,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _RoundControl(
+                                    icon: Icons.keyboard_rounded,
+                                    tooltip: 'راهنمای کیبورد (F1)',
+                                    onTap: () =>
+                                        _keyboardCommand(PlayerCommand.help),
                                   ),
                                 ],
                                 if (!isDesktopWindow) ...[
@@ -2176,12 +2186,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     _RoundControl(
                                       icon:
                                           Icons.picture_in_picture_alt_rounded,
+                                      tooltip: 'تصویر در تصویر',
                                       onTap: _enterPictureInPicture,
                                     ),
                                     const SizedBox(width: 8),
                                   ],
                                   _RoundControl(
                                     icon: Icons.lock_outline_rounded,
+                                    tooltip: 'قفل لمس',
                                     onTap: _lockTouch,
                                   ),
                                 ],
@@ -2194,6 +2206,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               children: [
                                 _HeroControl(
                                   icon: Icons.replay_10_rounded,
+                                  tooltip: '۱۰ ثانیه عقب (←)',
                                   onTap: () => _seekBy(-10),
                                   size: 48,
                                 ),
@@ -2202,6 +2215,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   icon: _playing
                                       ? Icons.pause_rounded
                                       : Icons.play_arrow_rounded,
+                                  tooltip: _playing
+                                      ? 'توقف (Space)'
+                                      : 'پخش (Space)',
                                   onTap: _toggle,
                                   size: 74,
                                   primary: true,
@@ -2209,6 +2225,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 const SizedBox(width: 34),
                                 _HeroControl(
                                   icon: Icons.forward_10_rounded,
+                                  tooltip: '۱۰ ثانیه جلو (→)',
                                   onTap: () => _seekBy(10),
                                   size: 48,
                                 ),
@@ -2398,12 +2415,18 @@ class _SeekBarState extends State<_SeekBar> {
 }
 
 class _RoundControl extends StatelessWidget {
-  const _RoundControl({required this.icon, required this.onTap});
+  const _RoundControl({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
   final IconData icon;
   final VoidCallback onTap;
+  final String tooltip;
   @override
   Widget build(BuildContext context) => _InstantPlayerTap(
     onTap: onTap,
+    tooltip: tooltip,
     decoration: const BoxDecoration(
       shape: BoxShape.circle,
       color: Color(0xCC252A35),
@@ -2456,15 +2479,18 @@ class _HeroControl extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.size,
+    required this.tooltip,
     this.primary = false,
   });
   final IconData icon;
   final VoidCallback onTap;
   final double size;
   final bool primary;
+  final String tooltip;
   @override
   Widget build(BuildContext context) => _InstantPlayerTap(
     onTap: onTap,
+    tooltip: tooltip,
     decoration: BoxDecoration(
       shape: BoxShape.circle,
       color: primary ? AnimeColors.orange : Colors.black54,
