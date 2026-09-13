@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:animations/animations.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -314,28 +315,6 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Future<void> _openPicker(AnimeContent item) async {
-    if (isDesktopWindow) {
-      await showDesktopPopup<void>(
-        context,
-        EpisodePickerScreen(
-          content: item,
-          onPlay: (episode, startAt) => _play(item, episode, startAt: startAt),
-        ),
-      );
-      return;
-    }
-    await Navigator.of(context).push(
-      slideUpRoute(
-        EpisodePickerScreen(
-          content: item,
-          onPlay: (episode, startAt) => _play(item, episode, startAt: startAt),
-        ),
-        durationMs: 520,
-      ),
-    );
-  }
-
   Future<void> _openRelated(AnimeContent item) async {
     final tag = 'related-${widget.content.id}-${item.id}';
     await Navigator.of(context).push(
@@ -479,7 +458,11 @@ class _DetailScreenState extends State<DetailScreen> {
                     portraitImageUrl: widget.content.imageUrl ?? item.imageUrl,
                     loading: loading,
                     hasPlayable: hasPlayable,
-                    onPlay: () => _openPicker(item),
+                    pickerBuilder: (_) => EpisodePickerScreen(
+                      content: item,
+                      onPlay: (episode, startAt) =>
+                          _play(item, episode, startAt: startAt),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   _DetailSectionTabs(
@@ -592,7 +575,7 @@ class _DetailSummaryCard extends StatelessWidget {
     required this.portraitImageUrl,
     required this.loading,
     required this.hasPlayable,
-    required this.onPlay,
+    required this.pickerBuilder,
   });
 
   final AnimeContent item;
@@ -600,10 +583,150 @@ class _DetailSummaryCard extends StatelessWidget {
   final String? portraitImageUrl;
   final bool loading;
   final bool hasPlayable;
-  final VoidCallback onPlay;
+  final WidgetBuilder pickerBuilder;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
+  Widget build(BuildContext context) =>
+      isDesktopWindow ? _desktopCard(context) : _mobileCard(context);
+
+  Widget _desktopCard(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: AnimeColors.surface,
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: Colors.white10),
+      boxShadow: const [
+        BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0, 8)),
+      ],
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 124, height: 176, child: _portraitArt()),
+          const SizedBox(width: 20),
+          Expanded(
+            child: SizedBox(
+              height: 176,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AnimeColors.muted),
+                  ),
+                  const Spacer(),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _metadata(includeRuntime: false),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    item.runtime.isNotEmpty
+                        ? 'مدت زمان: ${item.runtime}'
+                        : 'برای انتخاب فصل، قسمت و کیفیت آماده است',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AnimeColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 18),
+          SizedBox(width: 210, child: _animatedWatchButton(desktop: true)),
+        ],
+      ),
+    ),
+  );
+
+  Widget _animatedWatchButton({required bool desktop}) {
+    final enabled = !loading && hasPlayable;
+    return OpenContainer<void>(
+      transitionType: ContainerTransitionType.fade,
+      transitionDuration: const Duration(milliseconds: 560),
+      closedColor: Colors.transparent,
+      middleColor: AnimeColors.surfaceHigh,
+      openColor: AnimeColors.background,
+      closedElevation: 0,
+      openElevation: 0,
+      closedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(desktop ? 18 : 40),
+      ),
+      openShape: const RoundedRectangleBorder(),
+      tappable: false,
+      openBuilder: (context, _) => pickerBuilder(context),
+      closedBuilder: (context, openContainer) => SizedBox(
+        width: double.infinity,
+        height: desktop ? 176 : null,
+        child: FilledButton(
+          onPressed: enabled ? openContainer : null,
+          style: FilledButton.styleFrom(
+            minimumSize: desktop ? const Size(210, 176) : null,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(desktop ? 18 : 40),
+            ),
+          ),
+          child: desktop
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: const BoxDecoration(
+                        color: Colors.black12,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded, size: 40),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      loading ? 'در حال دریافت…' : 'شروع تماشا',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (!loading) ...[
+                      const SizedBox(height: 5),
+                      const Text(
+                        'انتخاب فصل و قسمت',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ],
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.play_arrow_rounded),
+                    const SizedBox(width: 8),
+                    Text(loading ? 'در حال دریافت لینک پخش…' : 'شروع تماشا'),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileCard(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
       color: AnimeColors.surface,
       borderRadius: BorderRadius.circular(22),
@@ -637,42 +760,9 @@ class _DetailSummaryCard extends StatelessWidget {
                   style: const TextStyle(color: AnimeColors.muted),
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    if (item.rating > 0)
-                      _MetaPill(
-                        icon: Icons.star,
-                        label: 'IMDb ${item.ratingLabel}',
-                        color: const Color(0xFFFFC857),
-                      ),
-                    _MetaPill(
-                      icon: Icons.calendar_month_rounded,
-                      label: '${item.year}',
-                    ),
-                    _MetaPill(
-                      icon: Icons.movie_filter_rounded,
-                      label: item.kindLabel,
-                    ),
-                    if (item.runtime.isNotEmpty)
-                      _MetaPill(
-                        icon: Icons.schedule_rounded,
-                        label: item.runtime,
-                      ),
-                  ],
-                ),
+                Wrap(spacing: 7, runSpacing: 7, children: _metadata()),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: loading || !hasPlayable ? null : onPlay,
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: Text(
-                      loading ? 'در حال دریافت لینک پخش…' : 'شروع تماشا',
-                    ),
-                  ),
-                ),
+                _animatedWatchButton(desktop: false),
               ],
             ),
           ),
@@ -680,6 +770,19 @@ class _DetailSummaryCard extends StatelessWidget {
       ),
     ),
   );
+
+  List<Widget> _metadata({bool includeRuntime = true}) => [
+    if (item.rating > 0)
+      _MetaPill(
+        icon: Icons.star,
+        label: 'IMDb ${item.ratingLabel}',
+        color: const Color(0xFFFFC857),
+      ),
+    _MetaPill(icon: Icons.calendar_month_rounded, label: '${item.year}'),
+    _MetaPill(icon: Icons.movie_filter_rounded, label: item.kindLabel),
+    if (includeRuntime && item.runtime.isNotEmpty)
+      _MetaPill(icon: Icons.schedule_rounded, label: item.runtime),
+  ];
 
   Widget _portraitArt() {
     final art = ContentArt(
@@ -1766,6 +1869,396 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     }
   }
 
+  Future<SavedWatchProgress?> _bestProgressForGroup(EpisodeGroup group) async {
+    SavedWatchProgress? best = await _progressStore.load(
+      contentId: widget.content.id,
+      episodeId: group.id,
+    );
+    for (final variant in group.variants) {
+      final legacy = await _progressStore.load(
+        contentId: widget.content.id,
+        episodeId: variant.episode.id,
+      );
+      if (legacy == null) continue;
+      if (best == null ||
+          legacy.watched && !best.watched ||
+          legacy.positionMs > best.positionMs) {
+        best = legacy;
+      }
+    }
+    return best;
+  }
+
+  Future<void> _showEpisodePicker() async {
+    if (_changingEpisode ||
+        _switchingQuality ||
+        _episodeCatalog.seasons.isEmpty) {
+      return;
+    }
+    _hideTimer?.cancel();
+    final savedEntries = <String, SavedWatchProgress>{};
+    await Future.wait(
+      _episodeCatalog.episodes.map((group) async {
+        final saved = await _bestProgressForGroup(group);
+        if (saved != null) savedEntries[group.id] = saved;
+      }),
+    );
+    if (!mounted) return;
+
+    final currentGroup = _currentEpisodeGroup;
+    var seasonIndex = _episodeCatalog.seasons.indexWhere(
+      (season) => season.episodes.any((group) => group.id == currentGroup?.id),
+    );
+    if (seasonIndex < 0) seasonIndex = 0;
+    final selected =
+        await showModalBottomSheet<
+          ({EpisodeGroup group, EpisodeVariant variant})
+        >(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          backgroundColor: AnimeColors.surface,
+          builder: (sheetContext) => StatefulBuilder(
+            builder: (context, updateSheet) {
+              final season = _episodeCatalog.seasons[seasonIndex];
+              final currentQuality = _currentVariant?.quality;
+              final choices = widget.content.kind == ContentKind.movie
+                  ? [
+                      for (final group in season.episodes)
+                        for (final variant in group.variants)
+                          (group: group, variant: variant),
+                    ]
+                  : [
+                      for (final group in season.episodes)
+                        (
+                          group: group,
+                          variant: group.variantFor(
+                            group.variants.any(
+                                  (item) => item.quality == currentQuality,
+                                )
+                                ? currentQuality
+                                : recommendedEpisodeQuality(
+                                    group.variants.map((item) => item.quality),
+                                  ),
+                          ),
+                        ),
+                    ];
+              return SafeArea(
+                child: FractionallySizedBox(
+                  heightFactor: .88,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(
+                            Icons.video_library_rounded,
+                            color: AnimeColors.orange,
+                          ),
+                          title: Text(
+                            widget.content.kind == ContentKind.movie
+                                ? 'انتخاب نسخهٔ فیلم'
+                                : 'انتخاب قسمت',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: const Text(
+                            'پخش در همین پلیر ادامه پیدا می‌کند.',
+                          ),
+                        ),
+                        if (_episodeCatalog.seasons.length > 1) ...[
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (final (index, item)
+                                    in _episodeCatalog.seasons.indexed) ...[
+                                  ChoiceChip(
+                                    key: Key('player-season-${item.id}'),
+                                    label: Text(item.name),
+                                    selected: index == seasonIndex,
+                                    onSelected: (_) =>
+                                        updateSheet(() => seasonIndex = index),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final columns = playerEpisodePickerColumns(
+                                constraints.maxWidth,
+                              );
+                              return GridView.builder(
+                                key: ValueKey('player-episodes-${season.id}'),
+                                itemCount: choices.length,
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: columns,
+                                      crossAxisSpacing: 10,
+                                      mainAxisSpacing: 10,
+                                      childAspectRatio: columns >= 4
+                                          ? 1.85
+                                          : 1.55,
+                                    ),
+                                itemBuilder: (context, index) {
+                                  final choice = choices[index];
+                                  final group = choice.group;
+                                  final variant = choice.variant;
+                                  final saved = savedEntries[group.id];
+                                  final isCurrent =
+                                      widget.content.kind == ContentKind.movie
+                                      ? variant.episode.fileUrl ==
+                                            _episode.fileUrl
+                                      : group.id == currentGroup?.id;
+                                  final status = saved?.watched == true
+                                      ? 'تماشا کردی'
+                                      : saved?.almostWatched == true
+                                      ? 'تقریباً تماشا کردی'
+                                      : saved?.isResumable == true
+                                      ? 'ادامه از ${_formatPlayerDuration(saved!.position)}'
+                                      : 'پخش از ابتدا';
+                                  return Material(
+                                    color: isCurrent
+                                        ? AnimeColors.orange.withValues(
+                                            alpha: .18,
+                                          )
+                                        : Colors.white.withValues(alpha: .045),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      side: BorderSide(
+                                        color: isCurrent
+                                            ? AnimeColors.orange
+                                            : Colors.white12,
+                                      ),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: InkWell(
+                                      key: Key('player-episode-${group.id}'),
+                                      onTap: () => Navigator.pop(sheetContext, (
+                                        group: group,
+                                        variant: variant,
+                                      )),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    widget.content.kind ==
+                                                            ContentKind.movie
+                                                        ? variant.quality
+                                                        : group.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Icon(
+                                                  isCurrent
+                                                      ? Icons.equalizer_rounded
+                                                      : Icons
+                                                            .play_circle_rounded,
+                                                  color: AnimeColors.orange,
+                                                ),
+                                              ],
+                                            ),
+                                            const Spacer(),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: FittedBox(
+                                                      fit: BoxFit.scaleDown,
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      child: Text(
+                                                        isCurrent
+                                                            ? 'در حال پخش'
+                                                            : status,
+                                                        maxLines: 1,
+                                                        style: TextStyle(
+                                                          color:
+                                                              isCurrent ||
+                                                                  saved?.watched ==
+                                                                      true
+                                                              ? AnimeColors
+                                                                    .orange
+                                                              : Colors.white70,
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: AnimeColors.orange
+                                                        .withValues(alpha: .12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: AnimeColors.orange
+                                                          .withValues(
+                                                            alpha: .28,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    widget.content.kind ==
+                                                            ContentKind.movie
+                                                        ? _playerVariantMeta(
+                                                            variant,
+                                                          )
+                                                        : playerEpisodeQualityBadge(
+                                                            variant.quality,
+                                                          ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    textDirection:
+                                                        TextDirection.ltr,
+                                                    style: const TextStyle(
+                                                      color: AnimeColors.orange,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+    if (!mounted) return;
+    if (selected != null) {
+      if (selected.group.id == currentGroup?.id) {
+        await _switchQuality(selected.variant);
+      } else {
+        await _switchEpisode(selected.group, selected.variant);
+      }
+    }
+    _showControls();
+  }
+
+  Future<void> _switchEpisode(EpisodeGroup group, EpisodeVariant target) async {
+    if (_changingEpisode || target.episode.fileUrl == _episode.fileUrl) return;
+    final previous = _episode;
+    final previousPosition = _player.state.position;
+    final wasPlaying = _player.state.playing;
+    final saved = await _bestProgressForGroup(group);
+    final startAt = saved?.isResumable == true
+        ? saved!.position
+        : Duration.zero;
+    _changingEpisode = true;
+    await _persistProgress(at: previousPosition);
+    if (mounted) {
+      setState(() {
+        _buffering = true;
+        _error = null;
+        _nextEpisodeVisible = false;
+      });
+    }
+    try {
+      await _player.open(
+        Media(
+          target.episode.fileUrl,
+          httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
+        ),
+        play: false,
+      );
+      if (startAt > Duration.zero) {
+        await _waitUntilSeekable();
+        await _player.seek(_safeResumePosition(startAt));
+      }
+      await _player.play();
+      _episode = target.episode;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('preferred_stream_quality', target.quality);
+      await _configurePictureInPicture();
+      if (mounted) {
+        setState(() {
+          _position = startAt;
+          _duration = _player.state.duration;
+          _buffering = false;
+          _subtitles = const [];
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 2),
+            content: Text(
+              'در حال پخش ${group.name} با کیفیت ${target.quality}',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      try {
+        await _player.open(
+          Media(
+            previous.fileUrl,
+            httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
+          ),
+          play: false,
+        );
+        await _waitUntilSeekable();
+        await _player.seek(_safeResumePosition(previousPosition));
+        if (wasPlaying) await _player.play();
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _buffering = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('پخش قسمت انتخاب‌شده انجام نشد؛ پخش قبلی برگشت.'),
+          ),
+        );
+      }
+    } finally {
+      _changingEpisode = false;
+    }
+  }
+
   AnimeEpisode? get _nextEpisode => nextEpisodeFor(widget.content, _episode);
 
   Future<void> _playNextEpisode() => _finishCurrentAndPlayNext();
@@ -2371,6 +2864,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         compact: compact,
         onTap: _showTrackPicker,
       ),
+      if (_episodeCatalog.episodes.isNotEmpty) ...[
+        const SizedBox(width: 8),
+        _PlayerToolControl(
+          icon: Icons.video_library_rounded,
+          label: widget.content.kind == ContentKind.movie
+              ? 'انتخاب فیلم'
+              : 'انتخاب قسمت',
+          compact: compact,
+          compactLabel: widget.content.kind == ContentKind.movie
+              ? 'فیلم'
+              : 'قسمت',
+          onTap: _showEpisodePicker,
+        ),
+      ],
     ];
   }
 
@@ -2792,7 +3299,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                   child: LayoutBuilder(
                                     builder: (context, constraints) {
                                       final compact =
-                                          isDesktopWindow &&
                                           compactPlayerControlsForWidth(
                                             constraints.maxWidth,
                                           );
@@ -3069,6 +3575,13 @@ String _playerVariantMeta(EpisodeVariant variant) {
       variant.episode.fileType.toUpperCase(),
   ];
   return values.isEmpty ? 'سرور پخش آنلاین' : values.join(' · ');
+}
+
+String _formatPlayerDuration(Duration value) {
+  final hours = value.inHours;
+  final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
 }
 
 class _PlayerToolControl extends StatelessWidget {

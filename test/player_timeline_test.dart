@@ -108,6 +108,14 @@ void main() {
     expect(compactPlayerControlsForWidth(980), isTrue);
     expect(compactPlayerControlsForWidth(1179), isTrue);
     expect(compactPlayerControlsForWidth(1180), isFalse);
+    expect(playerEpisodePickerColumns(320), 2);
+    expect(playerEpisodePickerColumns(390), 3);
+    expect(playerEpisodePickerColumns(720), 4);
+    expect(playerEpisodePickerColumns(900), 5);
+    expect(playerEpisodePickerColumns(1200), 6);
+    expect(playerEpisodeQualityBadge('بدون برچسب کیفیت'), 'نامشخص');
+    expect(playerEpisodeQualityBadge('بدون برچسب کیفیت · سرور 2'), 'نامشخص');
+    expect(playerEpisodeQualityBadge('720p'), '720p');
     expect(
       playbackContinuedAfterError(
         position: const Duration(seconds: 1),

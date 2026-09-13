@@ -15,6 +15,17 @@ const windowsResizeSettleDelay = Duration(milliseconds: 140);
 
 bool compactPlayerControlsForWidth(double width) => width < 1180;
 
+int playerEpisodePickerColumns(double width) => switch (width) {
+  >= 1000 => 6,
+  >= 760 => 5,
+  >= 540 => 4,
+  >= 360 => 3,
+  _ => 2,
+};
+
+String playerEpisodeQualityBadge(String quality) =>
+    quality.startsWith('بدون برچسب کیفیت') ? 'نامشخص' : quality;
+
 bool playbackContinuedAfterError({
   required Duration position,
   required Duration positionAtError,
