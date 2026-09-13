@@ -11,6 +11,7 @@ import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
+import '../widgets/browsable_shelf.dart';
 import '../widgets/content_art.dart';
 import '../widgets/pressable.dart';
 import 'detail_screen.dart';
@@ -862,7 +863,13 @@ class _FeaturedState extends State<_Featured> {
     _autoPlayTimer?.cancel();
     if (_count < 2 || isAndroidTv) return;
     _autoPlayTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!mounted || !_controller.hasClients) return;
+      if (!mounted ||
+          !_controller.hasClients ||
+          !TickerMode.valuesOf(context).enabled ||
+          ModalRoute.of(context)?.isCurrent == false ||
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
       _goTo((_page + 1) % _count, restartTimer: false);
     });
   }
@@ -1807,30 +1814,22 @@ class _PosterRow extends StatelessWidget {
   final OpenContent onOpen;
   final String heroPrefix;
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 230,
-    child: ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      itemCount: items.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 12),
-      itemBuilder: (_, i) {
-        final tag = '$heroPrefix${items[i].id}';
-        return Pressable(
-          onTap: () => onOpen(items[i], tag),
-          child: Hero(
-            tag: tag,
-            transitionOnUserGestures: true,
-            createRectTween: smoothHeroRectTween,
-            flightShuttleBuilder: portraitHeroFlightShuttle,
-            child: SizedBox(width: 148, child: ContentArt(content: items[i])),
-          ),
-        );
-      },
-    ),
+  Widget build(BuildContext context) => BrowsableShelf(
+    showNavigation: isLargeScreenDevice,
+    itemCount: items.length,
+    itemBuilder: (_, i) {
+      final tag = '$heroPrefix${items[i].id}';
+      return Pressable(
+        onTap: () => onOpen(items[i], tag),
+        child: Hero(
+          tag: tag,
+          transitionOnUserGestures: true,
+          createRectTween: smoothHeroRectTween,
+          flightShuttleBuilder: portraitHeroFlightShuttle,
+          child: SizedBox(width: 148, child: ContentArt(content: items[i])),
+        ),
+      );
+    },
   );
 }
 

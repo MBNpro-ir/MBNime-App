@@ -1820,7 +1820,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _hideTimer?.cancel();
     final selected = await showModalBottomSheet<EpisodeVariant>(
       context: context,
-      constraints: const BoxConstraints(maxWidth: double.infinity),
+      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
@@ -1984,7 +1984,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           ({EpisodeGroup group, EpisodeVariant variant})
         >(
           context: context,
-          constraints: const BoxConstraints(maxWidth: double.infinity),
+          constraints: BoxConstraints(
+            maxWidth: panelWidth(context, large: 1040),
+          ),
           isScrollControlled: true,
           useSafeArea: true,
           showDragHandle: true,
@@ -2604,9 +2606,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     }
     final player = _player;
     unawaited(
-      Future.delayed(const Duration(milliseconds: 350), () {
+      Future.delayed(const Duration(milliseconds: 350), () async {
         try {
-          player.dispose();
+          await player.dispose();
         } catch (_) {
           // Already torn down (e.g. hot restart); safe to ignore.
         }
@@ -2773,7 +2775,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showTrackPicker() async {
     await showModalBottomSheet<void>(
       context: context,
-      constraints: const BoxConstraints(maxWidth: double.infinity),
+      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,
@@ -3060,7 +3062,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showSpeedPicker() async {
     final selected = await showModalBottomSheet<double>(
       context: context,
-      constraints: const BoxConstraints(maxWidth: double.infinity),
+      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,
@@ -3105,7 +3107,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
               bottom: Radius.circular(24),
             ),
             child: SizedBox(
-              width: double.infinity,
+              width: panelWidth(context, large: 1100),
               height: (MediaQuery.sizeOf(context).height * .72).clamp(
                 0.0,
                 590.0,
@@ -3133,7 +3135,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showSubtitleTiming() async {
     final result = await showModalBottomSheet<SubtitlePreferences>(
       context: context,
-      constraints: const BoxConstraints(maxWidth: double.infinity),
+      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,

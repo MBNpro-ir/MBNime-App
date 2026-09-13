@@ -12,6 +12,13 @@ bool get isDesktopWindow => Platform.isWindows;
 bool isAndroidTv = false;
 bool get isLargeScreenDevice => isDesktopWindow || isAndroidTv;
 
+/// Bottom sheets remain full-width on phones, while TV/desktop use a readable
+/// dialog-like width instead of stretching controls across the whole display.
+double panelWidth(BuildContext context, {double large = 760}) =>
+    isLargeScreenDevice
+    ? math.min(large, MediaQuery.sizeOf(context).width - 32)
+    : MediaQuery.sizeOf(context).width;
+
 Future<void> initializeDeviceLayout() async {
   if (!Platform.isAndroid) return;
   try {
