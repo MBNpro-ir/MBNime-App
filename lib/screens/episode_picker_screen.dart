@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -25,12 +26,14 @@ class EpisodePickerScreen extends StatefulWidget {
     super.key,
     required this.content,
     required this.onPlay,
+    this.deferInitialContent = false,
   });
 
   final AnimeContent content;
 
   /// Plays [episode] from [startAt]. Completes when the player closes.
   final Future<void> Function(AnimeEpisode episode, Duration startAt) onPlay;
+  final bool deferInitialContent;
 
   @override
   State<EpisodePickerScreen> createState() => _EpisodePickerScreenState();
@@ -42,6 +45,8 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   late final EpisodeCatalog _catalog;
   int _seasonIndex = 0;
   String _selectedQuality = 'بدون برچسب کیفیت';
+  Timer? _initialContentTimer;
+  late bool _contentReady;
 
   static int _defaultSeason(List<EpisodeSeasonGroup> seasons) {
     for (var i = 0; i < seasons.length; i++) {
@@ -61,8 +66,26 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     _selectedQuality = recommendedEpisodeQuality(
       _catalog.seasons[_seasonIndex].qualities,
     );
-    _loadSaved();
-    _loadQualityPreference();
+    _contentReady = !widget.deferInitialContent;
+    if (_contentReady) {
+      unawaited(_loadSaved());
+      unawaited(_loadQualityPreference());
+    } else {
+      // Keep the container-transform frames light on phones. The episode grid
+      // and preference I/O start as soon as the short opening animation ends.
+      _initialContentTimer = Timer(const Duration(milliseconds: 310), () {
+        if (!mounted) return;
+        setState(() => _contentReady = true);
+        unawaited(_loadSaved());
+        unawaited(_loadQualityPreference());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _initialContentTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSaved() async {
@@ -619,26 +642,33 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
               ),
             ),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) => GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  itemCount: episodes.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount:
-                        MediaQuery.textScalerOf(context).scale(14) > 22
-                        ? 1
-                        : (constraints.maxWidth / 245).floor().clamp(2, 5),
-                    mainAxisExtent:
-                        210 +
-                        (MediaQuery.textScalerOf(context).scale(14) - 14) * 4,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                  ),
-                  itemBuilder: (_, i) {
-                    return _episodeCard(episodes[i]);
-                  },
-                ),
-              ),
+              child: !_contentReady
+                  ? const SizedBox.expand()
+                  : LayoutBuilder(
+                      builder: (context, constraints) => GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                        itemCount: episodes.length,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount:
+                              MediaQuery.textScalerOf(context).scale(14) > 22
+                              ? 1
+                              : (constraints.maxWidth / 245).floor().clamp(
+                                  2,
+                                  5,
+                                ),
+                          mainAxisExtent:
+                              210 +
+                              (MediaQuery.textScalerOf(context).scale(14) -
+                                      14) *
+                                  4,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemBuilder: (_, i) {
+                          return _episodeCard(episodes[i]);
+                        },
+                      ),
+                    ),
             ),
           ],
         ),

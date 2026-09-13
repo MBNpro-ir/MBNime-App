@@ -108,6 +108,8 @@ void main() {
     expect(compactPlayerControlsForWidth(980), isTrue);
     expect(compactPlayerControlsForWidth(1179), isTrue);
     expect(compactPlayerControlsForWidth(1180), isFalse);
+    expect(shouldCompactPlayerControls(isDesktop: false, width: 500), isFalse);
+    expect(shouldCompactPlayerControls(isDesktop: true, width: 500), isTrue);
     expect(playerEpisodePickerColumns(320), 2);
     expect(playerEpisodePickerColumns(390), 3);
     expect(playerEpisodePickerColumns(720), 4);

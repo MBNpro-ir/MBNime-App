@@ -229,4 +229,58 @@ void main() {
     await tester.pumpAndSettle();
     expect(played?.fileUrl, 'https://example.com/1-1080.mkv');
   });
+
+  testWidgets('phone transition defers the expensive episode grid', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EpisodePickerScreen(
+          content: content,
+          deferInitialContent: true,
+          onPlay: (_, _) async {},
+        ),
+      ),
+    );
+
+    expect(find.text(content.title), findsOneWidget);
+    expect(find.text('قسمت اول'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 311));
+    expect(find.text('قسمت اول'), findsOneWidget);
+  });
+
+  testWidgets('picker keeps the standard route back transition', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => FilledButton(
+            key: const Key('open-picker'),
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => EpisodePickerScreen(
+                  content: content,
+                  deferInitialContent: true,
+                  onPlay: (_, _) async {},
+                ),
+              ),
+            ),
+            child: const Text('باز کردن'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('open-picker')));
+    await tester.pumpAndSettle();
+    expect(find.text('انتخاب قسمت'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('انتخاب قسمت'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-picker')), findsOneWidget);
+  });
 }

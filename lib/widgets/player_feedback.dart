@@ -15,6 +15,11 @@ const windowsResizeSettleDelay = Duration(milliseconds: 140);
 
 bool compactPlayerControlsForWidth(double width) => width < 1180;
 
+bool shouldCompactPlayerControls({
+  required bool isDesktop,
+  required double width,
+}) => isDesktop && compactPlayerControlsForWidth(width);
+
 int playerEpisodePickerColumns(double width) => switch (width) {
   >= 1000 => 6,
   >= 760 => 5,

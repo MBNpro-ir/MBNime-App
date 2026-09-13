@@ -199,10 +199,33 @@ class _MainShellState extends State<MainShell> {
           child: Column(
             children: [
               _TopBar(search: _openSearch, history: _openHistory),
+              if (isAndroidTv)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      for (final (index, label) in [
+                        'خانه',
+                        'فیلم‌ها',
+                        'سریال‌ها',
+                        'علاقه‌مندی‌ها',
+                      ].indexed)
+                        Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: ChoiceChip(
+                            autofocus: index == 0,
+                            label: Text(label),
+                            selected: _index == index,
+                            onSelected: (_) => _goToPage(index),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: PageView(
                   controller: _pageController,
-                  physics: isDesktopWindow
+                  physics: isLargeScreenDevice
                       ? const NeverScrollableScrollPhysics()
                       : const PageScrollPhysics(
                           parent: BouncingScrollPhysics(),
@@ -217,7 +240,7 @@ class _MainShellState extends State<MainShell> {
           ),
         ),
       ),
-      bottomNavigationBar: isDesktopWindow
+      bottomNavigationBar: isLargeScreenDevice
           ? null
           : _AnimatedBottomNav(index: _index, onSelected: _goToPage),
     );
@@ -837,7 +860,7 @@ class _FeaturedState extends State<_Featured> {
 
   void _restartAutoPlay() {
     _autoPlayTimer?.cancel();
-    if (_count < 2) return;
+    if (_count < 2 || isAndroidTv) return;
     _autoPlayTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted || !_controller.hasClients) return;
       _goTo((_page + 1) % _count, restartTimer: false);
@@ -861,7 +884,7 @@ class _FeaturedState extends State<_Featured> {
     return Column(
       children: [
         SizedBox(
-          height: 340,
+          height: isAndroidTv ? 250 : 340,
           child: Stack(
             alignment: Alignment.center,
             children: [

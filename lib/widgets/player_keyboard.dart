@@ -38,11 +38,17 @@ class PlayerKeyboard extends StatelessWidget {
     required this.onCommand,
     required this.onSeekFraction,
     required this.onFocus,
+    this.isTelevision = false,
+    this.controlsVisible = true,
+    this.onRemoteNavigation,
   });
   final Widget child;
   final void Function(PlayerCommand) onCommand;
   final void Function(double) onSeekFraction;
   final VoidCallback onFocus;
+  final bool isTelevision;
+  final bool controlsVisible;
+  final VoidCallback? onRemoteNavigation;
   static const help =
       'Space / K: پخش و توقف\n← / →: ده ثانیه عقب و جلو\n↑ / ↓: صدا\nM: قطع صدا\nF / F11: تمام‌صفحه\nEsc: خروج از تمام‌صفحه\n[ / ]: سرعت پخش\n0 تا 9: رفتن به درصد ویدئو\nHome / End: ابتدا و انتها\nC: زیرنویس روشن/خاموش\nA: ترک صدا و زیرنویس\nS: تنظیمات زیرنویس\nV: اندازهٔ تصویر\nTab و Shift+Tab: جابه‌جایی بین کنترل‌ها\nEnter: فعال‌کردن دکمهٔ انتخاب‌شده\nF1: راهنمای کلیدها';
 
@@ -53,10 +59,6 @@ class PlayerKeyboard extends StatelessWidget {
         (LogicalKeyboardKey.space, PlayerCommand.toggle),
         (LogicalKeyboardKey.keyK, PlayerCommand.toggle),
         (LogicalKeyboardKey.mediaPlayPause, PlayerCommand.toggle),
-        (LogicalKeyboardKey.arrowLeft, PlayerCommand.back),
-        (LogicalKeyboardKey.arrowRight, PlayerCommand.forward),
-        (LogicalKeyboardKey.arrowUp, PlayerCommand.volumeUp),
-        (LogicalKeyboardKey.arrowDown, PlayerCommand.volumeDown),
         (LogicalKeyboardKey.keyM, PlayerCommand.mute),
         (LogicalKeyboardKey.keyF, PlayerCommand.fullscreen),
         (LogicalKeyboardKey.f11, PlayerCommand.fullscreen),
@@ -72,6 +74,16 @@ class PlayerKeyboard extends StatelessWidget {
         (LogicalKeyboardKey.f1, PlayerCommand.help),
       ])
         SingleActivator(pair.$1): () => onCommand(pair.$2),
+      if (!isTelevision) ...{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+            onCommand(PlayerCommand.back),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+            onCommand(PlayerCommand.forward),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+            onCommand(PlayerCommand.volumeUp),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+            onCommand(PlayerCommand.volumeDown),
+      },
       for (var i = 0; i < 10; i++)
         SingleActivator(
           LogicalKeyboardKey(LogicalKeyboardKey.digit0.keyId + i),
@@ -81,6 +93,9 @@ class PlayerKeyboard extends StatelessWidget {
     child: _PlayerKeyScope(
       onCommand: onCommand,
       onFocus: onFocus,
+      isTelevision: isTelevision,
+      controlsVisible: controlsVisible,
+      onRemoteNavigation: onRemoteNavigation,
       child: child,
     ),
   );
@@ -93,10 +108,16 @@ class _PlayerKeyScope extends StatefulWidget {
     required this.child,
     required this.onCommand,
     required this.onFocus,
+    required this.isTelevision,
+    required this.controlsVisible,
+    this.onRemoteNavigation,
   });
   final Widget child;
   final ValueChanged<PlayerCommand> onCommand;
   final VoidCallback onFocus;
+  final bool isTelevision;
+  final bool controlsVisible;
+  final VoidCallback? onRemoteNavigation;
   @override
   State<_PlayerKeyScope> createState() => _PlayerKeyScopeState();
 }
@@ -116,6 +137,39 @@ class _PlayerKeyScopeState extends State<_PlayerKeyScope> {
         HardwareKeyboard.instance.isAltPressed ||
         HardwareKeyboard.instance.isMetaPressed) {
       return KeyEventResult.ignored;
+    }
+    if (widget.isTelevision) {
+      final key = event.logicalKey;
+      final select =
+          key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.gameButtonA;
+      if (select && (!widget.controlsVisible || _focus.hasPrimaryFocus)) {
+        if (event is KeyDownEvent) widget.onCommand(PlayerCommand.toggle);
+        return KeyEventResult.handled;
+      }
+      if (!widget.controlsVisible) {
+        if (key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight) {
+          widget.onCommand(
+            key == LogicalKeyboardKey.arrowLeft
+                ? PlayerCommand.back
+                : PlayerCommand.forward,
+          );
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowDown ||
+            key == LogicalKeyboardKey.arrowUp) {
+          widget.onRemoteNavigation?.call();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _focus.nextFocus();
+          });
+          return KeyEventResult.handled;
+        }
+      } else {
+        widget.onRemoteNavigation?.call();
+        return KeyEventResult.ignored;
+      }
     }
     final command = switch (event.physicalKey) {
       PhysicalKeyboardKey.arrowRight => PlayerCommand.forward,

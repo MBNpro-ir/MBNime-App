@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#11141C" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#FF7A1A" android:pathData="M30,55h60v70h-60z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M48,72L76,90L48,108z" />
+    <!-- MBNime wordmark drawn as paths so TV launchers need no font resource. -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:fillColor="#00000000"
+        android:pathData="M112,105V75L123,91L134,75V105 M145,105V75H157Q172,75 165,90Q177,105 157,105H145 M179,105V75L200,105V75 M214,86V105 M226,105V86Q236,82 240,91V105 M240,91Q256,79 256,94V105 M284,101Q265,112 265,94Q265,81 279,86Q285,89 281,94H266" />
+    <path android:fillColor="#FF7A1A" android:pathData="M211,75h6v6h-6z" />
+</vector>

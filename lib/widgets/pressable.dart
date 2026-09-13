@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../core/platform_ui.dart';
+import '../core/theme.dart';
 
 /// Subtle press-down feedback for tappable cards: scales to 96% while
 /// pressed with a snappy spring back. Purely visual, keeps hit-testing
@@ -21,6 +23,7 @@ class Pressable extends StatefulWidget {
 
 class _PressableState extends State<Pressable> {
   bool _pressed = false;
+  bool _focused = false;
 
   void _setPressed(bool value) {
     if (_pressed == value || !mounted) return;
@@ -28,17 +31,48 @@ class _PressableState extends State<Pressable> {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: widget.onTap,
-    onTapDown: (_) => _setPressed(true),
-    onTapUp: (_) => _setPressed(false),
-    onTapCancel: () => _setPressed(false),
-    child: AnimatedScale(
-      scale: _pressed ? widget.scale : 1,
-      duration: Duration(milliseconds: _pressed ? 65 : 150),
-      curve: Curves.easeOutCubic,
-      child: widget.child,
+  Widget build(BuildContext context) => FocusableActionDetector(
+    enabled: isAndroidTv,
+    onFocusChange: (focused) {
+      setState(() => _focused = focused);
+      if (focused) {
+        Scrollable.ensureVisible(
+          context,
+          alignment: .5,
+          duration: const Duration(milliseconds: 160),
+        );
+      }
+    },
+    actions: {
+      ActivateIntent: CallbackAction<ActivateIntent>(
+        onInvoke: (_) {
+          widget.onTap();
+          return null;
+        },
+      ),
+    },
+    child: DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _focused ? AnimeColors.cyan : Colors.transparent,
+          width: 3,
+        ),
+      ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        child: AnimatedScale(
+          scale: _pressed ? widget.scale : 1,
+          duration: Duration(milliseconds: _pressed ? 65 : 150),
+          curve: Curves.easeOutCubic,
+          child: widget.child,
+        ),
+      ),
     ),
   );
 }

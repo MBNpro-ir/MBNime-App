@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'core/desktop_window_frame.dart';
 import 'core/session_store.dart';
 import 'core/theme.dart';
+import 'core/platform_ui.dart';
+import 'widgets/tv_navigation.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
@@ -49,12 +51,18 @@ class _MbnimeAppState extends State<MbnimeApp> {
       scaffoldMessengerKey: appMessengerKey,
       debugShowCheckedModeBanner: false,
       title: 'MBNime',
-      theme: AnimeTheme.dark,
+      theme: isAndroidTv
+          ? AnimeTheme.dark.copyWith(
+              visualDensity: VisualDensity.standard,
+              focusColor: AnimeColors.cyan.withValues(alpha: .4),
+              hoverColor: AnimeColors.cyan.withValues(alpha: .15),
+            )
+          : AnimeTheme.dark,
       locale: const Locale('fa', 'IR'),
       builder: (context, child) => DesktopWindowFrame(
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: MandatoryUpdateGate(child: child!),
+          child: TvNavigation(child: MandatoryUpdateGate(child: child!)),
         ),
       ),
       home: AnimatedSwitcher(

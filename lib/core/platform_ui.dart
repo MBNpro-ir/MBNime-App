@@ -2,11 +2,30 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'theme.dart';
 
 /// True on desktop window builds (custom title bar, no bottom nav).
 bool get isDesktopWindow => Platform.isWindows;
+
+bool isAndroidTv = false;
+bool get isLargeScreenDevice => isDesktopWindow || isAndroidTv;
+
+Future<void> initializeDeviceLayout() async {
+  if (!Platform.isAndroid) return;
+  try {
+    isAndroidTv =
+        await const MethodChannel(
+          'com.mbn.ime/device',
+        ).invokeMethod<bool>('isTelevision') ??
+        false;
+  } on MissingPluginException {
+    // Hot restart can still be attached to the old native Android binary.
+    // Keep that session usable until a full run installs the new bridge.
+    isAndroidTv = false;
+  }
+}
 
 /// When true (desktop), the custom window title bar is hidden — used for
 /// distraction-free fullscreen video. Only the player toggles this.
@@ -14,7 +33,7 @@ final hideWindowChrome = ValueNotifier<bool>(false);
 
 /// Bottom breathing room: lists reserve space for the mobile nav bar,
 /// which is hidden on desktop.
-double get bottomListGap => isDesktopWindow ? 28 : 110;
+double get bottomListGap => isLargeScreenDevice ? 28 : 110;
 
 /// Shared route for inner pages. Android deliberately uses a Material route so
 /// its predictive-back transition can follow the system edge-swipe in real

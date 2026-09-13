@@ -50,6 +50,11 @@ class DeviceBridge(
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
+                "isTelevision" -> {
+                    val manager = activity.getSystemService(Context.UI_MODE_SERVICE) as android.app.UiModeManager
+                    result.success(manager.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+                        activity.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
+                }
                 "requestInstallPermission" -> {
                     if (Build.VERSION.SDK_INT < 26 || activity.packageManager.canRequestPackageInstalls()) {
                         result.success(true)

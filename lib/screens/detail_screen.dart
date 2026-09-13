@@ -26,6 +26,7 @@ import '../services/animeon_api.dart';
 import '../services/device_bridge.dart';
 import '../services/picture_in_picture.dart';
 import '../widgets/content_art.dart';
+import '../widgets/pressable.dart';
 import '../widgets/download_choice.dart';
 import '../widgets/player_keyboard.dart';
 import '../widgets/player_timeline.dart';
@@ -126,8 +127,12 @@ class _DetailScreenState extends State<DetailScreen> {
       widget.content.imageUrl ??
       item.imageUrl;
 
-  Future<void> _showCover(AnimeContent item) async {
-    final imageUrl = _coverImageUrl(item);
+  Future<void> _showCover(
+    AnimeContent item, {
+    String? requestedImageUrl,
+    required Object heroTag,
+  }) async {
+    final imageUrl = requestedImageUrl ?? _coverImageUrl(item);
     if (imageUrl == null) return;
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -142,12 +147,14 @@ class _DetailScreenState extends State<DetailScreen> {
             actions: [
               IconButton(
                 tooltip: 'ذخیره کاور',
-                onPressed: () => _saveCover(routeContext, item),
+                onPressed: () =>
+                    _saveCover(routeContext, item, imageUrl: imageUrl),
                 icon: const Icon(Icons.download_rounded),
               ),
               IconButton(
                 tooltip: 'اشتراک‌گذاری فایل کاور',
-                onPressed: () => _shareCover(routeContext, item),
+                onPressed: () =>
+                    _shareCover(routeContext, item, imageUrl: imageUrl),
                 icon: const Icon(Icons.share_rounded),
               ),
             ],
@@ -156,20 +163,25 @@ class _DetailScreenState extends State<DetailScreen> {
             minScale: .8,
             maxScale: 5,
             child: Center(
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                  if (wasSynchronouslyLoaded) return child;
-                  return AnimatedOpacity(
-                    opacity: frame == null ? 0 : 1,
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeOutCubic,
-                    child: child,
-                  );
-                },
-                errorBuilder: (_, _, _) => const Text('کاور قابل نمایش نیست'),
+              child: Hero(
+                tag: heroTag,
+                createRectTween: smoothHeroRectTween,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  frameBuilder:
+                      (context, child, frame, wasSynchronouslyLoaded) {
+                        if (wasSynchronouslyLoaded) return child;
+                        return AnimatedOpacity(
+                          opacity: frame == null ? 0 : 1,
+                          duration: const Duration(milliseconds: 350),
+                          curve: Curves.easeOutCubic,
+                          child: child,
+                        );
+                      },
+                  errorBuilder: (_, _, _) => const Text('کاور قابل نمایش نیست'),
+                ),
               ),
             ),
           ),
@@ -186,12 +198,15 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<({Uint8List bytes, String fileName, String mimeType})> _coverFile(
-    AnimeContent item,
-  ) async {
-    final imageUrl = _coverImageUrl(item);
-    if (imageUrl == null) throw const HttpException('Cover unavailable');
+    AnimeContent item, {
+    String? imageUrl,
+  }) async {
+    final resolvedImageUrl = imageUrl ?? _coverImageUrl(item);
+    if (resolvedImageUrl == null) {
+      throw const HttpException('Cover unavailable');
+    }
     final response = await http
-        .get(Uri.parse(imageUrl))
+        .get(Uri.parse(resolvedImageUrl))
         .timeout(const Duration(seconds: 20));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('HTTP ${response.statusCode}');
@@ -217,10 +232,14 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Future<void> _saveCover(BuildContext pageContext, AnimeContent item) async {
+  Future<void> _saveCover(
+    BuildContext pageContext,
+    AnimeContent item, {
+    String? imageUrl,
+  }) async {
     final messenger = ScaffoldMessenger.of(pageContext);
     try {
-      final cover = await _coverFile(item);
+      final cover = await _coverFile(item, imageUrl: imageUrl);
       String? savedPath;
       if (Platform.isAndroid) {
         savedPath = await _downloadsChannel.invokeMethod<String>('saveImage', {
@@ -264,10 +283,14 @@ class _DetailScreenState extends State<DetailScreen> {
     return file;
   }
 
-  Future<void> _shareCover(BuildContext pageContext, AnimeContent item) async {
+  Future<void> _shareCover(
+    BuildContext pageContext,
+    AnimeContent item, {
+    String? imageUrl,
+  }) async {
     final messenger = ScaffoldMessenger.of(pageContext);
     try {
-      final cover = await _coverFile(item);
+      final cover = await _coverFile(item, imageUrl: imageUrl);
       await SharePlus.instance.share(
         ShareParams(
           title: '${item.title} · MBNime',
@@ -338,7 +361,7 @@ class _DetailScreenState extends State<DetailScreen> {
       final item = snapshot.data ?? widget.content;
       final loading = snapshot.connectionState != ConnectionState.done;
       final viewportHeight = MediaQuery.sizeOf(context).height;
-      final headerHeight = isDesktopWindow
+      final headerHeight = isLargeScreenDevice
           ? (viewportHeight * .42).clamp(260.0, 380.0)
           : 430.0;
       final hasPlayable = item.seasons.any(
@@ -362,15 +385,6 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ),
               actions: [
-                if (item.backdropUrl != null || item.imageUrl != null)
-                  Padding(
-                    padding: const EdgeInsets.all(7),
-                    child: IconButton.filledTonal(
-                      tooltip: 'نمایش کاور',
-                      onPressed: () => _showCover(item),
-                      icon: const Icon(Icons.image_outlined),
-                    ),
-                  ),
                 Padding(
                   padding: const EdgeInsets.all(7),
                   child: IconButton.filledTonal(
@@ -408,22 +422,34 @@ class _DetailScreenState extends State<DetailScreen> {
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // This artwork deliberately stays inside the route instead
-                    // of a Hero overlay. A Hero is always painted above AppBar
-                    // actions and cannot smoothly morph a portrait into this
-                    // landscape image without a visible content swap.
-                    _AnimatedDetailBackdrop(
-                      key: ValueKey(widget.heroTag),
-                      child: ContentArt(
-                        content: item,
-                        // Keep the already-visible catalog artwork stable while
-                        // late detail data updates the rest of the page.
-                        imageUrl:
+                    // The backdrop remains independent from the catalog's
+                    // portrait Hero, but gets its own tag for cover preview.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showCover(
+                        item,
+                        requestedImageUrl:
                             widget.content.backdropUrl ??
-                            widget.content.imageUrl,
-                        orientation: ArtworkOrientation.landscape,
-                        borderRadius: 0,
-                        showTitle: false,
+                            item.backdropUrl ??
+                            widget.content.imageUrl ??
+                            item.imageUrl,
+                        heroTag: 'detail-backdrop-${widget.heroTag}',
+                      ),
+                      child: Hero(
+                        tag: 'detail-backdrop-${widget.heroTag}',
+                        createRectTween: smoothHeroRectTween,
+                        child: _AnimatedDetailBackdrop(
+                          key: ValueKey(widget.heroTag),
+                          child: ContentArt(
+                            content: item,
+                            imageUrl:
+                                widget.content.backdropUrl ??
+                                widget.content.imageUrl,
+                            orientation: ArtworkOrientation.landscape,
+                            borderRadius: 0,
+                            showTitle: false,
+                          ),
+                        ),
                       ),
                     ),
                     const Positioned(
@@ -458,8 +484,17 @@ class _DetailScreenState extends State<DetailScreen> {
                     portraitImageUrl: widget.content.imageUrl ?? item.imageUrl,
                     loading: loading,
                     hasPlayable: hasPlayable,
+                    onCoverTap: () => _showCover(
+                      item,
+                      requestedImageUrl:
+                          widget.content.imageUrl ?? item.imageUrl,
+                      heroTag: widget.heroTag.startsWith('featured-')
+                          ? 'detail-poster-${widget.heroTag}'
+                          : widget.heroTag,
+                    ),
                     pickerBuilder: (_) => EpisodePickerScreen(
                       content: item,
+                      deferInitialContent: !isDesktopWindow,
                       onPlay: (episode, startAt) =>
                           _play(item, episode, startAt: startAt),
                     ),
@@ -575,6 +610,7 @@ class _DetailSummaryCard extends StatelessWidget {
     required this.portraitImageUrl,
     required this.loading,
     required this.hasPlayable,
+    required this.onCoverTap,
     required this.pickerBuilder,
   });
 
@@ -583,11 +619,14 @@ class _DetailSummaryCard extends StatelessWidget {
   final String? portraitImageUrl;
   final bool loading;
   final bool hasPlayable;
+  final VoidCallback onCoverTap;
   final WidgetBuilder pickerBuilder;
 
   @override
   Widget build(BuildContext context) =>
-      isDesktopWindow ? _desktopCard(context) : _mobileCard(context);
+      isLargeScreenDevice && MediaQuery.sizeOf(context).width >= 800
+      ? _desktopCard(context)
+      : _mobileCard(context);
 
   Widget _desktopCard(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -649,17 +688,20 @@ class _DetailSummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 18),
-          SizedBox(width: 210, child: _animatedWatchButton(desktop: true)),
+          SizedBox(
+            width: 210,
+            child: _animatedWatchButton(context, desktop: true),
+          ),
         ],
       ),
     ),
   );
 
-  Widget _animatedWatchButton({required bool desktop}) {
+  Widget _animatedWatchButton(BuildContext context, {required bool desktop}) {
     final enabled = !loading && hasPlayable;
     return OpenContainer<void>(
       transitionType: ContainerTransitionType.fade,
-      transitionDuration: const Duration(milliseconds: 560),
+      transitionDuration: Duration(milliseconds: desktop ? 500 : 300),
       closedColor: Colors.transparent,
       middleColor: AnimeColors.surfaceHigh,
       openColor: AnimeColors.background,
@@ -762,7 +804,7 @@ class _DetailSummaryCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Wrap(spacing: 7, runSpacing: 7, children: _metadata()),
                 const SizedBox(height: 12),
-                _animatedWatchButton(desktop: false),
+                _animatedWatchButton(context, desktop: false),
               ],
             ),
           ),
@@ -794,13 +836,25 @@ class _DetailSummaryCard extends StatelessWidget {
     // Featured cards use the landscape artwork, so they must not morph into
     // this portrait slot. Every regular portrait card shares this Hero,
     // including on desktop where detail opens as a modal popup.
-    if (heroTag.startsWith('featured-')) return art;
-    return Hero(
-      tag: heroTag,
-      transitionOnUserGestures: true,
-      createRectTween: smoothHeroRectTween,
-      flightShuttleBuilder: portraitHeroFlightShuttle,
-      child: art,
+    final coverHeroTag = heroTag.startsWith('featured-')
+        ? 'detail-poster-$heroTag'
+        : heroTag;
+    return Semantics(
+      button: true,
+      label: 'نمایش کاور ${item.title}',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Pressable(
+          onTap: onCoverTap,
+          child: Hero(
+            tag: coverHeroTag,
+            transitionOnUserGestures: true,
+            createRectTween: smoothHeroRectTween,
+            flightShuttleBuilder: portraitHeroFlightShuttle,
+            child: art,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1766,11 +1820,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _hideTimer?.cancel();
     final selected = await showModalBottomSheet<EpisodeVariant>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: double.infinity),
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       backgroundColor: AnimeColors.surface,
-      builder: (context) => SafeArea(
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .78,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             const ListTile(
               leading: Icon(Icons.high_quality_rounded),
@@ -1780,19 +1837,31 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
               ),
               subtitle: Text('زمان فعلی ویدیو هنگام تغییر حفظ می‌شود.'),
             ),
-            for (final variant in group.variants)
-              ListTile(
-                key: Key('player-quality-${variant.quality}'),
-                leading: variant.episode.fileUrl == _episode.fileUrl
-                    ? const Icon(
-                        Icons.check_circle_rounded,
-                        color: AnimeColors.orange,
-                      )
-                    : const Icon(Icons.radio_button_unchecked_rounded),
-                title: Text(variant.quality, textDirection: TextDirection.ltr),
-                subtitle: Text(_playerVariantMeta(variant)),
-                onTap: () => Navigator.pop(context, variant),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 12),
+                itemCount: group.variants.length,
+                itemBuilder: (context, index) {
+                  final variant = group.variants[index];
+                  return ListTile(
+                    key: Key('player-quality-${variant.quality}'),
+                    leading: variant.episode.fileUrl == _episode.fileUrl
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            color: AnimeColors.orange,
+                          )
+                        : const Icon(Icons.radio_button_unchecked_rounded),
+                    title: Text(
+                      variant.quality,
+                      textDirection: TextDirection.ltr,
+                    ),
+                    subtitle: Text(_playerVariantMeta(variant)),
+                    onTap: () => Navigator.pop(context, variant),
+                  );
+                },
               ),
+            ),
           ],
         ),
       ),
@@ -1915,7 +1984,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           ({EpisodeGroup group, EpisodeVariant variant})
         >(
           context: context,
+          constraints: const BoxConstraints(maxWidth: double.infinity),
           isScrollControlled: true,
+          useSafeArea: true,
           showDragHandle: true,
           backgroundColor: AnimeColors.surface,
           builder: (sheetContext) => StatefulBuilder(
@@ -2541,8 +2612,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         }
       }),
     );
-    SystemChrome.setPreferredOrientations(const []);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(
+      isAndroidTv
+          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+          : const [],
+    );
+    SystemChrome.setEnabledSystemUIMode(
+      isAndroidTv ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
     super.dispose();
   }
 
@@ -2696,17 +2773,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showTrackPicker() async {
     await showModalBottomSheet<void>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: double.infinity),
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
       builder: (context) => DefaultTabController(
         length: 2,
         child: SafeArea(
           top: false,
-          left: false,
-          right: false,
           child: SizedBox(
-            height: (MediaQuery.sizeOf(context).height * .76).clamp(360, 560),
+            height: (MediaQuery.sizeOf(context).height * .76).clamp(0.0, 560.0),
             child: Column(
               children: [
                 Padding(
@@ -2983,6 +3060,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showSpeedPicker() async {
     final selected = await showModalBottomSheet<double>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: double.infinity),
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
       builder: (context) => _SpeedPicker(initial: _rate),
@@ -3014,22 +3094,28 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                 ),
             child: child,
           ),
-      pageBuilder: (context, animation, secondary) => Align(
-        alignment: Alignment.topCenter,
-        child: Material(
-          color: AnimeColors.surface,
-          elevation: 18,
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(24),
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            height: (MediaQuery.sizeOf(context).height * .64).clamp(300, 590),
-            child: _TopSubtitleSettings(
-              initial: _subtitle,
-              onChanged: (value) {
-                if (mounted) setState(() => _subtitle = value);
-              },
+      pageBuilder: (context, animation, secondary) => SafeArea(
+        bottom: false,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Material(
+            color: AnimeColors.surface,
+            elevation: 18,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(24),
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              height: (MediaQuery.sizeOf(context).height * .72).clamp(
+                0.0,
+                590.0,
+              ),
+              child: _TopSubtitleSettings(
+                initial: _subtitle,
+                onChanged: (value) {
+                  if (mounted) setState(() => _subtitle = value);
+                },
+              ),
             ),
           ),
         ),
@@ -3047,7 +3133,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _showSubtitleTiming() async {
     final result = await showModalBottomSheet<SubtitlePreferences>(
       context: context,
+      constraints: const BoxConstraints(maxWidth: double.infinity),
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
       builder: (context) => _SubtitleTiming(initial: _subtitle),
@@ -3065,13 +3153,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Widget build(BuildContext context) => PopScope(
     canPop: _allowPlayerPop,
     onPopInvokedWithResult: (didPop, result) {
-      if (!didPop) unawaited(_exitPlayer());
+      if (!didPop) {
+        if (isAndroidTv && _controlsVisible) {
+          setState(() => _controlsVisible = false);
+        } else {
+          unawaited(_exitPlayer());
+        }
+      }
     },
     child: Scaffold(
       backgroundColor: Colors.black,
       body: Listener(
         onPointerSignal: _handlePointerSignal,
         child: PlayerKeyboard(
+          isTelevision: isAndroidTv,
+          controlsVisible: _controlsVisible,
+          onRemoteNavigation: _showControls,
           onCommand: _keyboardCommand,
           onSeekFraction: (fraction) {
             if (ModalRoute.of(context)?.isCurrent == true) {
@@ -3239,7 +3336,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                           ),
                                         ),
                                       ],
-                                      if (!isDesktopWindow) ...[
+                                      if (!isDesktopWindow && !isAndroidTv) ...[
                                         const SizedBox(width: 8),
                                         if (_pipSupported) ...[
                                           _RoundControl(
@@ -3299,8 +3396,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                   child: LayoutBuilder(
                                     builder: (context, constraints) {
                                       final compact =
-                                          compactPlayerControlsForWidth(
-                                            constraints.maxWidth,
+                                          shouldCompactPlayerControls(
+                                            isDesktop: isDesktopWindow,
+                                            width: constraints.maxWidth,
                                           );
                                       final volumeWidth = compact
                                           ? 150.0
@@ -3925,9 +4023,7 @@ class _SpeedPickerState extends State<_SpeedPicker> {
   @override
   Widget build(BuildContext context) => SafeArea(
     top: false,
-    left: false,
-    right: false,
-    child: Padding(
+    child: SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -4017,8 +4113,6 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
   @override
   Widget build(BuildContext context) => SafeArea(
     top: false,
-    left: false,
-    right: false,
     child: SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
       child: Column(

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/platform_ui.dart';
 import 'screens/update_screen.dart';
 import 'services/download_manager.dart';
 import 'services/device_bridge.dart';
@@ -14,6 +15,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   DeviceBridge.initialize();
+  await initializeDeviceLayout();
+  if (isAndroidTv) {
+    FocusManager.instance.highlightStrategy =
+        FocusHighlightStrategy.alwaysTraditional;
+  }
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
     const options = WindowOptions(
@@ -29,6 +35,12 @@ Future<void> main() async {
       await windowManager.show();
       await windowManager.focus();
     });
+  } else if (isAndroidTv) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   } else {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
