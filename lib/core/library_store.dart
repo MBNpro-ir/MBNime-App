@@ -36,6 +36,12 @@ class LibraryStore {
     await _write(_hentaiHistoryKey, items.take(50));
   }
 
+  Future<void> saveHistory(Iterable<AnimeContent> items) =>
+      _write(_historyKey, items.take(50));
+
+  Future<void> saveHentaiHistory(Iterable<AnimeContent> items) =>
+      _write(_hentaiHistoryKey, items.take(50));
+
   Future<void> clearHistory() async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_historyKey);

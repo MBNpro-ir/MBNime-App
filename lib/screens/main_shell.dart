@@ -73,24 +73,56 @@ class _MainShellState extends State<MainShell> {
       _store.hentaiHistory(),
     ]);
     if (!mounted) return;
+    // Strict separation by isHentai + one-time migration of legacy entries
+    // that were stored in the normal keys before the split.
+    List<AnimeContent> dedup(List<AnimeContent> items) {
+      final seen = <String>{};
+      return items.where((item) => seen.add(item.id)).toList();
+    }
+
+    final favNormal = <String, AnimeContent>{};
+    final favHentai = <String, AnimeContent>{};
+    for (final item
+        in values[0].where((i) => !AnimeOnApi.isPromotionalContent(i))) {
+      (item.isHentai ? favHentai : favNormal)[item.id] = item;
+    }
+    for (final item
+        in values[1].where((i) => !AnimeOnApi.isPromotionalContent(i))) {
+      (item.isHentai ? favHentai : favNormal)[item.id] = item;
+    }
+    final histNormal = dedup([
+      ...values[2].where(
+        (i) => !i.isHentai && !AnimeOnApi.isPromotionalContent(i),
+      ),
+      ...values[3].where(
+        (i) => !i.isHentai && !AnimeOnApi.isPromotionalContent(i),
+      ),
+    ]);
+    final histHentai = dedup([
+      ...values[3].where(
+        (i) => i.isHentai && !AnimeOnApi.isPromotionalContent(i),
+      ),
+      ...values[2].where(
+        (i) => i.isHentai && !AnimeOnApi.isPromotionalContent(i),
+      ),
+    ]);
     setState(() {
-      _favorites.addEntries(
-        values[0]
-            .where((item) => !AnimeOnApi.isPromotionalContent(item))
-            .map((item) => MapEntry(item.id, item)),
-      );
-      _hentaiFavorites.addEntries(
-        values[1]
-            .where((item) => !AnimeOnApi.isPromotionalContent(item))
-            .map((item) => MapEntry(item.id, item)),
-      );
-      _history.addAll(
-        values[2].where((item) => !AnimeOnApi.isPromotionalContent(item)),
-      );
-      _hentaiHistory.addAll(
-        values[3].where((item) => !AnimeOnApi.isPromotionalContent(item)),
-      );
+      _favorites.addEntries(favNormal.entries);
+      _hentaiFavorites.addEntries(favHentai.entries);
+      _history.addAll(histNormal);
+      _hentaiHistory.addAll(histHentai);
     });
+    // Persist the cleaned-up split only when legacy mixed entries exist,
+    // so the migration runs once instead of on every launch.
+    final needsMigration =
+        values[0].any((item) => item.isHentai) ||
+        values[2].any((item) => item.isHentai);
+    if (needsMigration) {
+      unawaited(_store.saveFavorites(favNormal.values));
+      unawaited(_store.saveHentaiFavorites(favHentai.values));
+      unawaited(_store.saveHistory(histNormal));
+      unawaited(_store.saveHentaiHistory(histHentai));
+    }
   }
 
   Future<void> _open(AnimeContent item, String tag) async {
@@ -296,6 +328,21 @@ class _MainShellState extends State<MainShell> {
     ),
   );
 
+  void _openFavorites() => _push(
+    _SavedPage(
+      title: 'علاقه‌مندی‌ها',
+      emptyText: 'هنوز چیزی به علاقه‌مندی‌ها اضافه نکرده‌ای',
+      emptyIcon: Icons.favorite_outline_rounded,
+      items: _favorites.values.toList(),
+      onOpen: _open,
+      onClear: () async {
+        _favorites.clear();
+        await _store.saveFavorites([]);
+        if (mounted) setState(() {});
+      },
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -352,7 +399,7 @@ class _MainShellState extends State<MainShell> {
               _TopBar(
                 search: _openSearch,
                 history: _openHistory,
-                favorites: () => _goToPage(3),
+                favorites: _openFavorites,
               ),
               if (isAndroidTv)
                 Padding(
