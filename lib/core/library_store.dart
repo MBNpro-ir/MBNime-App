@@ -8,9 +8,11 @@ import '../models/anime_content.dart';
 class LibraryStore {
   static const _favoritesKey = 'library_favorites_v1';
   static const _historyKey = 'library_history_v1';
+  static const _hentaiHistoryKey = 'library_hentai_history_v1';
 
   Future<List<AnimeContent>> favorites() => _read(_favoritesKey);
   Future<List<AnimeContent>> history() => _read(_historyKey);
+  Future<List<AnimeContent>> hentaiHistory() => _read(_hentaiHistoryKey);
 
   Future<void> saveFavorites(Iterable<AnimeContent> items) =>
       _write(_favoritesKey, items);
@@ -22,9 +24,21 @@ class LibraryStore {
     await _write(_historyKey, items.take(50));
   }
 
+  Future<void> addToHentaiHistory(AnimeContent item) async {
+    final items = await hentaiHistory();
+    items.removeWhere((current) => current.id == item.id);
+    items.insert(0, item);
+    await _write(_hentaiHistoryKey, items.take(50));
+  }
+
   Future<void> clearHistory() async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_historyKey);
+  }
+
+  Future<void> clearHentaiHistory() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_hentaiHistoryKey);
   }
 
   Future<List<AnimeContent>> _read(String key) async {

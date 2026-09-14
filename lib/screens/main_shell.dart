@@ -47,6 +47,7 @@ class _MainShellState extends State<MainShell> {
   late final PageController _pageController;
   final Map<String, AnimeContent> _favorites = {};
   final List<AnimeContent> _history = [];
+  final List<AnimeContent> _hentaiHistory = [];
   int _index = 0;
 
   @override
@@ -63,7 +64,11 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _restore() async {
-    final values = await Future.wait([_store.favorites(), _store.history()]);
+    final values = await Future.wait([
+      _store.favorites(),
+      _store.history(),
+      _store.hentaiHistory(),
+    ]);
     if (!mounted) return;
     setState(() {
       _favorites.addEntries(
@@ -74,15 +79,25 @@ class _MainShellState extends State<MainShell> {
       _history.addAll(
         values[1].where((item) => !AnimeOnApi.isPromotionalContent(item)),
       );
+      _hentaiHistory.addAll(
+        values[2].where((item) => !AnimeOnApi.isPromotionalContent(item)),
+      );
     });
   }
 
   Future<void> _open(AnimeContent item, String tag) async {
     setState(() {
-      _history.removeWhere((old) => old.id == item.id);
-      _history.insert(0, item);
+      if (item.isHentai) {
+        _hentaiHistory.removeWhere((old) => old.id == item.id);
+        _hentaiHistory.insert(0, item);
+      } else {
+        _history.removeWhere((old) => old.id == item.id);
+        _history.insert(0, item);
+      }
     });
-    unawaited(_store.addToHistory(item));
+    unawaited(
+      item.isHentai ? _store.addToHentaiHistory(item) : _store.addToHistory(item),
+    );
     final ContentApi sourceApi = item.isHentai ? _hentaiApi : widget.api;
     DetailScreen detail() => DetailScreen(
       content: item,
@@ -202,10 +217,30 @@ class _MainShellState extends State<MainShell> {
         HentaiSectionPage(
           api: _hentaiApi,
           onOpen: (item, tag) => _open(item, tag),
+          hentaiHistory: _hentaiHistory,
+          onOpenHentaiHistory: () => _openHentaiHistory(),
+          onClearHentaiHistory: () async {
+            await _store.clearHentaiHistory();
+            if (mounted) setState(_hentaiHistory.clear);
+          },
         ),
       );
     }
   }
+
+  void _openHentaiHistory() => _push(
+    _SavedPage(
+      title: 'بازدیدشده‌های +۱۸',
+      emptyText: 'هنوز عنوانی از بخش +۱۸ باز نکرده‌ای',
+      emptyIcon: Icons.history_rounded,
+      items: _hentaiHistory,
+      onOpen: _open,
+      onClear: () async {
+        await _store.clearHentaiHistory();
+        if (mounted) setState(_hentaiHistory.clear);
+      },
+    ),
+  );
 
   void _openHistory() => _push(
     _SavedPage(

@@ -324,6 +324,29 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  Future<void> _downloadSeasonByQuality(
+    AnimeContent item,
+    AnimeSeason season,
+    String quality,
+  ) async {
+    final filtered = season.episodes.where((ep) {
+      final epQuality = episodeQuality(ep.name, ep.name);
+      return epQuality == quality;
+    }).toList(growable: false);
+    if (filtered.isEmpty) return;
+    final qualitySeason = AnimeSeason(
+      id: '${season.id}-$quality',
+      name: '${season.name} · $quality',
+      episodes: filtered,
+    );
+    await showDownloadChoice(
+      context,
+      content: item,
+      season: qualitySeason,
+      episodes: filtered,
+    );
+  }
+
   Future<void> _play(
     AnimeContent content,
     AnimeEpisode episode, {
@@ -544,6 +567,8 @@ class _DetailScreenState extends State<DetailScreen> {
                           onRelated: _openRelated,
                           onDownloadSeason: (season) =>
                               _downloadSeason(item, season),
+                          onDownloadQuality: (season, quality) =>
+                              _downloadSeasonByQuality(item, season, quality),
                         ),
                       ),
                     ),
@@ -1021,6 +1046,7 @@ class _AboutSection extends StatelessWidget {
     required this.section,
     required this.onRelated,
     required this.onDownloadSeason,
+    required this.onDownloadQuality,
   });
   final AnimeContent item;
   final ContentApi api;
@@ -1028,6 +1054,7 @@ class _AboutSection extends StatelessWidget {
   final int section;
   final ValueChanged<AnimeContent> onRelated;
   final ValueChanged<AnimeSeason> onDownloadSeason;
+  final void Function(AnimeSeason season, String quality) onDownloadQuality;
 
   Future<void> _launch(String url) async {
     final uri = Uri.tryParse(url);
@@ -1271,6 +1298,8 @@ class _AboutSection extends StatelessWidget {
         Text(
           item.seasons.length == 1 && item.seasons.first.id == 'movie'
               ? 'دانلود همه کیفیت‌ها'
+              : item.isHentai
+              ? 'دانلود بر اساس کیفیت'
               : 'دانلود فصل‌ها',
           style: Theme.of(context).textTheme.titleLarge,
         ),
@@ -1280,27 +1309,48 @@ class _AboutSection extends StatelessWidget {
           style: const TextStyle(color: AnimeColors.muted),
         ),
         const SizedBox(height: 10),
-        Column(
-          children: [
-            for (final season in item.seasons)
-              if (season.episodes.isNotEmpty)
+        if (item.isHentai) ...[
+          for (final season in item.seasons)
+            if (season.episodes.isNotEmpty) ...[
+              for (final quality in _hentaiQualities(season))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonalIcon(
-                      onPressed: () => onDownloadSeason(season),
+                      onPressed: () =>
+                          onDownloadQuality(season, quality),
                       icon: const Icon(Icons.download_for_offline_rounded),
                       label: Text(
-                        season.id == 'movie'
-                            ? 'دانلود همه ${season.episodes.length} کیفیت'
-                            : '${season.name} · دانلود همه ${season.episodes.length} قسمت',
+                        'دانلود همه قسمت‌ها · $quality',
                       ),
                     ),
                   ),
                 ),
-          ],
-        ),
+            ],
+        ] else ...[
+          Column(
+            children: [
+              for (final season in item.seasons)
+                if (season.episodes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: () => onDownloadSeason(season),
+                        icon: const Icon(Icons.download_for_offline_rounded),
+                        label: Text(
+                          season.id == 'movie'
+                              ? 'دانلود همه ${season.episodes.length} کیفیت'
+                              : '${season.name} · دانلود همه ${season.episodes.length} قسمت',
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ],
       ],
       if (section == 2 && item.related.isNotEmpty) ...[
         Text(
@@ -2377,20 +2427,47 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                 itemCount: group.variants.length,
                 itemBuilder: (context, index) {
                   final variant = group.variants[index];
-                  return ListTile(
+                  final selected = variant.episode.fileUrl == _episode.fileUrl;
+                  return InkWell(
                     key: Key('player-quality-${variant.quality}'),
-                    leading: variant.episode.fileUrl == _episode.fileUrl
-                        ? const Icon(
-                            Icons.check_circle_rounded,
-                            color: AnimeColors.orange,
-                          )
-                        : const Icon(Icons.radio_button_unchecked_rounded),
-                    title: Text(
-                      variant.quality,
-                      textDirection: TextDirection.ltr,
-                    ),
-                    subtitle: Text(_playerVariantMeta(variant)),
                     onTap: () => Navigator.pop(context, variant),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: selected ? AnimeColors.orange : null,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            variant.quality,
+                            textDirection: TextDirection.ltr,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              color: selected ? AnimeColors.orange : null,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _playerVariantMeta(variant),
+                              style: const TextStyle(
+                                color: AnimeColors.muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               ),
@@ -2629,6 +2706,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                       : saved?.isResumable == true
                                       ? 'ادامه از ${_formatPlayerDuration(saved!.position)}'
                                       : 'پخش از ابتدا';
+                                  final episodeDisplayName =
+                                      widget.content.kind == ContentKind.movie
+                                          ? variant.quality
+                                          : (widget.content.isHentai
+                                              ? _hentaiCleanEpisodeName(
+                                                  group.name,
+                                                )
+                                              : group.name);
                                   return Material(
                                     color: isCurrent
                                         ? AnimeColors.orange.withValues(
@@ -2660,10 +2745,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                               children: [
                                                 Expanded(
                                                   child: Text(
-                                                    widget.content.kind ==
-                                                            ContentKind.movie
-                                                        ? variant.quality
-                                                        : group.name,
+                                                    episodeDisplayName,
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -2865,7 +2947,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     }
   }
 
-  AnimeEpisode? get _nextEpisode => nextEpisodeFor(widget.content, _episode);
+  AnimeEpisode? get _nextEpisode {
+    final currentGroup = _currentEpisodeGroup;
+    if (currentGroup != null) {
+      final allGroups = _episodeCatalog.seasons
+          .expand((s) => s.episodes)
+          .toList();
+      final idx = allGroups.indexWhere((g) => g.id == currentGroup.id);
+      if (idx >= 0 && idx + 1 < allGroups.length) {
+        final nextGroup = allGroups[idx + 1];
+        final preferredQuality = _currentVariant?.quality;
+        return nextGroup.variantFor(preferredQuality).episode;
+      }
+      return null;
+    }
+    return nextEpisodeFor(widget.content, _episode);
+  }
 
   Future<void> _playNextEpisode() => _finishCurrentAndPlayNext();
 
@@ -4199,6 +4296,27 @@ class _HeroControl extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// «قسمت 1 • 1080p» → «قسمت 1» — strips trailing quality suffix from
+/// hentai episode names so the quality badge in the picker stays separate.
+String _hentaiCleanEpisodeName(String name) => name
+    .replaceAll(
+      RegExp(r'\s*[•·\-–|]\s*(\d{3,4}\s*[pP]|4[Kk]|پخش آنلاین)\s*$'),
+      '',
+    )
+    .trim();
+
+/// Extracts unique quality labels from a hentai season's episodes, preserving
+/// the order they appear in (highest first, as produced by the API).
+List<String> _hentaiQualities(AnimeSeason season) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final ep in season.episodes) {
+    final quality = episodeQuality(ep.name, ep.name);
+    if (seen.add(quality)) result.add(quality);
+  }
+  return result;
 }
 
 String _playerVariantMeta(EpisodeVariant variant) {

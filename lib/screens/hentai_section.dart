@@ -16,9 +16,19 @@ import '../widgets/pressable.dart';
 typedef HentaiOpenContent = Future<void> Function(AnimeContent item, String tag);
 
 class HentaiSectionPage extends StatefulWidget {
-  const HentaiSectionPage({super.key, required this.api, required this.onOpen});
+  const HentaiSectionPage({
+    super.key,
+    required this.api,
+    required this.onOpen,
+    required this.hentaiHistory,
+    required this.onOpenHentaiHistory,
+    required this.onClearHentaiHistory,
+  });
   final HentaiIranApi api;
   final HentaiOpenContent onOpen;
+  final List<AnimeContent> hentaiHistory;
+  final VoidCallback onOpenHentaiHistory;
+  final Future<void> Function() onClearHentaiHistory;
 
   @override
   State<HentaiSectionPage> createState() => _HentaiSectionPageState();
@@ -94,6 +104,8 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
             if (ctx.mounted) Navigator.maybePop(ctx);
           });
         },
+        onHistory: widget.onOpenHentaiHistory,
+        historyCount: widget.hentaiHistory.length,
       ),
       appBar: AppBar(
         leading: Builder(
@@ -105,6 +117,17 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         ),
         title: const Text('هنتای ایران  •  +۱۸'),
         backgroundColor: const Color(0xFF450A0A),
+        actions: [
+          if (widget.hentaiHistory.isNotEmpty)
+            IconButton(
+              tooltip: 'بازدیدشده‌های +۱۸',
+              onPressed: widget.onOpenHentaiHistory,
+              icon: Badge(
+                label: Text('${widget.hentaiHistory.length}'),
+                child: const Icon(Icons.history_rounded),
+              ),
+            ),
+        ],
       ),
       body: AmbientBackground(
         child: SafeArea(
@@ -255,11 +278,15 @@ class _HentaiSectionDrawer extends StatelessWidget {
     required this.selected,
     required this.select,
     required this.onBack,
+    required this.onHistory,
+    required this.historyCount,
   });
 
   final int selected;
   final ValueChanged<int> select;
   final VoidCallback onBack;
+  final VoidCallback onHistory;
+  final int historyCount;
 
   static const _navItems = <({IconData icon, String label})>[
     (icon: Icons.home_rounded, label: 'خانه'),
@@ -333,6 +360,39 @@ class _HentaiSectionDrawer extends StatelessWidget {
                 onBack();
               },
             ),
+          ),
+          const SizedBox(height: 18),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: const Icon(Icons.history_rounded),
+            title: const Text('بازدیدشده‌های +۱۸'),
+            trailing: historyCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$historyCount',
+                      style: const TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : null,
+            onTap: () async {
+              Navigator.pop(context);
+              await Future<void>.delayed(const Duration(milliseconds: 220));
+              onHistory();
+            },
           ),
           const SizedBox(height: 18),
           Padding(
