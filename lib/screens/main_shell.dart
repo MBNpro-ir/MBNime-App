@@ -266,7 +266,7 @@ class _MainShellState extends State<MainShell> {
           onOpenHentaiHistory: () => _openHentaiHistory(),
           onClearHentaiHistory: () async {
             await _store.clearHentaiHistory();
-            if (mounted) setState(_hentaiHistory.clear);
+            if (mounted) setState(() { _hentaiHistory.clear(); });
           },
           hentaiFavorites: _hentaiFavorites.values.toList(),
           onOpenHentaiFavorites: () => _openHentaiFavorites(),
@@ -294,7 +294,7 @@ class _MainShellState extends State<MainShell> {
       onOpen: _open,
       onClear: () async {
         await _store.clearHentaiHistory();
-        if (mounted) setState(_hentaiHistory.clear);
+        if (mounted) setState(() { _hentaiHistory.clear(); });
       },
     ),
   );
@@ -323,7 +323,7 @@ class _MainShellState extends State<MainShell> {
       onOpen: _open,
       onClear: () async {
         await _store.clearHistory();
-        if (mounted) setState(_history.clear);
+        if (mounted) setState(() { _history.clear(); });
       },
     ),
   );
@@ -2148,3 +2148,4 @@ class _ErrorState extends StatelessWidget {
     ),
   );
 }
+
