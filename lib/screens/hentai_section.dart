@@ -137,36 +137,43 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const BrandMark(
-              size: 30,
-              gradientColors: [Color(0xFFEF4444), Color(0xFF991B1B)],
-              accent: Color(0xFFEF4444),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: .18),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: const Color(0xFFEF4444).withValues(alpha: .5),
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const BrandMark(
+                size: 42,
+                gradientColors: [Color(0xFFEF4444), Color(0xFF991B1B)],
+                accent: Color(0xFFEF4444),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: .18),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFEF4444).withValues(alpha: .5),
+                  ),
+                ),
+                child: const Text(
+                  '+۱۸',
+                  style: TextStyle(
+                    color: Color(0xFFFCA5A5),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-              child: const Text(
-                '+۱۸',
-                style: TextStyle(
-                  color: Color(0xFFFCA5A5),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         centerTitle: true,
+        titleSpacing: 0,
         backgroundColor: const Color(0xFF450A0A),
         actions: [
           IconButton(
