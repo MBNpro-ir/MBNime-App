@@ -62,7 +62,17 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
     if (value == _index) return;
     setState(() => _index = value);
     if (!_pageController.hasClients) return;
-    _pageController.jumpToPage(value);
+    if (isLargeScreenDevice) {
+      _pageController.jumpToPage(value);
+    } else {
+      unawaited(
+        _pageController.animateToPage(
+          value,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
   }
 
   void _openSearch() {
@@ -209,7 +219,16 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
               Expanded(
                 child: PageView(
                   controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
+                  // RTL (فارسی) به‌صورت پیش‌فرض حفظ می‌شود: ورق‌زدن در جهت
+                  // خواندن، مثل صفحه اصلی.
+                  physics: isLargeScreenDevice
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                  onPageChanged: (value) {
+                    if (_index != value) setState(() => _index = value);
+                  },
                   children: pages,
                 ),
               ),
