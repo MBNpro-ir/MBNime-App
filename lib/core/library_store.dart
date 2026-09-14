@@ -7,15 +7,20 @@ import '../models/anime_content.dart';
 
 class LibraryStore {
   static const _favoritesKey = 'library_favorites_v1';
+  static const _hentaiFavoritesKey = 'library_hentai_favorites_v1';
   static const _historyKey = 'library_history_v1';
   static const _hentaiHistoryKey = 'library_hentai_history_v1';
 
   Future<List<AnimeContent>> favorites() => _read(_favoritesKey);
+  Future<List<AnimeContent>> hentaiFavorites() => _read(_hentaiFavoritesKey);
   Future<List<AnimeContent>> history() => _read(_historyKey);
   Future<List<AnimeContent>> hentaiHistory() => _read(_hentaiHistoryKey);
 
   Future<void> saveFavorites(Iterable<AnimeContent> items) =>
       _write(_favoritesKey, items);
+
+  Future<void> saveHentaiFavorites(Iterable<AnimeContent> items) =>
+      _write(_hentaiFavoritesKey, items);
 
   Future<void> addToHistory(AnimeContent item) async {
     final items = await history();

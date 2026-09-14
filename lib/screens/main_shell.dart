@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -46,6 +47,7 @@ class _MainShellState extends State<MainShell> {
   final _hentaiApi = HentaiIranApi();
   late final PageController _pageController;
   final Map<String, AnimeContent> _favorites = {};
+  final Map<String, AnimeContent> _hentaiFavorites = {};
   final List<AnimeContent> _history = [];
   final List<AnimeContent> _hentaiHistory = [];
   int _index = 0;
@@ -66,6 +68,7 @@ class _MainShellState extends State<MainShell> {
   Future<void> _restore() async {
     final values = await Future.wait([
       _store.favorites(),
+      _store.hentaiFavorites(),
       _store.history(),
       _store.hentaiHistory(),
     ]);
@@ -76,11 +79,16 @@ class _MainShellState extends State<MainShell> {
             .where((item) => !AnimeOnApi.isPromotionalContent(item))
             .map((item) => MapEntry(item.id, item)),
       );
+      _hentaiFavorites.addEntries(
+        values[1]
+            .where((item) => !AnimeOnApi.isPromotionalContent(item))
+            .map((item) => MapEntry(item.id, item)),
+      );
       _history.addAll(
-        values[1].where((item) => !AnimeOnApi.isPromotionalContent(item)),
+        values[2].where((item) => !AnimeOnApi.isPromotionalContent(item)),
       );
       _hentaiHistory.addAll(
-        values[2].where((item) => !AnimeOnApi.isPromotionalContent(item)),
+        values[3].where((item) => !AnimeOnApi.isPromotionalContent(item)),
       );
     });
   }
@@ -99,20 +107,25 @@ class _MainShellState extends State<MainShell> {
       item.isHentai ? _store.addToHentaiHistory(item) : _store.addToHistory(item),
     );
     final ContentApi sourceApi = item.isHentai ? _hentaiApi : widget.api;
+    final favoriteMap = item.isHentai ? _hentaiFavorites : _favorites;
     DetailScreen detail() => DetailScreen(
       content: item,
       api: sourceApi,
       heroTag: tag,
-      isFavorite: _favorites.containsKey(item.id),
+      isFavorite: favoriteMap.containsKey(item.id),
       onFavoriteChanged: (selected) {
         setState(() {
           if (selected) {
-            _favorites[item.id] = item;
+            favoriteMap[item.id] = item;
           } else {
-            _favorites.remove(item.id);
+            favoriteMap.remove(item.id);
           }
         });
-        unawaited(_store.saveFavorites(_favorites.values));
+        unawaited(
+          item.isHentai
+              ? _store.saveHentaiFavorites(_hentaiFavorites.values)
+              : _store.saveFavorites(_favorites.values),
+        );
       },
     );
     if (isDesktopWindow) {
@@ -223,6 +236,18 @@ class _MainShellState extends State<MainShell> {
             await _store.clearHentaiHistory();
             if (mounted) setState(_hentaiHistory.clear);
           },
+          hentaiFavorites: _hentaiFavorites.values.toList(),
+          onOpenHentaiFavorites: () => _openHentaiFavorites(),
+          onToggleHentaiFavorite: (item, selected) {
+            setState(() {
+              if (selected) {
+                _hentaiFavorites[item.id] = item;
+              } else {
+                _hentaiFavorites.remove(item.id);
+              }
+            });
+            unawaited(_store.saveHentaiFavorites(_hentaiFavorites.values));
+          },
         ),
       );
     }
@@ -238,6 +263,21 @@ class _MainShellState extends State<MainShell> {
       onClear: () async {
         await _store.clearHentaiHistory();
         if (mounted) setState(_hentaiHistory.clear);
+      },
+    ),
+  );
+
+  void _openHentaiFavorites() => _push(
+    _SavedPage(
+      title: 'علاقه‌مندی‌های +۱۸',
+      emptyText: 'هنوز چیزی به علاقه‌مندی‌های +۱۸ اضافه نکرده‌ای',
+      emptyIcon: Icons.favorite_outline_rounded,
+      items: _hentaiFavorites.values.toList(),
+      onOpen: _open,
+      onClear: () async {
+        _hentaiFavorites.clear();
+        await _store.saveHentaiFavorites([]);
+        if (mounted) setState(() {});
       },
     ),
   );
@@ -371,108 +411,121 @@ class _AnimatedBottomNav extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF24252B),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white12),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black45,
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(5),
-        child: Row(
-          children: List.generate(_items.length, (itemIndex) {
-            final item = _items[itemIndex];
-            final selected = itemIndex == index;
-            return Expanded(
-              child: Semantics(
-                selected: selected,
-                button: true,
-                label: item.label,
-                child: InkWell(
-                  onTap: () => onSelected(itemIndex),
-                  borderRadius: BorderRadius.circular(24),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 360),
-                    curve: Curves.easeOutCubic,
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AnimeColors.orange.withValues(alpha: .92)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: selected
-                          ? [
-                              BoxShadow(
-                                color: AnimeColors.orange.withValues(
-                                  alpha: .28,
-                                ),
-                                blurRadius: 14,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 260),
-                          transitionBuilder: (child, animation) =>
-                              FadeTransition(
-                                opacity: animation,
-                                child: ScaleTransition(
-                                  scale: animation,
-                                  child: child,
-                                ),
-                              ),
-                          child: selected
-                              ? Padding(
-                                  key: ValueKey(itemIndex),
-                                  padding: const EdgeInsets.only(left: 6),
-                                  child: Icon(
-                                    item.icon,
-                                    size: 22,
-                                    color: Colors.black,
+  Widget build(BuildContext context) {
+    final iconsOnly = Platform.isAndroid;
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFF24252B),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.white12),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black45,
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Row(
+            children: List.generate(_items.length, (itemIndex) {
+              final item = _items[itemIndex];
+              final selected = itemIndex == index;
+              return Expanded(
+                child: Semantics(
+                  selected: selected,
+                  button: true,
+                  label: item.label,
+                  child: InkWell(
+                    onTap: () => onSelected(itemIndex),
+                    borderRadius: BorderRadius.circular(24),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 360),
+                      curve: Curves.easeOutCubic,
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AnimeColors.orange.withValues(alpha: .92)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: AnimeColors.orange.withValues(
+                                    alpha: .28,
                                   ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        Flexible(
-                          child: Text(
-                            item.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
-                            style: TextStyle(
+                                  blurRadius: 14,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: iconsOnly
+                          ? Icon(
+                              item.icon,
+                              size: 22,
                               color: selected ? Colors.black : Colors.white70,
-                              fontWeight: selected
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
-                              fontSize: 12.5,
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 260),
+                                  transitionBuilder: (child, animation) =>
+                                      FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale: animation,
+                                          child: child,
+                                        ),
+                                      ),
+                                  child: selected
+                                      ? Padding(
+                                          key: ValueKey(itemIndex),
+                                          padding: const EdgeInsets.only(
+                                            left: 6,
+                                          ),
+                                          child: Icon(
+                                            item.icon,
+                                            size: 22,
+                                            color: Colors.black,
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    item.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.fade,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? Colors.black
+                                          : Colors.white70,
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _TopBar extends StatelessWidget {

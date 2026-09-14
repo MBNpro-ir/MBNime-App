@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,12 +24,18 @@ class HentaiSectionPage extends StatefulWidget {
     required this.hentaiHistory,
     required this.onOpenHentaiHistory,
     required this.onClearHentaiHistory,
+    required this.hentaiFavorites,
+    required this.onOpenHentaiFavorites,
+    required this.onToggleHentaiFavorite,
   });
   final HentaiIranApi api;
   final HentaiOpenContent onOpen;
   final List<AnimeContent> hentaiHistory;
   final VoidCallback onOpenHentaiHistory;
   final Future<void> Function() onClearHentaiHistory;
+  final List<AnimeContent> hentaiFavorites;
+  final VoidCallback onOpenHentaiFavorites;
+  final void Function(AnimeContent item, bool selected) onToggleHentaiFavorite;
 
   @override
   State<HentaiSectionPage> createState() => _HentaiSectionPageState();
@@ -55,6 +62,18 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
     setState(() => _index = value);
     if (!_pageController.hasClients) return;
     _pageController.jumpToPage(value);
+  }
+
+  void _openSearch() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HentaiSearchPage(
+          api: widget.api,
+          initialQuery: '',
+          onOpen: widget.onOpen,
+        ),
+      ),
+    );
   }
 
   @override
@@ -106,6 +125,8 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         },
         onHistory: widget.onOpenHentaiHistory,
         historyCount: widget.hentaiHistory.length,
+        onFavorites: widget.onOpenHentaiFavorites,
+        favoritesCount: widget.hentaiFavorites.length,
       ),
       appBar: AppBar(
         leading: Builder(
@@ -118,6 +139,11 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         title: const Text('هنتای ایران  •  +۱۸'),
         backgroundColor: const Color(0xFF450A0A),
         actions: [
+          IconButton(
+            tooltip: 'جستجوی +۱۸',
+            onPressed: _openSearch,
+            icon: const Icon(Icons.search_rounded),
+          ),
           if (widget.hentaiHistory.isNotEmpty)
             IconButton(
               tooltip: 'بازدیدشده‌های +۱۸',
@@ -167,108 +193,121 @@ class _HentaiBottomNav extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF24252B),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white12),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black45,
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(5),
-        child: Row(
-          children: List.generate(_items.length, (itemIndex) {
-            final item = _items[itemIndex];
-            final selected = itemIndex == index;
-            return Expanded(
-              child: Semantics(
-                selected: selected,
-                button: true,
-                label: item.label,
-                child: InkWell(
-                  onTap: () => onSelected(itemIndex),
-                  borderRadius: BorderRadius.circular(24),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 360),
-                    curve: Curves.easeOutCubic,
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? const Color(0xFFEF4444).withValues(alpha: .92)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: selected
-                          ? [
-                              BoxShadow(
-                                color: const Color(0xFFEF4444).withValues(
-                                  alpha: .28,
-                                ),
-                                blurRadius: 14,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 260),
-                          transitionBuilder: (child, animation) =>
-                              FadeTransition(
-                                opacity: animation,
-                                child: ScaleTransition(
-                                  scale: animation,
-                                  child: child,
-                                ),
-                              ),
-                          child: selected
-                              ? Padding(
-                                  key: ValueKey(itemIndex),
-                                  padding: const EdgeInsets.only(left: 6),
-                                  child: Icon(
-                                    item.icon,
-                                    size: 22,
-                                    color: Colors.black,
+  Widget build(BuildContext context) {
+    final iconsOnly = Platform.isAndroid;
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFF24252B),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.white12),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black45,
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Row(
+            children: List.generate(_items.length, (itemIndex) {
+              final item = _items[itemIndex];
+              final selected = itemIndex == index;
+              return Expanded(
+                child: Semantics(
+                  selected: selected,
+                  button: true,
+                  label: item.label,
+                  child: InkWell(
+                    onTap: () => onSelected(itemIndex),
+                    borderRadius: BorderRadius.circular(24),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 360),
+                      curve: Curves.easeOutCubic,
+                      height: 50,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFFEF4444).withValues(alpha: .92)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFEF4444).withValues(
+                                    alpha: .28,
                                   ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        Flexible(
-                          child: Text(
-                            item.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
-                            style: TextStyle(
+                                  blurRadius: 14,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: iconsOnly
+                          ? Icon(
+                              item.icon,
+                              size: 22,
                               color: selected ? Colors.black : Colors.white70,
-                              fontWeight: selected
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
-                              fontSize: 12.5,
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 260),
+                                  transitionBuilder: (child, animation) =>
+                                      FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale: animation,
+                                          child: child,
+                                        ),
+                                      ),
+                                  child: selected
+                                      ? Padding(
+                                          key: ValueKey(itemIndex),
+                                          padding: const EdgeInsets.only(
+                                            left: 6,
+                                          ),
+                                          child: Icon(
+                                            item.icon,
+                                            size: 22,
+                                            color: Colors.black,
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    item.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.fade,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? Colors.black
+                                          : Colors.white70,
+                                      fontWeight: selected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 // ------------------------------------------------------------------ drawer
@@ -280,6 +319,8 @@ class _HentaiSectionDrawer extends StatelessWidget {
     required this.onBack,
     required this.onHistory,
     required this.historyCount,
+    required this.onFavorites,
+    required this.favoritesCount,
   });
 
   final int selected;
@@ -287,6 +328,8 @@ class _HentaiSectionDrawer extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onHistory;
   final int historyCount;
+  final VoidCallback onFavorites;
+  final int favoritesCount;
 
   static const _navItems = <({IconData icon, String label})>[
     (icon: Icons.home_rounded, label: 'خانه'),
@@ -392,6 +435,39 @@ class _HentaiSectionDrawer extends StatelessWidget {
               Navigator.pop(context);
               await Future<void>.delayed(const Duration(milliseconds: 220));
               onHistory();
+            },
+          ),
+          const SizedBox(height: 6),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: const Icon(Icons.favorite_rounded),
+            title: const Text('علاقه‌مندی‌های +۱۸'),
+            trailing: favoritesCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$favoritesCount',
+                      style: const TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : null,
+            onTap: () async {
+              Navigator.pop(context);
+              await Future<void>.delayed(const Duration(milliseconds: 220));
+              onFavorites();
             },
           ),
           const SizedBox(height: 18),
@@ -533,7 +609,7 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                   onSubmitted: (value) => Navigator.push<void>(
                     context,
                     slideUpRoute(
-                      _HentaiSearchPage(
+                      HentaiSearchPage(
                         api: widget.api,
                         initialQuery: value,
                         onOpen: widget.onOpen,
@@ -548,7 +624,7 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                       onPressed: () => Navigator.push<void>(
                         context,
                         slideUpRoute(
-                          _HentaiSearchPage(
+                          HentaiSearchPage(
                             api: widget.api,
                             initialQuery: _search.text,
                             onOpen: widget.onOpen,
@@ -1500,8 +1576,9 @@ class _HentaiHtmlListPageState extends State<_HentaiHtmlListPage> {
 
 // ------------------------------------------------------------------ search
 
-class _HentaiSearchPage extends StatefulWidget {
-  const _HentaiSearchPage({
+class HentaiSearchPage extends StatefulWidget {
+  const HentaiSearchPage({
+    super.key,
     required this.api,
     required this.initialQuery,
     required this.onOpen,
@@ -1511,10 +1588,10 @@ class _HentaiSearchPage extends StatefulWidget {
   final HentaiOpenContent onOpen;
 
   @override
-  State<_HentaiSearchPage> createState() => _HentaiSearchPageState();
+  State<HentaiSearchPage> createState() => HentaiSearchPageState();
 }
 
-class _HentaiSearchPageState extends State<_HentaiSearchPage> {
+class HentaiSearchPageState extends State<HentaiSearchPage> {
   late final _controller = TextEditingController(text: widget.initialQuery);
   Timer? _debounce;
   List<AnimeContent> _results = [];
