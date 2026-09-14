@@ -154,7 +154,9 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
             children: [
               const BrandMark(
                 size: 42,
-                gradientColors: [Color(0xFFEF4444), Color(0xFF991B1B)],
+                // عین گرادیان اصلی (روشن→روشن) فقط با سر قرمز:
+                // ته گرادیان همان coral اصلی می‌ماند.
+                gradientColors: [Color(0xFFEF4444), AnimeColors.coral],
                 accent: Color(0xFFEF4444),
               ),
               const SizedBox(width: 8),
