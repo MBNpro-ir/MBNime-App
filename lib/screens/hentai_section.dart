@@ -544,7 +544,9 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
 
   Future<void> _reload() async {
     final next = widget.api.home();
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
     try {
       await next;
     } catch (_) {}
@@ -1200,7 +1202,9 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
 
   Future<void> _reload() async {
     final next = widget.api.terms(widget.taxonomy);
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
     try {
       await next;
     } catch (_) {}
@@ -1480,7 +1484,9 @@ class _HentaiHtmlListPageState extends State<_HentaiHtmlListPage> {
 
   Future<void> _reload() async {
     final next = widget.loader();
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
     try {
       await next;
     } catch (_) {}
