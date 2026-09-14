@@ -392,8 +392,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _slider(
                               label: 'فاصله از پایین',
                               value: _subtitle.bottomPadding,
-                              min: 16,
-                              max: 180,
+                              min: 0,
+                              max: 1000,
                               suffix: _subtitle.bottomPadding
                                   .round()
                                   .toString(),

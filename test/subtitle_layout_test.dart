@@ -50,4 +50,32 @@ void main() {
     expect(expanded.bottomPadding, greaterThan(compact.bottomPadding));
     expect(expanded.fontSize, lessThanOrEqualTo(28));
   });
+
+  group('normalizePersianSubtitle', () {
+    test('arabic yeh (U+064A, two dots) becomes farsi yeh (no dots)', () {
+      // "میروم" written with ARABIC YEH.
+      const input = 'م\u064Aروم';
+      const expected = 'م\u06CCروم';
+      expect(normalizePersianSubtitle(input), expected);
+      // No ARABIC YEH may remain in the output.
+      expect(normalizePersianSubtitle(input).contains('\u064A'), isFalse);
+    });
+
+    test('arabic kaf (U+0643) becomes keheh (U+06A9)', () {
+      // "کتاب" written with ARABIC KAF.
+      const input = '\u0643تاب';
+      const expected = '\u06A9تاب';
+      expect(normalizePersianSubtitle(input), expected);
+    });
+
+    test('already-correct persian text is left byte-identical', () {
+      const correct = 'یا از درخت ها میرفتیم بالا';
+      expect(normalizePersianSubtitle(correct), correct);
+    });
+
+    test('empty and non-persian strings pass through', () {
+      expect(normalizePersianSubtitle(''), '');
+      expect(normalizePersianSubtitle('Hello 123'), 'Hello 123');
+    });
+  });
 }

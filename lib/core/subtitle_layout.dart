@@ -2,6 +2,17 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+/// Normalizes Arabic-script variants that Persian subtitle files often use.
+///
+/// SRT files frequently contain ARABIC LETTER YEH (U+064A, rendered WITH two
+/// dots below) and ARABIC LETTER KAF (U+0643) instead of the Persian
+/// FARSI YEH (U+06CC, no dots) and KEHEH (U+06A9). Each pair is the same
+/// abstract letter with a different glyph, so the replacement is
+/// semantically neutral and cannot alter any other word.
+String normalizePersianSubtitle(String input) => input
+    .replaceAll('ي', 'ی')
+    .replaceAll('ك', 'ک');
+
 /// Responsive measurements for the subtitle overlay in Android PiP.
 ///
 /// The user's selected size remains the source of truth. In PiP it is scaled

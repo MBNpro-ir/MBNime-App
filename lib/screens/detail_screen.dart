@@ -5048,8 +5048,8 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
       _SettingSlider(
         label: 'فاصله از پایین',
         value: value.bottomPadding,
-        min: 16,
-        max: 180,
+        min: 0,
+        max: 1000,
         onChanged: (v) => change(value.copyWith(bottomPadding: v)),
       ),
       const SizedBox(height: 12),
@@ -5318,8 +5318,8 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
             _SettingSlider(
               label: 'فاصله از پایین',
               value: value.bottomPadding,
-              min: 16,
-              max: 180,
+              min: 0,
+              max: 1000,
               onChanged: (v) =>
                   setState(() => value = value.copyWith(bottomPadding: v)),
             ),
@@ -5524,7 +5524,7 @@ class _AnimeSubtitles extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = [
       for (final line in lines)
-        if (line.trim().isNotEmpty) line.trim(),
+        if (line.trim().isNotEmpty) normalizePersianSubtitle(line.trim()),
     ].join('\n');
     if (text.isEmpty) return const SizedBox.shrink();
     return Positioned.fill(
