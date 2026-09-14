@@ -23,6 +23,7 @@ import '../core/theme.dart';
 import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
+import '../services/hentai_iran_api.dart';
 import '../services/device_bridge.dart';
 import '../services/picture_in_picture.dart';
 import '../widgets/content_art.dart';
@@ -45,7 +46,7 @@ class DetailScreen extends StatefulWidget {
   });
 
   final AnimeContent content;
-  final AnimeOnApi api;
+  final ContentApi api;
   final bool isFavorite;
   final ValueChanged<bool> onFavoriteChanged;
 
@@ -88,7 +89,9 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   void _selectDetailSection(int value) {
-    final next = value.clamp(0, 3).toInt();
+    // هنتای تب «نظرات» ندارد؛ سقف ایندکس ۲ است تا سوایپ هم رد نشود.
+    final max = widget.content.isHentai ? 2 : 3;
+    final next = value.clamp(0, max).toInt();
     if (next == _detailSection) return;
     // The tab row is laid out right-to-left, so a higher index sits to the
     // LEFT. A newer page must enter from the left and an older page from
@@ -361,9 +364,13 @@ class _DetailScreenState extends State<DetailScreen> {
       final item = snapshot.data ?? widget.content;
       final loading = snapshot.connectionState != ConnectionState.done;
       final viewportHeight = MediaQuery.sizeOf(context).height;
-      final headerHeight = isLargeScreenDevice
-          ? (viewportHeight * .42).clamp(260.0, 380.0)
-          : 430.0;
+      // فقط هنتای: کاور بزرگ بالا و تب نظرات حذف می‌شود (بخش عادی بدون تغییر).
+      final isHentai = item.isHentai || widget.content.isHentai;
+      final headerHeight = isHentai
+          ? 120.0
+          : isLargeScreenDevice
+              ? (viewportHeight * .42).clamp(260.0, 380.0)
+              : 430.0;
       final hasPlayable = item.seasons.any(
         (season) => season.episodes.isNotEmpty,
       );
@@ -416,10 +423,10 @@ class _DetailScreenState extends State<DetailScreen> {
                         StretchMode.zoomBackground,
                         StretchMode.blurBackground,
                       ],
-                // Artwork fills the whole header behind the toolbar so there
-                // is no solid black strip above the banner. A short top scrim
-                // keeps the toolbar actions readable over bright artwork.
-                background: Stack(
+                // در هنتای کاور بزرگ بالا حذف شده و پس‌زمینه مشکی ساده است.
+                background: isHentai
+                    ? const ColoredBox(color: Colors.black)
+                    : Stack(
                   fit: StackFit.expand,
                   children: [
                     // The backdrop remains independent from the catalog's
@@ -503,6 +510,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   _DetailSectionTabs(
                     selected: _detailSection,
                     onSelected: _selectDetailSection,
+                    hideComments: isHentai,
                   ),
                   const SizedBox(height: 22),
                   GestureDetector(
@@ -530,6 +538,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         key: ValueKey(_detailSection),
                         child: _AboutSection(
                           item: item,
+                          api: widget.api,
                           comments: _comments,
                           section: _detailSection,
                           onRelated: _openRelated,
@@ -860,10 +869,15 @@ class _DetailSummaryCard extends StatelessWidget {
 }
 
 class _DetailSectionTabs extends StatelessWidget {
-  const _DetailSectionTabs({required this.selected, required this.onSelected});
+  const _DetailSectionTabs({
+    required this.selected,
+    required this.onSelected,
+    this.hideComments = false,
+  });
 
   final int selected;
   final ValueChanged<int> onSelected;
+  final bool hideComments;
 
   static const _items = [
     (Icons.info_outline_rounded, 'درباره', 'درباره'),
@@ -873,7 +887,9 @@ class _DetailSectionTabs extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
+  Widget build(BuildContext context) {
+    final items = hideComments ? _items.sublist(0, 3) : _items;
+    return LayoutBuilder(
     builder: (context, constraints) {
       final compact = constraints.maxWidth < 620;
       return SizedBox(
@@ -886,7 +902,7 @@ class _DetailSectionTabs extends StatelessWidget {
           ),
           child: Row(
             children: [
-              for (var index = 0; index < _items.length; index++)
+              for (var index = 0; index < items.length; index++)
                 Expanded(
                   child: InkWell(
                     onTap: () => onSelected(index),
@@ -914,7 +930,7 @@ class _DetailSectionTabs extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  _items[index].$1,
+                                  items[index].$1,
                                   size: 19,
                                   color: selected == index
                                       ? AnimeColors.orange
@@ -922,7 +938,7 @@ class _DetailSectionTabs extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  _items[index].$3,
+                                  items[index].$3,
                                   maxLines: 1,
                                   overflow: TextOverflow.fade,
                                   softWrap: false,
@@ -940,7 +956,7 @@ class _DetailSectionTabs extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  _items[index].$1,
+                                  items[index].$1,
                                   size: 19,
                                   color: selected == index
                                       ? AnimeColors.orange
@@ -949,7 +965,7 @@ class _DetailSectionTabs extends StatelessWidget {
                                 const SizedBox(width: 7),
                                 Flexible(
                                   child: Text(
-                                    _items[index].$2,
+                                    items[index].$2,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -971,6 +987,7 @@ class _DetailSectionTabs extends StatelessWidget {
       );
     },
   );
+  }
 }
 
 class _MetaPill extends StatelessWidget {
@@ -999,12 +1016,14 @@ class _MetaPill extends StatelessWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection({
     required this.item,
+    required this.api,
     required this.comments,
     required this.section,
     required this.onRelated,
     required this.onDownloadSeason,
   });
   final AnimeContent item;
+  final ContentApi api;
   final Future<List<AnimeComment>> comments;
   final int section;
   final ValueChanged<AnimeContent> onRelated;
@@ -1015,6 +1034,50 @@ class _AboutSection extends StatelessWidget {
     if (uri != null) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Future<void> _openHentaiLink(BuildContext context, HentaiRelatedLink link) async {
+    final hentaiApi = api is HentaiIranApi ? api as HentaiIranApi : null;
+    if (hentaiApi == null) {
+      await _launch(link.url);
+      return;
+    }
+    if (link.taxonomy == 'link' ||
+        link.taxonomy == HentaiIranApi.taxonomySubtitle) {
+      await _launch(link.url);
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      slideUpRoute(
+        _HentaiTermResultsPage(
+          api: hentaiApi,
+          taxonomy: link.taxonomy,
+          termSlugOrId: link.termId.isNotEmpty ? link.termId : link.title,
+          title: link.title,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openHentaiTermByName(
+    BuildContext context,
+    String taxonomy,
+    String name,
+  ) async {
+    final hentaiApi = api is HentaiIranApi ? api as HentaiIranApi : null;
+    if (hentaiApi == null) return;
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      slideUpRoute(
+        _HentaiTermResultsPage(
+          api: hentaiApi,
+          taxonomy: taxonomy,
+          termSlugOrId: name,
+          title: name,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1079,7 +1142,76 @@ class _AboutSection extends StatelessWidget {
           ),
         ),
       ],
-      if (section == 0 && item.genres.isNotEmpty) ...[
+      if (section == 0 && item.isHentai) ...[
+        const SizedBox(height: 22),
+        _HentaiExtraInfo(item: item),
+      ],
+      // دکمه «انیمه هنتای زیرنویس فارسی» (تاکسونومی hi_sub) همه‌جا مخفی است.
+      if (section == 0 &&
+          item.isHentai &&
+          item.relatedLinks.any(
+            (link) => link.taxonomy != HentaiIranApi.taxonomySubtitle,
+          )) ...[
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            const Icon(Icons.link_rounded, color: AnimeColors.orange, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'لینک‌های مرتبط',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final link in item.relatedLinks)
+              if (link.taxonomy != HentaiIranApi.taxonomySubtitle)
+                ActionChip(
+                label: Text(link.title),
+                backgroundColor: link.highlight
+                    ? const Color(0xFF16A34A).withValues(alpha: .16)
+                    : AnimeColors.surfaceHigh,
+                side: BorderSide(
+                  color: link.highlight
+                      ? const Color(0xFF16A34A).withValues(alpha: .5)
+                      : Colors.white10,
+                ),
+                onPressed: () => _openHentaiLink(context, link),
+              ),
+          ],
+        ),
+      ],
+      if (section == 0 && item.isHentai && item.tags.isNotEmpty) ...[
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            const Icon(Icons.sell_rounded, color: AnimeColors.orange, size: 20),
+            const SizedBox(width: 8),
+            Text('برچسب‌ها', style: Theme.of(context).textTheme.titleLarge),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final tag in item.tags)
+              ActionChip(
+                label: Text(tag),
+                onPressed: () => _openHentaiTermByName(
+                  context,
+                  HentaiIranApi.taxonomyTag,
+                  tag,
+                ),
+              ),
+          ],
+        ),
+      ],
+      if (section == 0 && !item.isHentai && item.genres.isNotEmpty) ...[
         const SizedBox(height: 22),
         Text('ژانرها', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 10),
@@ -1089,6 +1221,34 @@ class _AboutSection extends StatelessWidget {
           children: item.genres
               .map((genre) => Chip(label: Text(genre)))
               .toList(),
+        ),
+      ],
+      if (section == 0 && item.isHentai && item.genres.isNotEmpty) ...[
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            const Icon(Icons.tag_rounded, color: AnimeColors.orange, size: 20),
+            const SizedBox(width: 8),
+            Text('ژانرها', style: Theme.of(context).textTheme.titleLarge),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final genre in item.genres)
+              ActionChip(
+                label: Text(genre),
+                onPressed: genre == '+۱۸'
+                    ? null
+                    : () => _openHentaiTermByName(
+                        context,
+                        HentaiIranApi.taxonomyGenre,
+                        genre,
+                      ),
+              ),
+          ],
         ),
       ],
       if (section == 0 && item.cast.isNotEmpty) ...[
@@ -1193,12 +1353,15 @@ class _AboutSection extends StatelessWidget {
       if (section == 3) ...[
         Text('نظرات کاربران', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 10),
-        const TextField(
+        // سایت در تب نظرات هنتای می‌گوید ارسال نظر نیازمند اشتراک فعال است.
+        TextField(
           enabled: false,
           maxLines: 2,
           decoration: InputDecoration(
-            prefixIcon: Icon(Icons.lock_outline_rounded),
-            hintText: 'ثبت نظر فعلاً غیرفعال است',
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            hintText: item.isHentai
+                ? 'ارسال نظر فقط برای کاربران دارای اشتراک فعال امکان‌پذیر است'
+                : 'ثبت نظر فعلاً غیرفعال است',
           ),
         ),
         const SizedBox(height: 12),
@@ -1216,9 +1379,11 @@ class _AboutSection extends StatelessWidget {
             }
             final rows = snapshot.data ?? const <AnimeComment>[];
             if (rows.isEmpty) {
-              return const Text(
-                'هنوز نظری برای این عنوان ثبت نشده است.',
-                style: TextStyle(color: AnimeColors.muted),
+              return Text(
+                item.isHentai
+                    ? 'دیدگاه کاربران در سایت فقط برای کاربران دارای اشتراک فعال نمایش داده می‌شود.'
+                    : 'هنوز نظری برای این عنوان ثبت نشده است.',
+                style: const TextStyle(color: AnimeColors.muted),
               );
             }
             return Column(
@@ -1380,6 +1545,374 @@ class _NetworkAvatar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// کارت «جزئیات تکمیلی» هنتای — آینه دقیق سایدبار سایت.
+class _HentaiExtraInfo extends StatelessWidget {
+  const _HentaiExtraInfo({required this.item});
+  final AnimeContent item;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <({IconData icon, String label, String value, bool danger})>[
+      if (item.publishDateText.isNotEmpty)
+        (
+          icon: Icons.calendar_month_rounded,
+          label: 'تاریخ انتشار',
+          value: item.publishDateText,
+          danger: false,
+        ),
+      if (item.year > 0)
+        (
+          icon: Icons.movie_filter_rounded,
+          label: 'سال انتشار',
+          value: '${item.year}',
+          danger: false,
+        ),
+      if (item.studio.isNotEmpty)
+        (
+          icon: Icons.business_rounded,
+          label: 'استودیو',
+          value: item.studio,
+          danger: false,
+        ),
+      (
+        icon: Icons.shield_rounded,
+        label: 'رده سنی',
+        value: item.ageRating.isEmpty ? '+18' : item.ageRating,
+        danger: true,
+      ),
+      if (item.viewsText.isNotEmpty)
+        (
+          icon: Icons.visibility_rounded,
+          label: 'بازدید',
+          value: item.viewsText,
+          danger: false,
+        ),
+      if (item.downloadsText.isNotEmpty)
+        (
+          icon: Icons.download_rounded,
+          label: 'دانلود',
+          value: item.downloadsText,
+          danger: false,
+        ),
+      if (item.statusLabel.isNotEmpty)
+        (
+          icon: Icons.playlist_add_check_rounded,
+          label: 'وضعیت',
+          value: item.statusLabel,
+          danger: false,
+        ),
+      if (item.censorLabel.isNotEmpty)
+        (
+          icon: Icons.blur_on_rounded,
+          label: 'سانسور',
+          value: item.censorLabel,
+          danger: false,
+        ),
+      if (item.subtitleLabel.isNotEmpty)
+        (
+          icon: Icons.subtitles_rounded,
+          label: 'زیرنویس',
+          value: item.subtitleLabel,
+          danger: false,
+        ),
+    ];
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AnimeColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.info_rounded,
+                  color: AnimeColors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'جزئیات تکمیلی',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < rows.length; i++) ...[
+              if (i > 0) const Divider(height: 20),
+              Row(
+                children: [
+                  Icon(
+                    rows[i].icon,
+                    size: 18,
+                    color: rows[i].danger
+                        ? const Color(0xFFEF4444)
+                        : AnimeColors.muted,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    rows[i].label,
+                    style: const TextStyle(color: AnimeColors.muted),
+                  ),
+                  const Spacer(),
+                  Flexible(
+                    child: Text(
+                      rows[i].value,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: rows[i].danger
+                            ? const Color(0xFFEF4444)
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// نتایج یک ترم هنتای (از چیپ‌های صفحه جزئیات) با صفحه‌بندی.
+class _HentaiTermResultsPage extends StatefulWidget {
+  const _HentaiTermResultsPage({
+    required this.api,
+    required this.taxonomy,
+    required this.termSlugOrId,
+    required this.title,
+  });
+  final HentaiIranApi api;
+  final String taxonomy;
+  final String termSlugOrId;
+  final String title;
+
+  @override
+  State<_HentaiTermResultsPage> createState() => _HentaiTermResultsPageState();
+}
+
+class _HentaiTermResultsPageState extends State<_HentaiTermResultsPage> {
+  final _items = <AnimeContent>[];
+  final _scroll = ScrollController();
+  String? _termId;
+  String? _error;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _more = true;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.extentAfter < 450) _loadMore();
+    });
+    _resolveAndLoad();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _resolveAndLoad() async {
+    try {
+      final direct = int.tryParse(widget.termSlugOrId);
+      if (direct != null) {
+        _termId = widget.termSlugOrId;
+      } else {
+        final needle = widget.termSlugOrId.trim();
+        HentaiTerm? match;
+        // ورق‌به‌ورق تا سقف وردپرس (۱۰۰) دور زده می‌شود؛ per_page=200 خطای
+        // ۴۰۰ می‌دهد و همه چیپ‌های ژانر/برچسب/استودیو را می‌شکست.
+        final all = await widget.api.termsAll(widget.taxonomy);
+        for (final term in all) {
+          if (term.slug == needle ||
+              term.name.trim() == needle ||
+              Uri.decodeComponent(term.slug) == needle ||
+              term.name.toLowerCase() == needle.toLowerCase()) {
+            match = term;
+            break;
+          }
+        }
+        // 2) Fuzzy: strip prefixes and try contains.
+        match ??= _fuzzy(all, needle);
+        // 3) Last resort: search the REST API by name.
+        if (match == null) {
+          final searched = await widget.api.terms(
+            widget.taxonomy,
+            perPage: 10,
+            search: needle,
+          );
+          if (searched.isNotEmpty) match = searched.first;
+        }
+        if (match == null) {
+          throw const AnimeOnApiException('این دسته در فهرست سایت پیدا نشد.');
+        }
+        _termId = match.id;
+      }
+      await _loadMore();
+    } on AnimeOnApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.message;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'دریافت این بخش انجام نشد.';
+        });
+      }
+    }
+  }
+
+  HentaiTerm? _fuzzy(List<HentaiTerm> all, String needle) {
+    String norm(String s) => s
+        .replaceFirst('ژانر', '')
+        .replaceFirst('استودیو', '')
+        .replaceFirst('استدیو', '')
+        .replaceFirst('وضعیت', '')
+        .replaceFirst('برچسب', '')
+        .replaceAll(RegExp(r'[-_‌　\s]+'), ' ')
+        .trim()
+        .toLowerCase();
+    final clean = norm(needle);
+    if (clean.isEmpty) return null;
+    for (final term in all) {
+      final name = norm(term.name);
+      final slug = norm(Uri.decodeComponent(term.slug));
+      if (name == clean ||
+          slug == clean ||
+          name.contains(clean) ||
+          slug.contains(clean) ||
+          clean.contains(name) ||
+          (slug.isNotEmpty && clean.contains(slug))) {
+        return term;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _loadMore() async {
+    final termId = _termId;
+    if (termId == null || _loadingMore || !_more) return;
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+      if (_page == 0) _loading = true;
+    });
+    try {
+      final next = await widget.api.byTerm(
+        widget.taxonomy,
+        termId,
+        page: _page + 1,
+      );
+      if (!mounted) return;
+      setState(() {
+        _page++;
+        for (final item in next) {
+          if (!_items.any((old) => old.id == item.id)) _items.add(item);
+        }
+        _more = next.isNotEmpty;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } on AnimeOnApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+          _error = e.message;
+        });
+      }
+    }
+  }
+
+  Future<void> _open(AnimeContent item, String tag) async {
+    await Navigator.of(context).push(
+      slideUpRoute(
+        DetailScreen(
+          content: item,
+          api: widget.api,
+          isFavorite: false,
+          onFavoriteChanged: (_) {},
+          heroTag: tag,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.title)),
+    body: _loading && _items.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null && _items.isEmpty
+        ? Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.cloud_off_rounded,
+                  size: 52,
+                  color: AnimeColors.muted,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: AnimeColors.muted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                FilledButton.tonal(
+                  onPressed: _resolveAndLoad,
+                  child: const Text('تلاش دوباره'),
+                ),
+              ],
+            ),
+          )
+        : GridView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.all(20),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: MediaQuery.sizeOf(context).width > 700 ? 4 : 2,
+              childAspectRatio: .67,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: _items.length + (_more ? 1 : 0),
+            itemBuilder: (_, i) {
+              if (i >= _items.length) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final tag = 'hterm-${widget.taxonomy}-${_items[i].id}-$i';
+              return InkWell(
+                onTap: () => _open(_items[i], tag),
+                borderRadius: BorderRadius.circular(24),
+                child: Hero(
+                  tag: tag,
+                  child: ContentArt(content: _items[i]),
+                ),
+              );
+            },
+          ),
+  );
 }
 
 class PlayerScreen extends StatefulWidget {

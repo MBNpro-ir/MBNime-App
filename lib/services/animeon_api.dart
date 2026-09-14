@@ -45,7 +45,12 @@ class CatalogGroup {
   final String? imageUrl;
 }
 
-class AnimeOnApi {
+abstract interface class ContentApi {
+  Future<AnimeContent> details(AnimeContent summary);
+  Future<List<AnimeComment>> comments(String contentId);
+}
+
+class AnimeOnApi implements ContentApi {
   AnimeOnApi({
     http.Client? client,
     this.apiKey = const String.fromEnvironment('MBN_API_KEY'),
@@ -269,6 +274,7 @@ class AnimeOnApi {
   /// flag, so the initial kind guess can be wrong (e.g. a series fetched
   /// as `type=movie` returns zero playable files). When the first attempt
   /// yields nothing playable, retry once with the other type.
+  @override
   Future<AnimeContent> details(AnimeContent summary) async {
     if (isPromotionalContent(summary)) {
       throw const AnimeOnApiException(
@@ -286,6 +292,7 @@ class AnimeOnApi {
 
   /// Public, read-only comments for a title. Comment submission deliberately
   /// stays outside this client until moderation and abuse handling exist.
+  @override
   Future<List<AnimeComment>> comments(String contentId) async {
     final response = await _legacyGet('get_all_comments', {'id': contentId});
     try {

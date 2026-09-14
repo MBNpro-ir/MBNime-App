@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/country_flags.dart';
 import '../core/library_store.dart';
@@ -9,6 +10,7 @@ import '../core/platform_ui.dart';
 import '../core/theme.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
+import '../services/hentai_iran_api.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
@@ -16,6 +18,7 @@ import '../widgets/content_art.dart';
 import '../widgets/pressable.dart';
 import 'detail_screen.dart';
 import 'download_manager_screen.dart';
+import 'hentai_section.dart';
 import 'settings_screen.dart';
 import 'update_screen.dart';
 
@@ -40,6 +43,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   final _store = LibraryStore();
+  final _hentaiApi = HentaiIranApi();
   late final PageController _pageController;
   final Map<String, AnimeContent> _favorites = {};
   final List<AnimeContent> _history = [];
@@ -79,9 +83,10 @@ class _MainShellState extends State<MainShell> {
       _history.insert(0, item);
     });
     unawaited(_store.addToHistory(item));
+    final ContentApi sourceApi = item.isHentai ? _hentaiApi : widget.api;
     DetailScreen detail() => DetailScreen(
       content: item,
-      api: widget.api,
+      api: sourceApi,
       heroTag: tag,
       isFavorite: _favorites.containsKey(item.id),
       onFavoriteChanged: (selected) {
@@ -133,6 +138,75 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _openSearch() => _push(_SearchPage(api: widget.api, onOpen: _open));
+  Future<void> _openHentai() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('hentai_age_confirmed') ?? false)) {
+      if (!mounted) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444)),
+              SizedBox(width: 8),
+              Text('هشدار محتوای +۱۸'),
+            ],
+          ),
+          content: const Text(
+            'این بخش فقط برای افراد بالای ۱۸ سال ساخته شده است و شامل محتوای بزرگسالان می‌شود. با ورود، مسئولیت استفاده بر عهده شماست.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('انصراف'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Color(0xFFB91C3C)),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('تأیید می‌کنم +۱۸ هستم'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+      await prefs.setBool('hentai_age_confirmed', true);
+    }
+    if (!(prefs.getBool('hentai_vpn_warned') ?? false)) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.vpn_key_rounded, color: Color(0xFFF97316)),
+              SizedBox(width: 8),
+              Text('اتصال VPN'),
+            ],
+          ),
+          content: const Text(
+            'برای تماشا و دانلود در بخش هنتای باید VPN روشن باشد.\n\nتوجه: VPN در انیمه‌های عادی کار نمی‌کند؛ برای انیمه‌های معمولی باید VPN خاموش باشد.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('فهمیدم'),
+            ),
+          ],
+        ),
+      );
+      await prefs.setBool('hentai_vpn_warned', true);
+    }
+    if (mounted) {
+      _push(
+        HentaiSectionPage(
+          api: _hentaiApi,
+          onOpen: (item, tag) => _open(item, tag),
+        ),
+      );
+    }
+  }
+
   void _openHistory() => _push(
     _SavedPage(
       title: 'بازدیدشده‌ها',
@@ -189,6 +263,7 @@ class _MainShellState extends State<MainShell> {
             _push(_GroupsPage(api: widget.api, country: false, onOpen: _open)),
         countries: () =>
             _push(_GroupsPage(api: widget.api, country: true, onOpen: _open)),
+        hentai: _openHentai,
         logout: () async {
           Navigator.maybePop(context);
           await widget.onLogout();
@@ -411,6 +486,7 @@ class _MenuDrawer extends StatelessWidget {
     required this.downloads,
     required this.settings,
     required this.updates,
+    required this.hentai,
   });
   final String email;
   final int selected;
@@ -423,6 +499,7 @@ class _MenuDrawer extends StatelessWidget {
   final VoidCallback downloads;
   final VoidCallback settings;
   final VoidCallback updates;
+  final VoidCallback hentai;
 
   @override
   Widget build(BuildContext context) => Drawer(
@@ -462,6 +539,24 @@ class _MenuDrawer extends StatelessWidget {
             index: 3,
           ),
           _tile(Icons.flag_rounded, 'کشورها', countries),
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF7F1D1D).withValues(alpha: .32),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFFEF4444).withValues(alpha: .55),
+              ),
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: _tile(
+                Icons.explicit_rounded,
+                'هنتای ایران  •  +۱۸',
+                hentai,
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           _label('ابزارهای برنامه'),
           DecoratedBox(

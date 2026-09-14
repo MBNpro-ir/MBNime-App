@@ -166,7 +166,13 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
       final resume = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(group.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+          title: Text(
+            widget.content.isHentai
+                ? _hentaiEpisodeTitle(variant.episode.name)
+                : group.name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           content: Text(
             'آخرین بار تا ${_fmt(saved.position)} دیده‌ای. ادامه می‌دهی یا از اول؟',
           ),
@@ -391,6 +397,12 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
 
   Widget _episodeCard(EpisodeGroup group) {
     final variant = group.variantFor(_selectedQuality);
+    // در هنتای نام «قسمت N • کیفیت» داخل خود واریانت است تا کیفیتِ
+    // انتخاب‌شده مشخص باشد، ولی چون بج کیفیت روی کارت هست، پسوند کیفیت
+    // از عنوان نمایشی برداشته می‌شود («قسمت ۰۱»). بخش عادی بدون تغییر.
+    final title = widget.content.isHentai
+        ? _hentaiEpisodeTitle(variant.episode.name)
+        : group.name;
     final saved = _saved[group.id];
     final resumable = saved?.isResumable ?? false;
     final watched = saved?.watched ?? false;
@@ -437,7 +449,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      group.name,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -677,8 +689,16 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   }
 }
 
-String _fmt(Duration value) {
-  final hours = value.inHours;
+/// «قسمت 01 • 1080p» ← «قسمت 01»؛ پسوند کیفیت انتهایی نام را می‌اندازد.
+/// فقط برای نمایش هنتای استفاده می‌شود چون بج کیفیت روی کارت هست.
+String _hentaiEpisodeTitle(String name) => name
+    .replaceAll(
+      RegExp(r'\s*[•·\-–|]\s*(\d{3,4}\s*[pP]|4[Kk]|پخش آنلاین)\s*$'),
+      '',
+    )
+    .trim();
+
+String _fmt(Duration value) {  final hours = value.inHours;
   final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
   return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';

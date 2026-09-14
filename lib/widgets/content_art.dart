@@ -338,6 +338,36 @@ class _ContentArtState extends State<ContentArt> {
               ),
             ),
           ),
+          if (widget.content.isHentai &&
+              (widget.content.ageRating.isNotEmpty ||
+                  widget.content.censorLabel.isNotEmpty))
+            Positioned(
+              top: 10,
+              right: 10,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.content.censorLabel.isNotEmpty)
+                    _CornerBadge(
+                      label: widget.content.censorLabel,
+                      color: widget.content.censorLabel.contains('بدون') ||
+                              widget.content.censorLabel
+                                  .toUpperCase()
+                                  .contains('UNC')
+                          ? const Color(0xFFEA580C) // orange for uncensored
+                          : const Color(0xFF16A34A), // green for censored
+                    ),
+                  if (widget.content.censorLabel.isNotEmpty &&
+                      widget.content.ageRating.isNotEmpty)
+                    const SizedBox(width: 4),
+                  if (widget.content.ageRating.isNotEmpty)
+                    _CornerBadge(
+                      label: widget.content.ageRating,
+                      color: const Color(0xFFEF4444),
+                    ),
+                ],
+              ),
+            ),
           if (widget.showTitle)
             Positioned(
               right: 14,
@@ -438,6 +468,35 @@ class _CardMetaBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CornerBadge extends StatelessWidget {
+  const _CornerBadge({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(6),
+      boxShadow: const [
+        BoxShadow(color: Colors.black54, blurRadius: 4),
+      ],
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 10,
+          height: 1,
+        ),
+      ),
+    ),
+  );
 }
 
 class _PosterPainter extends CustomPainter {

@@ -62,6 +62,16 @@ class LibraryStore {
     'imageUrl': item.imageUrl,
     'backdropUrl': item.backdropUrl,
     'detailUrl': item.detailUrl,
+    'isHentai': item.isHentai,
+    'studio': item.studio,
+    'statusLabel': item.statusLabel,
+    'censorLabel': item.censorLabel,
+    'subtitleLabel': item.subtitleLabel,
+    'viewsText': item.viewsText,
+    'downloadsText': item.downloadsText,
+    'publishDateText': item.publishDateText,
+    'ageRating': item.ageRating,
+    'tags': item.tags,
   };
 
   AnimeContent _decode(Map<String, dynamic> row) {
@@ -101,6 +111,18 @@ class LibraryStore {
       imageUrl: imageUrl,
       backdropUrl: backdropUrl,
       detailUrl: row['detailUrl']?.toString(),
+      isHentai: row['isHentai'] == true,
+      studio: row['studio']?.toString() ?? '',
+      statusLabel: row['statusLabel']?.toString() ?? '',
+      censorLabel: row['censorLabel']?.toString() ?? '',
+      subtitleLabel: row['subtitleLabel']?.toString() ?? '',
+      viewsText: row['viewsText']?.toString() ?? '',
+      downloadsText: row['downloadsText']?.toString() ?? '',
+      publishDateText: row['publishDateText']?.toString() ?? '',
+      ageRating: row['ageRating']?.toString() ?? '',
+      tags: (row['tags'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .toList(),
     );
   }
 }

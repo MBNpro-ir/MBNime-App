@@ -54,6 +54,27 @@ class AnimeDownload {
   final String fileSize;
 }
 
+/// لینک مرتبط داخل صفحه هنتای (ژانر / استودیو / وضعیت / زیرنویس …).
+/// [taxonomy] یکی از مقادیر `genre`, `anime_tag`, `hi_studio`, `hi_status`,
+/// `hi_censor`, `hi_year`, `hi_sub` یا `link` (پیوند آزاد سایت) است و
+/// [termId] در صورت قابل استخراج بودن شناسه عددی وردپرس را نگه می‌دارد تا
+/// ضربه روی چیپ مستقیماً آرشیو درون‌برنامه‌ای را باز کند.
+class HentaiRelatedLink {
+  const HentaiRelatedLink({
+    required this.title,
+    required this.url,
+    this.taxonomy = 'link',
+    this.termId = '',
+    this.highlight = false,
+  });
+
+  final String title;
+  final String url;
+  final String taxonomy;
+  final String termId;
+  final bool highlight;
+}
+
 class AnimeComment {
   const AnimeComment({
     required this.id,
@@ -93,6 +114,17 @@ class AnimeContent {
     this.cast = const [],
     this.related = const [],
     this.downloads = const [],
+    this.isHentai = false,
+    this.studio = '',
+    this.statusLabel = '',
+    this.censorLabel = '',
+    this.subtitleLabel = '',
+    this.viewsText = '',
+    this.downloadsText = '',
+    this.publishDateText = '',
+    this.ageRating = '',
+    this.tags = const [],
+    this.relatedLinks = const [],
   });
 
   final String id;
@@ -121,6 +153,29 @@ class AnimeContent {
   final List<AnimePerson> cast;
   final List<AnimeContent> related;
   final List<AnimeDownload> downloads;
+  final bool isHentai;
+
+  /// --- فیلدهای اختصاصی هنتای (برای بخش عادی خالی می‌مانند) ---
+  /// استودیو (hi_studio)، وضعیت پخش (hi_status)، سانسور (hi_censor) و
+  /// زیرنویس (hi_sub) دقیقاً مطابق سایت.
+  final String studio;
+  final String statusLabel;
+  final String censorLabel;
+  final String subtitleLabel;
+
+  /// شمارنده‌های متنی سایت (با ارقام فارسی) و تاریخ انتشار میلادی.
+  final String viewsText;
+  final String downloadsText;
+  final String publishDateText;
+
+  /// رده سنی (همیشه ‎+18‎ برای هنتای).
+  final String ageRating;
+
+  /// برچسب‌ها (anime_tag) جدا از ژانرها (genre).
+  final List<String> tags;
+
+  /// لینک‌های مرتبط سایت (ترکیب ژانر/استودیو/وضعیت/زیرنویس).
+  final List<HentaiRelatedLink> relatedLinks;
 
   String get kindLabel => switch (kind) {
     ContentKind.movie => 'فیلم',
