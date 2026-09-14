@@ -349,7 +349,11 @@ class _MainShellState extends State<MainShell> {
           bottom: false,
           child: Column(
             children: [
-              _TopBar(search: _openSearch, history: _openHistory),
+              _TopBar(
+                search: _openSearch,
+                history: _openHistory,
+                favorites: () => _goToPage(3),
+              ),
               if (isAndroidTv)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -529,9 +533,14 @@ class _AnimatedBottomNav extends StatelessWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.search, required this.history});
+  const _TopBar({
+    required this.search,
+    required this.history,
+    required this.favorites,
+  });
   final VoidCallback search;
   final VoidCallback history;
+  final VoidCallback favorites;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -546,6 +555,11 @@ class _TopBar extends StatelessWidget {
         const Spacer(),
         const BrandMark(size: 42),
         const Spacer(),
+        IconButton(
+          tooltip: 'علاقه‌مندی‌ها',
+          onPressed: favorites,
+          icon: const Icon(Icons.favorite_rounded, size: 28),
+        ),
         IconButton(
           tooltip: 'بازدیدشده‌ها',
           onPressed: history,

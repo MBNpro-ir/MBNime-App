@@ -140,19 +140,28 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         backgroundColor: const Color(0xFF450A0A),
         actions: [
           IconButton(
+            tooltip: 'علاقه‌مندی‌های +۱۸',
+            onPressed: widget.onOpenHentaiFavorites,
+            icon: Badge(
+              isLabelVisible: widget.hentaiFavorites.isNotEmpty,
+              label: Text('${widget.hentaiFavorites.length}'),
+              child: const Icon(Icons.favorite_rounded),
+            ),
+          ),
+          IconButton(
+            tooltip: 'بازدیدشده‌های +۱۸',
+            onPressed: widget.onOpenHentaiHistory,
+            icon: Badge(
+              isLabelVisible: widget.hentaiHistory.isNotEmpty,
+              label: Text('${widget.hentaiHistory.length}'),
+              child: const Icon(Icons.history_rounded),
+            ),
+          ),
+          IconButton(
             tooltip: 'جستجوی +۱۸',
             onPressed: _openSearch,
             icon: const Icon(Icons.search_rounded),
           ),
-          if (widget.hentaiHistory.isNotEmpty)
-            IconButton(
-              tooltip: 'بازدیدشده‌های +۱۸',
-              onPressed: widget.onOpenHentaiHistory,
-              icon: Badge(
-                label: Text('${widget.hentaiHistory.length}'),
-                child: const Icon(Icons.history_rounded),
-              ),
-            ),
         ],
       ),
       body: AmbientBackground(
@@ -534,13 +543,6 @@ class _HentaiHomeTab extends StatefulWidget {
 
 class _HentaiHomeTabState extends State<_HentaiHomeTab> {
   late Future<HentaiHome> _future = widget.api.home();
-  final _search = TextEditingController();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
 
   Future<void> _reload() async {
     final next = widget.api.home();
@@ -600,49 +602,6 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
             parent: AlwaysScrollableScrollPhysics(),
           ),
           slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                child: TextField(
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (value) => Navigator.push<void>(
-                    context,
-                    slideUpRoute(
-                      HentaiSearchPage(
-                        api: widget.api,
-                        initialQuery: value,
-                        onOpen: widget.onOpen,
-                      ),
-                    ),
-                  ),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'جست‌وجو در هنتای ایران…',
-                    suffixIcon: IconButton(
-                      tooltip: 'جست‌وجو',
-                      onPressed: () => Navigator.push<void>(
-                        context,
-                        slideUpRoute(
-                          HentaiSearchPage(
-                            api: widget.api,
-                            initialQuery: _search.text,
-                            onOpen: widget.onOpen,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFF7F1D1D).withValues(alpha: .18),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-            ),
             SliverToBoxAdapter(
               child: _ShelfHeader(
                 title: 'آخرین بروزرسانی‌ها',
