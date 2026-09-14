@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/io_client.dart';
 
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
@@ -10,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/anime_content.dart';
 import 'animeon_api.dart';
+import 'hentai_network.dart';
 
 /// Read-only adapter for HentaiIran's public WordPress catalogue.
 ///
@@ -22,9 +22,7 @@ class HentaiIranApi implements ContentApi {
 
   static http.Client _windowsClient() {
     if (!Platform.isWindows) return http.Client();
-    final direct = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-    final proxy = HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
-    return _RaceClient([IOClient(direct), IOClient(proxy)]);
+    return HentaiRaceClient();
   }
 
   static const origin = 'https://hentaiiran.com';
@@ -1067,14 +1065,6 @@ class HentaiIranApi implements ContentApi {
     } catch (_) {
       return url;
     }
-  }
-}
-
-class _RaceClient extends http.BaseClient {
-  _RaceClient(this._clients);
-  final List<http.Client> _clients;
-  @override Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    for (final client in _clients) { try { return await client.send(request); } catch (_) {} }\n    throw const SocketException("All network routes failed");
   }
 }
 

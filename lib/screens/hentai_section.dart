@@ -13,6 +13,7 @@ import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
 import '../widgets/content_art.dart';
+import '../widgets/hentai_image.dart';
 import '../widgets/pressable.dart';
 
 typedef HentaiOpenContent = Future<void> Function(AnimeContent item, String tag);
@@ -1802,8 +1803,11 @@ class _HentaiBlogTabState extends State<_HentaiBlogTab> {
                                     const BorderRadiusDirectional.horizontal(
                                       start: Radius.circular(19),
                                     ),
-                                child: Image.network(
-                                  post.imageUrl!,
+                                child: Image(
+                                  image: imageProviderForUrl(
+                                    post.imageUrl!,
+                                    viaUnstableRoute: true,
+                                  ),
                                   width: 110,
                                   height: 120,
                                   fit: BoxFit.cover,
@@ -1894,8 +1898,11 @@ class _HentaiPostPage extends StatelessWidget {
           if (post.imageUrl != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: Image.network(
-                post.imageUrl!,
+              child: Image(
+                image: imageProviderForUrl(
+                  post.imageUrl!,
+                  viaUnstableRoute: true,
+                ),
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),

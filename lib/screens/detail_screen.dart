@@ -24,9 +24,12 @@ import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
+import '../services/hentai_network.dart';
+import '../services/hentai_relay.dart';
 import '../services/device_bridge.dart';
 import '../services/picture_in_picture.dart';
 import '../widgets/content_art.dart';
+import '../widgets/hentai_image.dart';
 import '../widgets/pressable.dart';
 import '../widgets/download_choice.dart';
 import '../widgets/player_keyboard.dart';
@@ -169,8 +172,11 @@ class _DetailScreenState extends State<DetailScreen> {
               child: Hero(
                 tag: heroTag,
                 createRectTween: smoothHeroRectTween,
-                child: Image.network(
-                  imageUrl,
+                child: Image(
+                  image: imageProviderForUrl(
+                    imageUrl,
+                    viaUnstableRoute: item.isHentai,
+                  ),
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
                   frameBuilder:
@@ -208,9 +214,17 @@ class _DetailScreenState extends State<DetailScreen> {
     if (resolvedImageUrl == null) {
       throw const HttpException('Cover unavailable');
     }
-    final response = await http
-        .get(Uri.parse(resolvedImageUrl))
-        .timeout(const Duration(seconds: 20));
+    final http.Response response;
+    if (item.isHentai && Platform.isWindows) {
+      // +18 covers may need the system proxy on Windows.
+      response = await HentaiNetwork.fetchBytes(
+        Uri.parse(resolvedImageUrl),
+      ).timeout(const Duration(seconds: 20));
+    } else {
+      response = await http
+          .get(Uri.parse(resolvedImageUrl))
+          .timeout(const Duration(seconds: 20));
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('HTTP ${response.statusCode}');
     }
@@ -1439,7 +1453,10 @@ class _AboutSection extends StatelessWidget {
             return Column(
               children: [
                 for (final comment in rows.take(30))
-                  _CommentCard(comment: comment),
+                  _CommentCard(
+                    comment: comment,
+                    viaUnstableRoute: item.isHentai,
+                  ),
               ],
             );
           },
@@ -1471,8 +1488,9 @@ class _EmptyDetailSection extends StatelessWidget {
 }
 
 class _CommentCard extends StatelessWidget {
-  const _CommentCard({required this.comment});
+  const _CommentCard({required this.comment, this.viaUnstableRoute = false});
   final AnimeComment comment;
+  final bool viaUnstableRoute;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1486,6 +1504,7 @@ class _CommentCard extends StatelessWidget {
             radius: 20,
             imageUrl: comment.userImageUrl,
             iconSize: 22,
+            viaUnstableRoute: viaUnstableRoute,
           ),
           const SizedBox(width: 11),
           Expanded(
@@ -1559,11 +1578,13 @@ class _NetworkAvatar extends StatelessWidget {
     required this.radius,
     required this.imageUrl,
     required this.iconSize,
+    this.viaUnstableRoute = false,
   });
 
   final double radius;
   final String? imageUrl;
   final double iconSize;
+  final bool viaUnstableRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -1577,8 +1598,11 @@ class _NetworkAvatar extends StatelessWidget {
         dimension: radius * 2,
         child: source == null || source.isEmpty
             ? fallback
-            : Image.network(
-                source.replaceFirst('http://', 'https://'),
+            : Image(
+                image: imageProviderForUrl(
+                  source.replaceFirst('http://', 'https://'),
+                  viaUnstableRoute: viaUnstableRoute,
+                ),
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
@@ -2031,6 +2055,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   SubtitlePreferences _subtitle = const SubtitlePreferences();
   String? _error;
   Duration _positionAtLastError = Duration.zero;
+  // Local loopback relay for +18 streams when the proxy route wins
+  // (mpv cannot use the system proxy itself, see HentaiMediaRelay).
+  HentaiMediaRelay? _relay;
 
   @override
   void initState() {
@@ -2119,17 +2146,82 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _armHideTimer();
   }
 
+  bool get _shouldRoutePlayback =>
+      widget.content.isHentai && Platform.isWindows;
+
+  /// Best-effort clear of mpv's own proxy slot. mpv never reads the Windows
+  /// system proxy, so for normal content this is a no-op safety net; for +18
+  /// routing goes through the URL choice (original vs. local relay) instead.
+  Future<void> _clearMpvProxy() async {
+    try {
+      final platform = _player.platform;
+      if (platform is NativePlayer) {
+        await platform.setProperty('http-proxy', '');
+      }
+    } catch (_) {}
+  }
+
+  /// Picks the mpv URL for [fileUrl]: the original URL when direct wins (or
+  /// when routing does not apply), otherwise a localhost relay URL that
+  /// forwards upstream over the system proxy. Never throws — falls back to
+  /// the original URL (today's behavior).
+  Future<String> _resolvePlaybackUrl(
+    String fileUrl, {
+    bool? forceProxy,
+  }) async {
+    if (!_shouldRoutePlayback) {
+      await _clearMpvProxy();
+      return fileUrl;
+    }
+    final uri = Uri.tryParse(fileUrl);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      await _clearMpvProxy();
+      return fileUrl;
+    }
+    try {
+      final useProxy =
+          forceProxy ??
+          await HentaiNetwork.probeRoute(
+            uri,
+          ).timeout(const Duration(seconds: 10));
+      await _clearMpvProxy();
+      if (!useProxy) return fileUrl;
+      _relay ??= HentaiMediaRelay();
+      return (await _relay!.serve(uri)).toString();
+    } catch (_) {
+      await _clearMpvProxy();
+      return fileUrl;
+    }
+  }
+
+  /// Opens [fileUrl] in mpv with +18 route handling on Windows: probe race,
+  /// then a single flip-retry on the other route if the open itself fails.
+  /// Callers keep their existing fallback logic for anything beyond that.
+  Future<void> _openRoutedMedia(String fileUrl, {required bool play}) async {
+    const headers = {'User-Agent': 'MBNime/1.0 Android'};
+    final routed = await _resolvePlaybackUrl(fileUrl);
+    try {
+      await _player.open(Media(routed, httpHeaders: headers), play: play);
+    } catch (_) {
+      if (!_shouldRoutePlayback) rethrow;
+      // The winning route died between probe and open: flip once and retry
+      // on the other side before the caller falls back further.
+      HentaiNetwork.flipRoute();
+      final retry = await _resolvePlaybackUrl(
+        fileUrl,
+        forceProxy: HentaiNetwork.preferProxy,
+      );
+      await _player.open(Media(retry, httpHeaders: headers), play: play);
+    }
+  }
+
   Future<void> _openMedia() async {
     final resumeAt = widget.initialPosition;
-    await _player.open(
-      Media(
-        _episode.fileUrl,
-        httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-      ),
-      // Starting playback immediately can make mpv reset an early seek to
-      // zero while the remote file/HLS manifest is still being prepared.
-      play: false,
-    );
+    // Starting playback immediately can make mpv reset an early seek to
+    // zero while the remote file is still being prepared.
+    await _openRoutedMedia(_episode.fileUrl, play: false);
     if (resumeAt > Duration.zero) {
       await _waitUntilSeekable();
       await _player.seek(_safeResumePosition(resumeAt));
@@ -2497,13 +2589,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       });
     }
     try {
-      await _player.open(
-        Media(
-          target.episode.fileUrl,
-          httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-        ),
-        play: false,
-      );
+      await _openRoutedMedia(target.episode.fileUrl, play: false);
       await _waitUntilSeekable();
       await _player.seek(_safeResumePosition(position));
       if (wasPlaying) await _player.play();
@@ -2525,13 +2611,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       }
     } catch (_) {
       try {
-        await _player.open(
-          Media(
-            previous.fileUrl,
-            httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-          ),
-          play: false,
-        );
+        await _openRoutedMedia(previous.fileUrl, play: false);
         await _player.seek(_safeResumePosition(position));
         if (wasPlaying) await _player.play();
       } catch (_) {}
@@ -2889,13 +2969,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       });
     }
     try {
-      await _player.open(
-        Media(
-          target.episode.fileUrl,
-          httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-        ),
-        play: false,
-      );
+      await _openRoutedMedia(target.episode.fileUrl, play: false);
       if (startAt > Duration.zero) {
         await _waitUntilSeekable();
         await _player.seek(_safeResumePosition(startAt));
@@ -2923,13 +2997,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       }
     } catch (_) {
       try {
-        await _player.open(
-          Media(
-            previous.fileUrl,
-            httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-          ),
-          play: false,
-        );
+        await _openRoutedMedia(previous.fileUrl, play: false);
         await _waitUntilSeekable();
         await _player.seek(_safeResumePosition(previousPosition));
         if (wasPlaying) await _player.play();
@@ -2997,12 +3065,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         _controlsVisible = false;
       });
       await _configurePictureInPicture();
-      await _player.open(
-        Media(
-          next.fileUrl,
-          httpHeaders: const {'User-Agent': 'MBNime/1.0 Android'},
-        ),
-      );
+      await _openRoutedMedia(next.fileUrl, play: true);
     } catch (error) {
       if (mounted) {
         setState(() => _error = 'پخش قسمت بعدی انجام نشد: $error');
@@ -3226,6 +3289,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _pip.removeListener(_handlePipModeChanged);
     unawaited(_pip.deactivate());
     _pip.dispose();
+    final relay = _relay;
+    _relay = null;
+    if (relay != null) unawaited(relay.close());
     // Stop audio instantly, but defer the heavy native teardown until the
     // pop transition is over so back-navigation stays smooth.
     unawaited(_player.pause());

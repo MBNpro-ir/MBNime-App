@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/anime_content.dart';
+import 'hentai_image.dart';
 
 enum ArtworkOrientation { portrait, landscape }
 
@@ -241,10 +242,12 @@ class _ContentArtState extends State<ContentArt> {
     ImageConfiguration config,
   ) {
     final completer = Completer<_ArtworkProbe?>();
+    // +18 artwork on Windows may need the system proxy; everything else
+    // keeps the framework provider (never proxied).
     final provider = ResizeImage.resizeIfNeeded(
       targetWidth,
       null,
-      NetworkImage(url),
+      imageProviderForUrl(url, viaUnstableRoute: widget.content.isHentai),
     );
     final stream = provider.resolve(config);
     late final ImageStreamListener listener;

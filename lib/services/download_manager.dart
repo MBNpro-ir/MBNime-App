@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/download_paths.dart';
 import '../models/anime_content.dart';
 import 'device_bridge.dart';
+import 'hentai_network.dart';
 
 class DownloadManager extends ChangeNotifier {
   DownloadManager._();
@@ -216,6 +217,23 @@ class DownloadManager extends ChangeNotifier {
       p.join(directory.path, '${downloadIdentity(content.id, '', '')}.img'),
     );
     if (await file.exists()) return file.path;
+    // +18 covers on Windows may need the system proxy; the native
+    // downloader tasks (real downloads) already follow it via WinINet.
+    if (content.isHentai && Platform.isWindows) {
+      try {
+        final response = await HentaiNetwork.fetchBytes(
+          Uri.parse(content.imageUrl!),
+        ).timeout(const Duration(seconds: 20));
+        if (response.statusCode != 200 ||
+            response.bodyBytes.length > 2 * 1024 * 1024) {
+          return '';
+        }
+        await file.writeAsBytes(response.bodyBytes, flush: true);
+        return file.path;
+      } catch (_) {
+        return '';
+      }
+    }
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final response = await (await client.getUrl(

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../models/anime_content.dart';
 
@@ -54,7 +56,16 @@ class AnimeOnApi implements ContentApi {
   AnimeOnApi({
     http.Client? client,
     this.apiKey = const String.fromEnvironment('MBN_API_KEY'),
-  }) : _client = client ?? http.Client();
+  }) : _client = client ?? _directClient();
+
+  /// Normal-anime traffic is pinned to DIRECT on every platform: it must
+  /// never travel over the system proxy (or any proxy). The +18 section has
+  /// its own routed client (see `HentaiRaceClient`).
+  static http.Client _directClient() {
+    final inner = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    inner.findProxy = (_) => 'DIRECT';
+    return IOClient(inner);
+  }
 
   static const _origin = 'https://animeonapp.com';
   static const _loginPage = '$_origin/animebaz/user/login1';
