@@ -139,85 +139,24 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         onFavorites: widget.onOpenHentaiFavorites,
         favoritesCount: widget.hentaiFavorites.length,
       ),
-      appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: 'منوی هنتای',
-            icon: const Icon(Icons.menu_rounded),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const BrandMark(
-                size: 42,
-                // عین گرادیان اصلی (روشن→روشن) فقط با سر قرمز:
-                // ته گرادیان همان coral اصلی می‌ماند.
-                gradientColors: [Color(0xFFEF4444), AnimeColors.coral],
-                accent: Color(0xFFEF4444),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: .18),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFFEF4444).withValues(alpha: .5),
-                  ),
-                ),
-                child: const Text(
-                  '+۱۸',
-                  style: TextStyle(
-                    color: Color(0xFFFCA5A5),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        centerTitle: true,
-        titleSpacing: 0,
-        backgroundColor: const Color(0xFF450A0A),
-        actions: [
-          IconButton(
-            tooltip: 'علاقه‌مندی‌های +۱۸',
-            onPressed: widget.onOpenHentaiFavorites,
-            icon: Badge(
-              isLabelVisible: widget.hentaiFavorites.isNotEmpty,
-              label: Text('${widget.hentaiFavorites.length}'),
-              child: const Icon(Icons.favorite_rounded),
-            ),
-          ),
-          IconButton(
-            tooltip: 'بازدیدشده‌های +۱۸',
-            onPressed: widget.onOpenHentaiHistory,
-            icon: Badge(
-              isLabelVisible: widget.hentaiHistory.isNotEmpty,
-              label: Text('${widget.hentaiHistory.length}'),
-              child: const Icon(Icons.history_rounded),
-            ),
-          ),
-          IconButton(
-            tooltip: 'جستجوی +۱۸',
-            onPressed: _openSearch,
-            icon: const Icon(Icons.search_rounded),
-          ),
-        ],
-      ),
       body: AmbientBackground(
         child: SafeArea(
           bottom: false,
           child: Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                child: SizedBox(height: 54, child: Stack(alignment: Alignment.center, children: [
+                  Row(children: [
+                    Builder(builder: (context) => IconButton(tooltip: 'منوی هنتای', onPressed: () => Scaffold.of(context).openDrawer(), icon: const Icon(Icons.menu_rounded, size: 30))),
+                    const Spacer(),
+                    IconButton(tooltip: 'علاقه‌مندی‌های +۱۸', onPressed: widget.onOpenHentaiFavorites, icon: Badge(isLabelVisible: widget.hentaiFavorites.isNotEmpty, label: Text('${widget.hentaiFavorites.length}'), child: const Icon(Icons.favorite_rounded, size: 28))),
+                    IconButton(tooltip: 'بازدیدشده‌های +۱۸', onPressed: widget.onOpenHentaiHistory, icon: Badge(isLabelVisible: widget.hentaiHistory.isNotEmpty, label: Text('${widget.hentaiHistory.length}'), child: const Icon(Icons.history_rounded, size: 28))),
+                    IconButton(tooltip: 'جستجوی +۱۸', onPressed: _openSearch, icon: const Icon(Icons.search_rounded, size: 30)),
+                  ]),
+                  const IgnorePointer(child: BrandMark(size: 42, gradientColors: [Color(0xFFEF4444), AnimeColors.coral], accent: Color(0xFFEF4444))),
+                ])),
+              ),
               Expanded(
                 child: PageView(
                   controller: _pageController,
@@ -2211,3 +2150,4 @@ class _HentaiEmpty extends StatelessWidget {
     ),
   );
 }
+
