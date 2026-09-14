@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:http/io_client.dart';
 
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
@@ -16,7 +18,14 @@ import 'animeon_api.dart';
 /// «جزئیات تکمیلی / لینک‌های مرتبط / ژانرها / برچسب‌ها» sidebar are parsed
 /// from the public title page, and no media bytes are ever copied or cached.
 class HentaiIranApi implements ContentApi {
-  HentaiIranApi({http.Client? client}) : _client = client ?? http.Client();
+  HentaiIranApi({http.Client? client}) : _client = client ?? _windowsClient();
+
+  static http.Client _windowsClient() {
+    if (!Platform.isWindows) return http.Client();
+    final direct = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final proxy = HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
+    return _RaceClient([IOClient(direct), IOClient(proxy)]);
+  }
 
   static const origin = 'https://hentaiiran.com';
 
@@ -1061,6 +1070,14 @@ class HentaiIranApi implements ContentApi {
   }
 }
 
+class _RaceClient extends http.BaseClient {
+  _RaceClient(this._clients);
+  final List<http.Client> _clients;
+  @override Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    for (final client in _clients) { try { return await client.send(request); } catch (_) {} }\n    throw const SocketException("All network routes failed");
+  }
+}
+
 const _palettes = <List<Color>>[
   [Color(0xFFB91C3C), Color(0xFF450A0A)],
   [Color(0xFFEF8354), Color(0xFF3D193A)],
@@ -1243,3 +1260,4 @@ class _ParsedDetail {
 extension _IfEmpty on String {
   String ifEmpty(String fallback) => trim().isEmpty ? fallback : this;
 }
+
