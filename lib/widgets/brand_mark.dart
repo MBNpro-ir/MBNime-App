@@ -3,10 +3,18 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.size = 54, this.showWordmark = true});
+  const BrandMark({
+    super.key,
+    this.size = 54,
+    this.showWordmark = true,
+    this.gradientColors = const [AnimeColors.orange, AnimeColors.coral],
+    this.accent = AnimeColors.orange,
+  });
 
   final double size;
   final bool showWordmark;
+  final List<Color> gradientColors;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -17,10 +25,10 @@ class BrandMark extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topRight,
               end: Alignment.bottomLeft,
-              colors: [AnimeColors.orange, AnimeColors.coral],
+              colors: gradientColors,
             ),
             borderRadius: BorderRadius.only(
               topLeft: Radius.circular(size * .5),
@@ -30,7 +38,7 @@ class BrandMark extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: AnimeColors.orange.withValues(alpha: .28),
+                color: accent.withValues(alpha: .28),
                 blurRadius: 24,
                 spreadRadius: 2,
               ),
@@ -51,10 +59,10 @@ class BrandMark extends StatelessWidget {
                   text: 'MBN',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const TextSpan(
+                TextSpan(
                   text: 'ime',
                   style: TextStyle(
-                    color: AnimeColors.orange,
+                    color: accent,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

@@ -10,6 +10,7 @@ import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
 import '../widgets/ambient_background.dart';
+import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
 import '../widgets/content_art.dart';
 import '../widgets/pressable.dart';
@@ -136,7 +137,36 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('هنتای ایران  •  +۱۸'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const BrandMark(
+              size: 30,
+              gradientColors: [Color(0xFFEF4444), Color(0xFF991B1B)],
+              accent: Color(0xFFEF4444),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFFEF4444).withValues(alpha: .5),
+                ),
+              ),
+              child: const Text(
+                '+۱۸',
+                style: TextStyle(
+                  color: Color(0xFFFCA5A5),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        centerTitle: true,
         backgroundColor: const Color(0xFF450A0A),
         actions: [
           IconButton(

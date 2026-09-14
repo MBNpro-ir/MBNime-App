@@ -545,32 +545,39 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-    child: Row(
-      children: [
-        IconButton(
-          tooltip: 'منوی اصلی',
-          onPressed: Scaffold.of(context).openDrawer,
-          icon: const Icon(Icons.menu_rounded, size: 30),
-        ),
-        const Spacer(),
-        const BrandMark(size: 42),
-        const Spacer(),
-        IconButton(
-          tooltip: 'علاقه‌مندی‌ها',
-          onPressed: favorites,
-          icon: const Icon(Icons.favorite_rounded, size: 28),
-        ),
-        IconButton(
-          tooltip: 'بازدیدشده‌ها',
-          onPressed: history,
-          icon: const Icon(Icons.history_rounded, size: 28),
-        ),
-        IconButton(
-          tooltip: 'جست‌وجو',
-          onPressed: search,
-          icon: const Icon(Icons.search_rounded, size: 30),
-        ),
-      ],
+    child: SizedBox(
+      height: 54,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'منوی اصلی',
+                onPressed: Scaffold.of(context).openDrawer,
+                icon: const Icon(Icons.menu_rounded, size: 30),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'علاقه‌مندی‌ها',
+                onPressed: favorites,
+                icon: const Icon(Icons.favorite_rounded, size: 28),
+              ),
+              IconButton(
+                tooltip: 'بازدیدشده‌ها',
+                onPressed: history,
+                icon: const Icon(Icons.history_rounded, size: 28),
+              ),
+              IconButton(
+                tooltip: 'جست‌وجو',
+                onPressed: search,
+                icon: const Icon(Icons.search_rounded, size: 30),
+              ),
+            ],
+          ),
+          const IgnorePointer(child: BrandMark(size: 42)),
+        ],
+      ),
     ),
   );
 }
