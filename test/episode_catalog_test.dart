@@ -281,6 +281,8 @@ void main() {
   });
 
   test('bare and starred episode numbers display as قسمت N', () {
+    // قالب واقعی API پسوند ستاره است («4*») که در رابط راست‌به‌چپ «*4»
+    // دیده می‌شود؛ هر دو جهت پشتیبانی می‌شود.
     const content = AnimeContent(
       id: 'starred',
       title: 'Show',
@@ -297,8 +299,8 @@ void main() {
           name: 'فصل 1 زیرنویس 1080p',
           episodes: [
             AnimeEpisode(id: 'e3', name: '3', fileUrl: 'u3'),
-            AnimeEpisode(id: 'e4', name: '*4', fileUrl: 'u4'),
-            AnimeEpisode(id: 'e5', name: '* 5', fileUrl: 'u5'),
+            AnimeEpisode(id: 'e4', name: '4*', fileUrl: 'u4'),
+            AnimeEpisode(id: 'e5', name: '*5', fileUrl: 'u5'),
             AnimeEpisode(id: 'e6', name: 'قسمت 6', fileUrl: 'u6'),
             AnimeEpisode(id: 'e7', name: 'قسمت اول', fileUrl: 'u7'),
           ],
@@ -307,7 +309,8 @@ void main() {
     );
 
     expect(episodeDisplayName('3'), 'قسمت 3');
-    expect(episodeDisplayName('*4'), 'قسمت 4');
+    expect(episodeDisplayName('4*'), 'قسمت 4');
+    expect(episodeDisplayName('*5'), 'قسمت 5');
     expect(episodeDisplayName('* 5'), 'قسمت 5');
     expect(episodeDisplayName('قسمت 6'), 'قسمت 6');
     expect(episodeDisplayName('قسمت اول'), 'قسمت اول');
