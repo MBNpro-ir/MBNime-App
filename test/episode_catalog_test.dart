@@ -280,6 +280,49 @@ void main() {
     }
   });
 
+  test('bare and starred episode numbers display as قسمت N', () {
+    const content = AnimeContent(
+      id: 'starred',
+      title: 'Show',
+      subtitle: '',
+      description: '',
+      year: 2026,
+      rating: 8,
+      kind: ContentKind.series,
+      colors: [],
+      genres: [],
+      seasons: [
+        AnimeSeason(
+          id: 's1080',
+          name: 'فصل 1 زیرنویس 1080p',
+          episodes: [
+            AnimeEpisode(id: 'e3', name: '3', fileUrl: 'u3'),
+            AnimeEpisode(id: 'e4', name: '*4', fileUrl: 'u4'),
+            AnimeEpisode(id: 'e5', name: '* 5', fileUrl: 'u5'),
+            AnimeEpisode(id: 'e6', name: 'قسمت 6', fileUrl: 'u6'),
+            AnimeEpisode(id: 'e7', name: 'قسمت اول', fileUrl: 'u7'),
+          ],
+        ),
+      ],
+    );
+
+    expect(episodeDisplayName('3'), 'قسمت 3');
+    expect(episodeDisplayName('*4'), 'قسمت 4');
+    expect(episodeDisplayName('* 5'), 'قسمت 5');
+    expect(episodeDisplayName('قسمت 6'), 'قسمت 6');
+    expect(episodeDisplayName('قسمت اول'), 'قسمت اول');
+    expect(episodeDisplayName('تیزر'), 'تیزر');
+    expect(episodeDisplayName('  '), 'قسمت');
+
+    final catalog = EpisodeCatalog.from(content);
+    final names = catalog.seasons.single.episodes
+        .map((group) => group.name)
+        .toSet();
+    expect(names, {'قسمت 3', 'قسمت 4', 'قسمت 5', 'قسمت 6', 'قسمت اول'});
+    // ستاره هیچ‌جا در نام نمایشی نمی‌ماند.
+    expect(names.any((name) => name.contains('*')), isFalse);
+  });
+
   test('trailer helpers detect fa/en labels and server suffixes', () {
     expect(isTrailerLabel('تیزر'), isTrue);
     expect(isTrailerLabel('Trailer EP1'), isTrue);

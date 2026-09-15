@@ -253,10 +253,17 @@ class EpisodeCatalog {
       for (final bucket in episodeBuckets.entries) {
         final variants = _uniqueVariants(bucket.value.map((item) => item.$2));
         allVariants.addAll(variants);
+        final first = variants.first;
+        final isTrailerGroup =
+            bucket.key.startsWith('trailer-') ||
+            entry.key == 'trailer' ||
+            isTrailerLabel(first.episode.name);
         groups.add(
           EpisodeGroup(
             id: 'logical:${entry.key}:${bucket.key}',
-            name: variants.first.episode.name,
+            name: isTrailerGroup
+                ? first.episode.name
+                : episodeDisplayName(first.episode.name),
             variants: variants,
           ),
         );
@@ -276,6 +283,21 @@ class EpisodeCatalog {
       qualities: _qualityList(allVariants),
     );
   }
+}
+
+/// نام نمایشی یک قسمت سریال: رکوردهای قدیمی API گاهی فقط عددند («3»)
+/// یا پیشوند ستاره دارند («*4»)؛ همه به «قسمت N» یکدست می‌شوند.
+/// نام‌هایی که از قبل «قسمت» دارند یا توصیفی‌اند دست نخورده می‌مانند.
+/// فقط برای نمایش است و شناسه/آدرس فایل را تغییر نمی‌دهد.
+String episodeDisplayName(String rawName) {
+  final name = rawName.trim();
+  if (name.isEmpty) return 'قسمت';
+  if (isTrailerLabel(name)) return name;
+  final bare =
+      RegExp(r'^\*\s*([0-9۰-۹٠-٩]+)\s*$').firstMatch(name) ??
+      RegExp(r'^([0-9۰-۹٠-٩]+)\s*$').firstMatch(name);
+  if (bare != null) return 'قسمت ${bare.group(1)}';
+  return name;
 }
 
 String episodeQuality(String seasonName, String episodeName) {
