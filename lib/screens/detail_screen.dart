@@ -2539,7 +2539,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            variant.quality,
+                            qualityDisplayLabel(variant.quality),
                             textDirection: TextDirection.ltr,
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
@@ -2605,7 +2605,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 2),
-            content: Text('کیفیت پخش روی ${target.quality} قرار گرفت.'),
+            content: Text(
+              'کیفیت پخش روی ${qualityDisplayLabel(target.quality)} قرار گرفت.',
+            ),
           ),
         );
       }
@@ -2786,9 +2788,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                       : saved?.isResumable == true
                                       ? 'ادامه از ${_formatPlayerDuration(saved!.position)}'
                                       : 'پخش از ابتدا';
+                                  final isTrailerVariant =
+                                      group.isTrailer ||
+                                      isTrailerLabel(variant.episode.name);
                                   final episodeDisplayName =
                                       widget.content.kind == ContentKind.movie
-                                          ? variant.quality
+                                          ? (isTrailerVariant
+                                                ? (variant
+                                                          .episode
+                                                          .name
+                                                          .trim()
+                                                          .isEmpty
+                                                      ? group.name
+                                                      : variant.episode.name)
+                                                : qualityDisplayLabel(
+                                                    variant.quality,
+                                                  ))
                                           : (widget.content.isHentai
                                               ? _hentaiCleanEpisodeName(
                                                   group.name,
@@ -2876,49 +2891,57 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                                     ),
                                                   ),
                                                 ),
-                                                const SizedBox(width: 8),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 7,
-                                                        vertical: 3,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: AnimeColors.orange
-                                                        .withValues(alpha: .12),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          999,
+                                                if (!(group.isTrailer &&
+                                                    isUnknownQuality(
+                                                      variant.quality,
+                                                    ))) ...[
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 7,
+                                                          vertical: 3,
                                                         ),
-                                                    border: Border.all(
+                                                    decoration: BoxDecoration(
                                                       color: AnimeColors.orange
                                                           .withValues(
-                                                            alpha: .28,
+                                                            alpha: .12,
                                                           ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: AnimeColors.orange
+                                                            .withValues(
+                                                              alpha: .28,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      widget.content.kind ==
+                                                              ContentKind.movie
+                                                          ? _playerVariantMeta(
+                                                              variant,
+                                                            )
+                                                          : playerEpisodeQualityBadge(
+                                                              variant.quality,
+                                                            ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      textDirection:
+                                                          TextDirection.ltr,
+                                                      style: const TextStyle(
+                                                        color:
+                                                            AnimeColors.orange,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                      ),
                                                     ),
                                                   ),
-                                                  child: Text(
-                                                    widget.content.kind ==
-                                                            ContentKind.movie
-                                                        ? _playerVariantMeta(
-                                                            variant,
-                                                          )
-                                                        : playerEpisodeQualityBadge(
-                                                            variant.quality,
-                                                          ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    textDirection:
-                                                        TextDirection.ltr,
-                                                    style: const TextStyle(
-                                                      color: AnimeColors.orange,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                    ),
-                                                  ),
-                                                ),
+                                                ],
                                               ],
                                             ),
                                           ],
@@ -2990,7 +3013,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           SnackBar(
             duration: const Duration(seconds: 2),
             content: Text(
-              'در حال پخش ${group.name} با کیفیت ${target.quality}',
+              group.isTrailer && isUnknownQuality(target.quality)
+                  ? 'در حال پخش ${group.name}'
+                  : 'در حال پخش ${group.name} با کیفیت ${qualityDisplayLabel(target.quality)}',
             ),
           ),
         );
@@ -3594,12 +3619,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   List<Widget> _playerToolControls({required bool compact}) {
-    final quality = _currentVariant?.quality ?? 'کیفیت';
+    final rawQuality = _currentVariant?.quality ?? 'کیفیت';
+    final quality = isUnknownQuality(rawQuality)
+        ? qualityDisplayLabel(rawQuality)
+        : rawQuality;
+    final hideQualityButton =
+        (_currentEpisodeGroup?.isTrailer ?? false) &&
+        isUnknownQuality(rawQuality);
     final rate = _rate == 1
         ? '1×'
         : '${_rate.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')}×';
     return [
-      if ((_currentEpisodeGroup?.variants.length ?? 0) > 1) ...[
+      if ((_currentEpisodeGroup?.variants.length ?? 0) > 1 &&
+          !hideQualityButton) ...[
         _PlayerToolControl(
           icon: Icons.high_quality_rounded,
           label: quality,

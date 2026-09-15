@@ -61,7 +61,66 @@ const content = AnimeContent(
   ],
 );
 
+const trailerContent = AnimeContent(
+  id: 'trailer-test',
+  title: 'عنوان تیزر',
+  subtitle: '',
+  description: '',
+  year: 2026,
+  rating: 8,
+  kind: ContentKind.series,
+  colors: [Colors.blue],
+  genres: [],
+  seasons: [
+    AnimeSeason(
+      id: 'season1-720',
+      name: 'فصل 1 زیرنویس 720p',
+      episodes: [
+        AnimeEpisode(
+          id: '1',
+          name: 'قسمت 1',
+          fileUrl: 'https://example.com/1.mkv',
+        ),
+      ],
+    ),
+    AnimeSeason(
+      id: 'trailer',
+      name: 'تیزر',
+      episodes: [
+        AnimeEpisode(
+          id: 't1',
+          name: 'تیزر',
+          fileUrl: 'https://example.com/trailer.mkv',
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
+  testWidgets('trailer season hides the unknown quality label', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: EpisodePickerScreen(
+            content: trailerContent,
+            onPlay: (_, _) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // فصل عادی: چیپ کیفیت واقعی دیده می‌شود.
+    expect(find.text('720p'), findsWidgets);
+    // رفتن به فصل تیزرها.
+    await tester.tap(find.text('تیزرها'));
+    await tester.pumpAndSettle();
+    // هیچ‌جا «بدون برچسب کیفیت» نباید دیده شود؛ نه چیپ، نه بج کارت.
+    expect(find.text('بدون برچسب کیفیت'), findsNothing);
+    expect(find.text('تیزر'), findsWidgets);
+  });
   testWidgets('first TV destination page has working visible back control', (
     tester,
   ) async {

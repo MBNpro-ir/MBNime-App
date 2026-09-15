@@ -12,6 +12,35 @@ class EpisodeVariant {
   final String quality;
 }
 
+/// برچسب پیش‌فرض وقتی هیچ کیفیتی (480p و...) از نام فصل/قسمت پیدا نشود.
+const unknownQualityLabel = 'بدون برچسب کیفیت';
+
+/// true وقتی [quality] همان «بدون برچسب کیفیت» است — شامل حالت‌های
+/// چند سروره مثل «بدون برچسب کیفیت · سرور 2».
+bool isUnknownQuality(String quality) =>
+    quality == unknownQualityLabel ||
+    quality.startsWith('$unknownQualityLabel ·') ||
+    quality.startsWith('$unknownQualityLabel •');
+
+/// true وقتی متن به تیزر/تریلر اشاره دارد (فارسی یا انگلیسی).
+bool isTrailerLabel(String value) =>
+    RegExp(r'تیزر|trailer|teaser', caseSensitive: false).hasMatch(value);
+
+/// برچسب نمایشی کیفیت: «بدون برچسب کیفیت» به «پخش» تبدیل می‌شود و
+/// پسوند سرور حفظ می‌ماند («بدون برچسب کیفیت · سرور 2» ← «سرور 2»).
+String qualityDisplayLabel(String quality) {
+  if (quality == unknownQualityLabel) return 'پخش';
+  final server = RegExp(r'·\s*(سرور\s*.+)').firstMatch(quality);
+  if (server != null && quality.startsWith(unknownQualityLabel)) {
+    return server.group(1)!.trim();
+  }
+  final dotServer = RegExp(r'•\s*(سرور\s*.+)').firstMatch(quality);
+  if (dotServer != null && quality.startsWith(unknownQualityLabel)) {
+    return dotServer.group(1)!.trim();
+  }
+  return quality;
+}
+
 class EpisodeGroup {
   const EpisodeGroup({
     required this.id,
@@ -22,6 +51,9 @@ class EpisodeGroup {
   final String id;
   final String name;
   final List<EpisodeVariant> variants;
+
+  /// true وقتی این گروه مربوط به تیزر است (شناسه منطقی trailer یا نام تیزر).
+  bool get isTrailer => id.contains('trailer') || isTrailerLabel(name);
 
   EpisodeVariant variantFor(String? quality) {
     if (quality != null) {
@@ -52,6 +84,33 @@ class EpisodeSeasonGroup {
 
   List<String> get qualities =>
       _qualityList(episodes.expand((episode) => episode.variants));
+
+  /// true وقتی این فصل همان فصل تیزرها است.
+  bool get isTrailerSeason => id == 'trailer';
+
+  /// کیفیت‌های نمایشی فصل — بدون آلودگی تیزرها:
+  /// - فصل تیزرها: فقط کیفیت‌های واقعی (معمولاً خالی → انتخاب‌گر کیفیت مخفی).
+  /// - فصل فیلم/سریال عادی: کیفیت تیزرها (معمولاً «بدون برچسب کیفیت»)
+  ///   از فهرست حذف می‌شود تا چیپ اضافه نسازد؛ کیفیت‌های واقعی فیلم می‌ماند.
+  /// - اگر هیچ واریانت غیرتیزری نبود، کیفیت‌های واقعی همه واریانت‌ها برمی‌گردد.
+  List<String> get displayQualities {
+    final allVariants = episodes.expand((episode) => episode.variants);
+    if (isTrailerSeason) {
+      return _qualityList(
+        allVariants.where((variant) => !isUnknownQuality(variant.quality)),
+      );
+    }
+    final nonTrailer = allVariants.where(
+      (variant) =>
+          !isTrailerLabel(variant.episode.name) &&
+          !isTrailerLabel(variant.season.name),
+    );
+    final list = _qualityList(nonTrailer);
+    if (list.isNotEmpty) return list;
+    return _qualityList(
+      allVariants.where((variant) => !isUnknownQuality(variant.quality)),
+    );
+  }
 }
 
 class EpisodeCatalog {
@@ -78,15 +137,76 @@ class EpisodeCatalog {
         content.seasons.length == 1 &&
         content.seasons.first.id == 'movie') {
       final raw = content.seasons.first;
-      final variants = _uniqueVariants(
-        raw.episodes.map(
-          (episode) => EpisodeVariant(
-            season: raw,
-            episode: episode,
-            quality: episodeQuality(raw.name, episode.name),
+      final all = raw.episodes
+          .map(
+            (episode) => EpisodeVariant(
+              season: raw,
+              episode: episode,
+              quality: episodeQuality(raw.name, episode.name),
+            ),
+          )
+          .toList(growable: false);
+      // تیزر فیلم نباید به‌عنوان یک «کیفیت» (معمولاً «بدون برچسب کیفیت»)
+      // قاطی نسخه‌های اصلی شود؛ جدا می‌شود تا چیپ کیفیت را آلوده نکند.
+      final mains = all
+          .where(
+            (variant) =>
+                !isTrailerLabel(variant.episode.name) &&
+                !isTrailerLabel(raw.name),
+          )
+          .toList(growable: false);
+      final trailers = all
+          .where(
+            (variant) =>
+                isTrailerLabel(variant.episode.name) ||
+                isTrailerLabel(raw.name),
+          )
+          .toList(growable: false);
+      if (mains.isEmpty) {
+        // فقط تیزر موجود است: همان را بدون آلودگی کیفیت نمایش بده.
+        final trailerGroups = [
+          for (final variant in trailers)
+            EpisodeGroup(
+              id: 'logical:movie:trailer-${variant.episode.id}',
+              name: variant.episode.name.isEmpty
+                  ? 'تیزر'
+                  : variant.episode.name,
+              variants: [variant],
+            ),
+        ];
+        final fallbackVariants = trailerGroups.isEmpty
+            ? const <EpisodeVariant>[]
+            : trailerGroups.expand((group) => group.variants);
+        return EpisodeCatalog(
+          seasons: [
+            EpisodeSeasonGroup(
+              id: 'movie',
+              name: 'فیلم',
+              episodes: trailerGroups.isEmpty
+                  ? [
+                      EpisodeGroup(
+                        id: 'logical:movie:main',
+                        name: 'پخش فیلم',
+                        variants: _uniqueVariants(all),
+                      ),
+                    ]
+                  : trailerGroups,
+            ),
+          ],
+          qualities: _qualityList(fallbackVariants),
+        );
+      }
+      final mainVariants = _uniqueVariants(mains);
+      final trailerGroups = [
+        for (final variant in trailers)
+          EpisodeGroup(
+            id: 'logical:movie:trailer-${variant.episode.id}',
+            name: variant.episode.name.isEmpty
+                ? 'تیزر'
+                : variant.episode.name,
+            variants: [variant],
           ),
-        ),
-      );
+      ];
       return EpisodeCatalog(
         seasons: [
           EpisodeSeasonGroup(
@@ -96,12 +216,13 @@ class EpisodeCatalog {
               EpisodeGroup(
                 id: 'logical:movie:main',
                 name: 'پخش فیلم',
-                variants: variants,
+                variants: mainVariants,
               ),
+              ...trailerGroups,
             ],
           ),
         ],
-        qualities: _qualityList(variants),
+        qualities: _qualityList(mainVariants),
       );
     }
 
@@ -169,13 +290,13 @@ String episodeQuality(String seasonName, String episodeName) {
   if (RegExp(r'\bfhd\b', caseSensitive: false).hasMatch(value)) return '1080p';
   if (RegExp(r'\bhd\b', caseSensitive: false).hasMatch(value)) return '720p';
   if (RegExp(r'\bsd\b', caseSensitive: false).hasMatch(value)) return '480p';
-  return 'بدون برچسب کیفیت';
+  return unknownQualityLabel;
 }
 
 String recommendedEpisodeQuality(Iterable<String> qualities) {
   final values = qualities.toList(growable: false);
   if (values.contains('720p')) return '720p';
-  return values.isEmpty ? 'بدون برچسب کیفیت' : values.first;
+  return values.isEmpty ? unknownQualityLabel : values.first;
 }
 
 List<EpisodeVariant> _uniqueVariants(Iterable<EpisodeVariant> input) {
@@ -221,7 +342,7 @@ int _qualityRank(String value) {
 
 String _seasonKey(String input, int fallbackIndex) {
   var value = _latinDigits(input).toLowerCase();
-  if (RegExp(r'تیزر|trailer').hasMatch(value)) return 'trailer';
+  if (isTrailerLabel(value)) return 'trailer';
   value = value.replaceAll(RegExp(r'\d{3,4}\s*p\b'), ' ');
   final number = RegExp(r'\d+').firstMatch(value)?.group(0);
   if (number != null) return 'season-${int.parse(number)}';
@@ -234,7 +355,7 @@ String _seasonKey(String input, int fallbackIndex) {
 
 String _episodeKey(String input, int fallbackIndex) {
   final value = _latinDigits(input).toLowerCase();
-  if (RegExp(r'تیزر|trailer').hasMatch(value)) {
+  if (isTrailerLabel(value)) {
     return 'trailer-${fallbackIndex + 1}';
   }
   final number = RegExp(r'\d+').firstMatch(value)?.group(0);

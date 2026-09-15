@@ -44,14 +44,15 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   final _saved = <String, SavedWatchProgress>{};
   late final EpisodeCatalog _catalog;
   int _seasonIndex = 0;
-  String _selectedQuality = 'بدون برچسب کیفیت';
+  String _selectedQuality = unknownQualityLabel;
   Timer? _initialContentTimer;
   late bool _contentReady;
 
   static int _defaultSeason(List<EpisodeSeasonGroup> seasons) {
     for (var i = 0; i < seasons.length; i++) {
+      if (!seasons[i].isTrailerSeason) return i;
       final hasRegular = seasons[i].episodes.any(
-        (episode) => !episode.name.contains('تیزر'),
+        (episode) => !episode.isTrailer && !isTrailerLabel(episode.name),
       );
       if (hasRegular) return i;
     }
@@ -64,7 +65,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     _catalog = EpisodeCatalog.from(widget.content);
     _seasonIndex = _defaultSeason(_catalog.seasons);
     _selectedQuality = recommendedEpisodeQuality(
-      _catalog.seasons[_seasonIndex].qualities,
+      _catalog.seasons[_seasonIndex].displayQualities,
     );
     _contentReady = !widget.deferInitialContent;
     if (_contentReady) {
@@ -136,7 +137,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   Future<void> _loadQualityPreference() async {
     final prefs = await SharedPreferences.getInstance();
     final quality = prefs.getString('preferred_stream_quality');
-    final available = _catalog.seasons[_seasonIndex].qualities;
+    final available = _catalog.seasons[_seasonIndex].displayQualities;
     if (!mounted || quality == null || !available.contains(quality)) {
       return;
     }
@@ -150,7 +151,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   }
 
   void _selectSeason(int index) {
-    final qualities = _catalog.seasons[index].qualities;
+    final qualities = _catalog.seasons[index].displayQualities;
     setState(() {
       _seasonIndex = index;
       if (!qualities.contains(_selectedQuality)) {
@@ -334,7 +335,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
             for (final variant in group.variants)
               ListTile(
                 leading: const Icon(Icons.high_quality_rounded),
-                title: Text(variant.quality),
+                title: Text(qualityDisplayLabel(variant.quality)),
                 subtitle: Text(_variantMeta(variant)),
                 trailing: variant.quality == _selectedQuality
                     ? const Icon(Icons.check_circle_rounded)
@@ -397,6 +398,9 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
 
   Widget _episodeCard(EpisodeGroup group) {
     final variant = group.variantFor(_selectedQuality);
+    // تیزر بدون تگ کیفیت نباید «بدون برچسب کیفیت» نشان بدهد؛ بج مخفی می‌شود.
+    final showQualityBadge =
+        !(group.isTrailer && isUnknownQuality(variant.quality));
     // در هنتای نام «قسمت N • کیفیت» داخل خود واریانت است تا کیفیتِ
     // انتخاب‌شده مشخص باشد، ولی چون بج کیفیت روی کارت هست، پسوند کیفیت
     // از عنوان نمایشی برداشته می‌شود («قسمت ۰۱»). بخش عادی بدون تغییر.
@@ -458,24 +462,25 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                       ),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      variant.quality,
-                      textDirection: TextDirection.ltr,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
+                  if (showQualityBadge)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        variant.quality,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -540,13 +545,15 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                       ),
                     ),
                   ),
-                  Text(
-                    '${group.variants.length} کیفیت',
-                    style: const TextStyle(
-                      color: AnimeColors.muted,
-                      fontSize: 10,
+                  // برای تیزر شمارش «N کیفیت» معنایی ندارد و مخفی می‌شود.
+                  if (!group.isTrailer)
+                    Text(
+                      '${group.variants.length} کیفیت',
+                      style: const TextStyle(
+                        color: AnimeColors.muted,
+                        fontSize: 10,
+                      ),
                     ),
-                  ),
                 ],
               ),
               const Spacer(),
@@ -586,6 +593,9 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     }
     final season = seasons[_seasonIndex.clamp(0, seasons.length - 1)];
     final episodes = season.episodes;
+    // تیزرها معمولاً تگ کیفیت ندارند؛ به‌جای نمایش «بدون برچسب کیفیت»،
+    // کل ردیف کیفیت مخفی می‌شود.
+    final displayQualities = season.displayQualities;
     return Scaffold(
       appBar: AppBar(title: const Text('انتخاب قسمت')),
       body: AmbientBackground(
@@ -633,23 +643,25 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    if (displayQualities.isNotEmpty)
+                      const SizedBox(height: 10),
                   ],
-                  _selectorRow(
-                    title: 'کیفیت',
-                    icon: Icons.high_quality_rounded,
-                    children: [
-                      for (final quality in season.qualities) ...[
-                        ChoiceChip(
-                          key: Key('quality-$quality'),
-                          label: Text(quality),
-                          selected: quality == _selectedQuality,
-                          onSelected: (_) => _setQuality(quality),
-                        ),
-                        const SizedBox(width: 7),
+                  if (displayQualities.isNotEmpty)
+                    _selectorRow(
+                      title: 'کیفیت',
+                      icon: Icons.high_quality_rounded,
+                      children: [
+                        for (final quality in displayQualities) ...[
+                          ChoiceChip(
+                            key: Key('quality-$quality'),
+                            label: Text(quality),
+                            selected: quality == _selectedQuality,
+                            onSelected: (_) => _setQuality(quality),
+                          ),
+                          const SizedBox(width: 7),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
                 ],
               ),
             ),

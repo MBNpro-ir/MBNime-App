@@ -117,4 +117,97 @@ void main() {
       ['بدون برچسب کیفیت'],
     );
   });
+
+  test('trailer season hides the unknown quality chip', () {
+    const content = AnimeContent(
+      id: 'show-with-trailer',
+      title: 'Show',
+      subtitle: '',
+      description: '',
+      year: 2026,
+      rating: 8,
+      kind: ContentKind.series,
+      colors: [],
+      genres: [],
+      seasons: [
+        AnimeSeason(
+          id: 'trailer',
+          name: 'تیزر',
+          episodes: [AnimeEpisode(id: 't1', name: 'تیزر', fileUrl: 'trailer')],
+        ),
+        AnimeSeason(
+          id: '720',
+          name: 'فصل 1 زیرنویس 720p',
+          episodes: [AnimeEpisode(id: 'e1', name: 'قسمت 1', fileUrl: '720-1')],
+        ),
+      ],
+    );
+
+    final catalog = EpisodeCatalog.from(content);
+    final trailerSeason = catalog.seasons.singleWhere(
+      (item) => item.name == 'تیزرها',
+    );
+    expect(trailerSeason.isTrailerSeason, isTrue);
+    // به‌جای نمایش «بدون برچسب کیفیت»، ردیف کیفیت مخفی می‌شود.
+    expect(trailerSeason.displayQualities, isEmpty);
+    final trailerGroup = trailerSeason.episodes.single;
+    expect(trailerGroup.isTrailer, isTrue);
+    expect(isUnknownQuality(trailerGroup.variants.single.quality), isTrue);
+  });
+
+  test('movie trailer does not pollute the movie quality list', () {
+    const content = AnimeContent(
+      id: 'movie-with-trailer',
+      title: 'Movie',
+      subtitle: '',
+      description: '',
+      year: 2026,
+      rating: 8,
+      kind: ContentKind.movie,
+      colors: [],
+      genres: [],
+      seasons: [
+        AnimeSeason(
+          id: 'movie',
+          name: 'کیفیت‌های پخش',
+          episodes: [
+            AnimeEpisode(id: '1', name: '720P', fileUrl: 'movie-720'),
+            AnimeEpisode(id: '2', name: '1080P', fileUrl: 'movie-1080'),
+            AnimeEpisode(id: '3', name: '480p', fileUrl: 'movie-480'),
+            AnimeEpisode(id: 't', name: 'تیزر', fileUrl: 'movie-trailer'),
+          ],
+        ),
+      ],
+    );
+
+    final catalog = EpisodeCatalog.from(content);
+    final season = catalog.seasons.single;
+    expect(season.name, 'فیلم');
+    // چیپ «بدون برچسب کیفیت» نباید بین کیفیت‌های فیلم دیده شود.
+    expect(season.displayQualities, ['1080p', '720p', '480p']);
+    expect(catalog.qualities, ['1080p', '720p', '480p']);
+    expect(season.episodes, hasLength(2));
+    final main = season.episodes.firstWhere(
+      (group) => group.id == 'logical:movie:main',
+    );
+    expect(main.name, 'پخش فیلم');
+    expect(main.variants, hasLength(3));
+    final trailer = season.episodes.firstWhere((group) => group.isTrailer);
+    expect(trailer.variants, hasLength(1));
+    expect(isUnknownQuality(trailer.variants.single.quality), isTrue);
+  });
+
+  test('trailer helpers detect fa/en labels and server suffixes', () {
+    expect(isTrailerLabel('تیزر'), isTrue);
+    expect(isTrailerLabel('Trailer EP1'), isTrue);
+    expect(isTrailerLabel('قسمت 1'), isFalse);
+    expect(isUnknownQuality('بدون برچسب کیفیت'), isTrue);
+    expect(isUnknownQuality('بدون برچسب کیفیت · سرور 2'), isTrue);
+    expect(isUnknownQuality('720p'), isFalse);
+    expect(qualityDisplayLabel('بدون برچسب کیفیت'), 'پخش');
+    expect(
+      qualityDisplayLabel('بدون برچسب کیفیت · سرور 2'),
+      'سرور 2',
+    );
+  });
 }
