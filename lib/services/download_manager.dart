@@ -152,6 +152,9 @@ class DownloadManager extends ChangeNotifier {
     ]);
     await Directory(directory).create(recursive: true);
     final cover = await _cacheCover(content);
+    // شناسهٔ باندل: همهٔ فایل‌های یک افزودنِ یکجا (چند کیفیت فیلم یا
+    // چند قسمت یک کیفیت) در مدیریت دانلود یک گروه بازشونده می‌شوند.
+    final bundleId = DateTime.now().microsecondsSinceEpoch.toString();
     var count = 0;
     for (final episode in episodes) {
       final url = Uri.tryParse(episode.fileUrl);
@@ -193,7 +196,9 @@ class DownloadManager extends ChangeNotifier {
           'season': season.name,
           'episode': episode.name,
           'contentId': content.id,
+          'seasonId': season.id,
           'episodeId': episode.id,
+          'bundleId': bundleId,
         }),
       );
       records[task.taskId] = TaskRecord(task, TaskStatus.enqueued, 0, -1);

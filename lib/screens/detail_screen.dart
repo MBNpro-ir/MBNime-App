@@ -140,6 +140,20 @@ class _DetailScreenState extends State<DetailScreen> {
   }) async {
     final imageUrl = requestedImageUrl ?? _coverImageUrl(item);
     if (imageUrl == null) return;
+    // پیش‌بارگذاری با همان پروایدر نمایش تا فریم اول بزرگ‌نمایی
+    // تصویر آماده باشد و کاور یک لحظه نپرد (چشمک).
+    final provider = imageProviderForUrl(
+      imageUrl,
+      viaUnstableRoute: item.isHentai,
+    );
+    try {
+      await precacheImage(provider, context).timeout(
+        const Duration(seconds: 8),
+      );
+    } catch (_) {
+      // بدون پیش‌بار هم باز می‌شود؛ صفحه خطا را خودش نشان می‌دهد.
+    }
+    if (!mounted) return;
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
         opaque: false,
@@ -173,10 +187,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 tag: heroTag,
                 createRectTween: smoothHeroRectTween,
                 child: Image(
-                  image: imageProviderForUrl(
-                    imageUrl,
-                    viaUnstableRoute: item.isHentai,
-                  ),
+                  image: provider,
                   fit: BoxFit.contain,
                   gaplessPlayback: true,
                   frameBuilder:
@@ -338,6 +349,21 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// دانلود کاتالوگ‌محور محتوای عادی: یک کیفیتِ یک فصل/فیلم، یکجا.
+  Future<void> _downloadSelection(
+    AnimeContent item,
+    AnimeSeason season,
+    List<AnimeEpisode> episodes,
+  ) async {
+    if (episodes.isEmpty) return;
+    await showDownloadChoice(
+      context,
+      content: item,
+      season: season,
+      episodes: episodes,
+    );
+  }
+
   Future<void> _downloadSeasonByQuality(
     AnimeContent item,
     AnimeSeason season,
@@ -411,6 +437,18 @@ class _DetailScreenState extends State<DetailScreen> {
       final hasPlayable = item.seasons.any(
         (season) => season.episodes.isNotEmpty,
       );
+      // آدرس‌های پین‌شدهٔ کاور: بندانگشتی و بزرگ‌نمایی دقیقاً یکی باشند تا
+      // کاور بزرگ به کوچک تبدیل نشود و هنگام باز شدن نپرد (چشمک).
+      final backdropUrl =
+          widget.content.backdropUrl ??
+          item.backdropUrl ??
+          widget.content.imageUrl ??
+          item.imageUrl;
+      final posterUrl =
+          widget.content.imageUrl ??
+          item.imageUrl ??
+          widget.content.backdropUrl ??
+          item.backdropUrl;
       return Scaffold(
         body: CustomScrollView(
           slivers: [
@@ -472,11 +510,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       behavior: HitTestBehavior.opaque,
                       onTap: () => _showCover(
                         item,
-                        requestedImageUrl:
-                            widget.content.backdropUrl ??
-                            item.backdropUrl ??
-                            widget.content.imageUrl ??
-                            item.imageUrl,
+                        requestedImageUrl: backdropUrl,
                         heroTag: 'detail-backdrop-${widget.heroTag}',
                       ),
                       child: Hero(
@@ -486,12 +520,11 @@ class _DetailScreenState extends State<DetailScreen> {
                           key: ValueKey(widget.heroTag),
                           child: ContentArt(
                             content: item,
-                            imageUrl:
-                                widget.content.backdropUrl ??
-                                widget.content.imageUrl,
+                            imageUrl: backdropUrl,
                             orientation: ArtworkOrientation.landscape,
                             borderRadius: 0,
                             showTitle: false,
+                            lockToImageUrl: true,
                           ),
                         ),
                       ),
@@ -525,13 +558,12 @@ class _DetailScreenState extends State<DetailScreen> {
                   _DetailSummaryCard(
                     item: item,
                     heroTag: widget.heroTag,
-                    portraitImageUrl: widget.content.imageUrl ?? item.imageUrl,
+                    portraitImageUrl: posterUrl,
                     loading: loading,
                     hasPlayable: hasPlayable,
                     onCoverTap: () => _showCover(
                       item,
-                      requestedImageUrl:
-                          widget.content.imageUrl ?? item.imageUrl,
+                      requestedImageUrl: posterUrl,
                       heroTag: widget.heroTag.startsWith('featured-')
                           ? 'detail-poster-${widget.heroTag}'
                           : widget.heroTag,
@@ -583,6 +615,8 @@ class _DetailScreenState extends State<DetailScreen> {
                               _downloadSeason(item, season),
                           onDownloadQuality: (season, quality) =>
                               _downloadSeasonByQuality(item, season, quality),
+                          onDownloadSelection: (season, episodes) =>
+                              _downloadSelection(item, season, episodes),
                         ),
                       ),
                     ),
@@ -880,6 +914,8 @@ class _DetailSummaryCard extends StatelessWidget {
       imageUrl: portraitImageUrl,
       borderRadius: 16,
       showTitle: false,
+      // اسلات ثابت جزئیات: همان پوستر بماند و به بک‌دراپ سوییچ نکند.
+      lockToImageUrl: true,
     );
     // Featured cards use the landscape artwork, so they must not morph into
     // this portrait slot. Every regular portrait card shares this Hero,
@@ -1061,6 +1097,7 @@ class _AboutSection extends StatelessWidget {
     required this.onRelated,
     required this.onDownloadSeason,
     required this.onDownloadQuality,
+    required this.onDownloadSelection,
   });
   final AnimeContent item;
   final ContentApi api;
@@ -1069,6 +1106,8 @@ class _AboutSection extends StatelessWidget {
   final ValueChanged<AnimeContent> onRelated;
   final ValueChanged<AnimeSeason> onDownloadSeason;
   final void Function(AnimeSeason season, String quality) onDownloadQuality;
+  final void Function(AnimeSeason season, List<AnimeEpisode> episodes)
+  onDownloadSelection;
 
   Future<void> _launch(String url) async {
     final uri = Uri.tryParse(url);
@@ -1096,6 +1135,35 @@ class _AboutSection extends StatelessWidget {
           taxonomy: link.taxonomy,
           termSlugOrId: link.termId.isNotEmpty ? link.termId : link.title,
           title: link.title,
+        ),
+      ),
+    );
+  }
+
+  /// باز کردن آرشیو درون‌برنامه‌ای یک ژانر انیمهٔ معمولی از روی چیپ ژانر.
+  Future<void> _openNormalGenre(BuildContext context, String name) async {
+    final normalApi = api is AnimeOnApi ? api as AnimeOnApi : null;
+    if (normalApi == null) return;
+    CatalogGroup? group;
+    try {
+      final groups = await normalApi.genres();
+      group = matchCatalogGroupByName(groups, name);
+    } catch (_) {
+      group = null;
+    }
+    if (!context.mounted) return;
+    if (group == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ژانر «$name» در فهرست پیدا نشد.')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      slideUpRoute(
+        _NormalGenreResultsPage(
+          api: normalApi,
+          group: group,
+          onOpen: onRelated,
         ),
       ),
     );
@@ -1259,9 +1327,13 @@ class _AboutSection extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 6,
-          children: item.genres
-              .map((genre) => Chip(label: Text(genre)))
-              .toList(),
+          children: [
+            for (final genre in item.genres)
+              ActionChip(
+                label: Text(genre),
+                onPressed: () => _openNormalGenre(context, genre),
+              ),
+          ],
         ),
       ],
       if (section == 0 && item.isHentai && item.genres.isNotEmpty) ...[
@@ -1314,7 +1386,7 @@ class _AboutSection extends StatelessWidget {
               ? 'دانلود همه کیفیت‌ها'
               : item.isHentai
               ? 'دانلود بر اساس کیفیت'
-              : 'دانلود فصل‌ها',
+              : 'دانلود فصل‌ها بر اساس کیفیت',
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 10),
@@ -1342,29 +1414,12 @@ class _AboutSection extends StatelessWidget {
                   ),
                 ),
             ],
-        ] else ...[
-          Column(
-            children: [
-              for (final season in item.seasons)
-                if (season.episodes.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.tonalIcon(
-                        onPressed: () => onDownloadSeason(season),
-                        icon: const Icon(Icons.download_for_offline_rounded),
-                        label: Text(
-                          season.id == 'movie'
-                              ? 'دانلود همه ${season.episodes.length} کیفیت'
-                              : '${season.name} · دانلود همه ${season.episodes.length} قسمت',
-                        ),
-                      ),
-                    ),
-                  ),
-            ],
+        ] else
+          _NormalDownloadButtons(
+            item: item,
+            onDownloadSeason: onDownloadSeason,
+            onDownloadSelection: onDownloadSelection,
           ),
-        ],
       ],
       if (section == 2 && item.related.isNotEmpty) ...[
         Text(
@@ -1464,6 +1519,281 @@ class _AboutSection extends StatelessWidget {
       ],
     ],
   );
+}
+
+/// تطبیق نام ژانر کارت جزئیات با فهرست دسته‌های سرور (دقیق، بعد شامل).
+/// top-level تا واحدتست‌پذیر باشد.
+CatalogGroup? matchCatalogGroupByName(
+  List<CatalogGroup> groups,
+  String name,
+) {
+  final needle = name.trim();
+  if (needle.isEmpty) return null;
+  for (final group in groups) {
+    if (group.name.trim() == needle) return group;
+  }
+  final lower = needle.toLowerCase();
+  for (final group in groups) {
+    if (group.name.trim().toLowerCase() == lower) return group;
+  }
+  for (final group in groups) {
+    final candidate = group.name.trim().toLowerCase();
+    if (candidate.contains(lower) || lower.contains(candidate)) return group;
+  }
+  return null;
+}
+
+/// نتایج یک ژانر انیمهٔ معمولی (از چیپ‌های ژانر صفحه جزئیات) با صفحه‌بندی.
+class _NormalGenreResultsPage extends StatefulWidget {
+  const _NormalGenreResultsPage({
+    required this.api,
+    required this.group,
+    required this.onOpen,
+  });
+
+  final AnimeOnApi api;
+  final CatalogGroup group;
+  final ValueChanged<AnimeContent> onOpen;
+
+  @override
+  State<_NormalGenreResultsPage> createState() => _NormalGenreResultsPageState();
+}
+
+class _NormalGenreResultsPageState extends State<_NormalGenreResultsPage> {
+  final _items = <AnimeContent>[];
+  final _scroll = ScrollController();
+  final _seenIds = <String>{};
+  String? _error;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _more = true;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.extentAfter < 450) _loadMore();
+    });
+    _loadMore();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_more) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = _page + 1;
+      final rows = await widget.api.catalogByGroup(
+        group: widget.group,
+        country: false,
+        page: next,
+      );
+      if (!mounted) return;
+      setState(() {
+        _page = next;
+        _loading = false;
+        _loadingMore = false;
+        if (rows.isEmpty) {
+          _more = false;
+        } else {
+          for (final row in rows) {
+            if (_seenIds.add(row.id)) _items.add(row);
+          }
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        if (_items.isEmpty) _error = 'دریافت این ژانر انجام نشد.';
+      });
+    }
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _items.clear();
+      _seenIds.clear();
+      _error = null;
+      _loading = true;
+      _more = true;
+      _page = 0;
+    });
+    await _loadMore();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.group.name)),
+    body: Builder(
+      builder: (context) {
+        if (_loading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (_error != null && _items.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_error!, style: const TextStyle(color: AnimeColors.muted)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _reload,
+                  child: const Text('تلاش دوباره'),
+                ),
+              ],
+            ),
+          );
+        }
+        if (_items.isEmpty) {
+          return const Center(
+            child: Text(
+              'محتوایی در این ژانر پیدا نشد.',
+              style: TextStyle(color: AnimeColors.muted),
+            ),
+          );
+        }
+        return GridView.builder(
+          controller: _scroll,
+          padding: const EdgeInsets.all(16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: MediaQuery.sizeOf(context).width > 700 ? 4 : 2,
+            childAspectRatio: .68,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: _items.length + (_more ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= _items.length) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+            final content = _items[index];
+            final tag = 'genre-${widget.group.id}-${content.id}';
+            return InkWell(
+              onTap: () => widget.onOpen(content),
+              borderRadius: BorderRadius.circular(18),
+              child: Hero(
+                tag: tag,
+                transitionOnUserGestures: true,
+                createRectTween: smoothHeroRectTween,
+                flightShuttleBuilder: portraitHeroFlightShuttle,
+                child: ContentArt(
+                  content: content,
+                  borderRadius: 18,
+                  showTitle: true,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
+}
+
+/// دکمه‌های دانلود محتوای عادی: فیلم «همه کیفیت‌ها» + تک‌تک کیفیت‌ها،
+/// سریال هر فصل «همه قسمت‌های یک کیفیت» جداگانه (بدون قاطی کردن کیفیت‌ها).
+class _NormalDownloadButtons extends StatelessWidget {
+  const _NormalDownloadButtons({
+    required this.item,
+    required this.onDownloadSeason,
+    required this.onDownloadSelection,
+  });
+
+  final AnimeContent item;
+  final ValueChanged<AnimeSeason> onDownloadSeason;
+  final void Function(AnimeSeason season, List<AnimeEpisode> episodes)
+  onDownloadSelection;
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = normalDownloadPlan(item);
+    final hasPlan =
+        plan.movieAll != null ||
+        plan.batches.any((batch) => batch.episodes.isNotEmpty);
+    if (!hasPlan) {
+      // حالت مرزی (مثلاً فقط تیزر): رفتار قبلی حفظ می‌شود.
+      return Column(
+        children: [
+          for (final season in item.seasons)
+            if (season.episodes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => onDownloadSeason(season),
+                    icon: const Icon(Icons.download_for_offline_rounded),
+                    label: Text(
+                      season.id == 'movie'
+                          ? 'دانلود همه ${season.episodes.length} کیفیت'
+                          : '${season.name} · دانلود همه ${season.episodes.length} قسمت',
+                    ),
+                  ),
+                ),
+              ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (plan.movieAll != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () => onDownloadSelection(
+                  plan.movieAll!.season,
+                  plan.movieAll!.episodes,
+                ),
+                icon: const Icon(Icons.download_for_offline_rounded),
+                label: Text(plan.movieAll!.label),
+              ),
+            ),
+          ),
+        for (final batch in plan.batches)
+          if (batch.episodes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: plan.isMovie
+                    ? OutlinedButton.icon(
+                        onPressed: () =>
+                            onDownloadSelection(batch.season, batch.episodes),
+                        icon: const Icon(Icons.high_quality_rounded),
+                        label: Text(batch.label),
+                      )
+                    : FilledButton.tonalIcon(
+                        onPressed: () =>
+                            onDownloadSelection(batch.season, batch.episodes),
+                        icon: const Icon(Icons.download_for_offline_rounded),
+                        label: Text(
+                          batch.label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+              ),
+            ),
+      ],
+    );
+  }
 }
 
 class _EmptyDetailSection extends StatelessWidget {

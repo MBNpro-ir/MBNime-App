@@ -197,6 +197,89 @@ void main() {
     expect(isUnknownQuality(trailer.variants.single.quality), isTrue);
   });
 
+  test('movie download plan lists all-qualities plus each quality', () {
+    const content = AnimeContent(
+      id: 'movie-dl',
+      title: 'Movie',
+      subtitle: '',
+      description: '',
+      year: 2026,
+      rating: 8,
+      kind: ContentKind.movie,
+      colors: [],
+      genres: [],
+      seasons: [
+        AnimeSeason(
+          id: 'movie',
+          name: 'کیفیت‌های پخش',
+          episodes: [
+            AnimeEpisode(id: '1', name: '720P', fileUrl: 'movie-720'),
+            AnimeEpisode(id: '2', name: '1080P', fileUrl: 'movie-1080'),
+            AnimeEpisode(id: 't', name: 'تیزر', fileUrl: 'movie-trailer'),
+          ],
+        ),
+      ],
+    );
+
+    final plan = normalDownloadPlan(content);
+    expect(plan.isMovie, isTrue);
+    expect(plan.movieAll, isNotNull);
+    expect(plan.movieAll!.label, 'دانلود همه 2 کیفیت');
+    expect(plan.movieAll!.episodes, hasLength(2));
+    expect(
+      plan.batches.map((batch) => batch.label),
+      ['دانلود کیفیت 1080p', 'دانلود کیفیت 720p'],
+    );
+    for (final batch in plan.batches) {
+      expect(batch.episodes, hasLength(1));
+      expect(batch.episodes.single.fileUrl, isNot('movie-trailer'));
+    }
+  });
+
+  test('series download plan batches every episode of each quality', () {
+    const content = AnimeContent(
+      id: 'show-dl',
+      title: 'Show',
+      subtitle: '',
+      description: '',
+      year: 2026,
+      rating: 8,
+      kind: ContentKind.series,
+      colors: [],
+      genres: [],
+      seasons: [
+        AnimeSeason(
+          id: 'a',
+          name: '1 480p زیرنویس',
+          episodes: [
+            AnimeEpisode(id: '1a', name: '*1', fileUrl: '480-1'),
+            AnimeEpisode(id: '2a', name: '*2', fileUrl: '480-2'),
+          ],
+        ),
+        AnimeSeason(
+          id: 'b',
+          name: '۱ 720P زیرنویس',
+          episodes: [
+            AnimeEpisode(id: '1b', name: '*۱', fileUrl: '720-1'),
+            AnimeEpisode(id: '2b', name: '*۲', fileUrl: '720-2'),
+          ],
+        ),
+      ],
+    );
+
+    final plan = normalDownloadPlan(content);
+    expect(plan.isMovie, isFalse);
+    expect(plan.movieAll, isNull);
+    // هر کیفیت جداگانه با همهٔ قسمت‌هایش؛ بدون بستهٔ چندکیفیتی.
+    expect(plan.batches, hasLength(2));
+    final byLabel = {for (final batch in plan.batches) batch.label: batch};
+    expect(byLabel.keys.any((label) => label.contains('720p')), isTrue);
+    expect(byLabel.keys.any((label) => label.contains('480p')), isTrue);
+    for (final batch in plan.batches) {
+      expect(batch.episodes, hasLength(2));
+    }
+  });
+
   test('trailer helpers detect fa/en labels and server suffixes', () {
     expect(isTrailerLabel('تیزر'), isTrue);
     expect(isTrailerLabel('Trailer EP1'), isTrue);

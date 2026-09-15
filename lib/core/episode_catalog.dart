@@ -299,6 +299,170 @@ String recommendedEpisodeQuality(Iterable<String> qualities) {
   return values.isEmpty ? unknownQualityLabel : values.first;
 }
 
+/// یک بستهٔ دانلودی: چند قسمت/فایل هم‌کیفیت که با یک دکمه یکجا دانلود می‌شوند.
+class QualityDownloadBatch {
+  const QualityDownloadBatch({
+    required this.label,
+    required this.season,
+    required this.episodes,
+  });
+
+  /// متن دکمه (مثلاً «فصل 1 · 720p · دانلود همه 12 قسمت»).
+  final String label;
+
+  /// فصل مصنوعی برای نام پوشه/فایل و شناسهٔ یکتای دانلود.
+  final AnimeSeason season;
+  final List<AnimeEpisode> episodes;
+}
+
+/// نقشهٔ دکمه‌های تب دانلود برای محتوای عادی (غیر هنتای).
+class NormalDownloadPlan {
+  const NormalDownloadPlan({
+    required this.isMovie,
+    this.movieAll,
+    required this.batches,
+  });
+
+  final bool isMovie;
+
+  /// دکمهٔ «دانلود همه کیفیت‌ها» (فقط فیلم).
+  final QualityDownloadBatch? movieAll;
+  final List<QualityDownloadBatch> batches;
+}
+
+List<AnimeEpisode> _distinctEpisodes(Iterable<AnimeEpisode> input) {
+  final seen = <String>{};
+  return [
+    for (final episode in input)
+      if (episode.fileUrl.isNotEmpty && seen.add(episode.fileUrl)) episode,
+  ];
+}
+
+/// دکمه‌های دانلود تب «قسمت‌ها و دانلود» برای محتوای عادی:
+/// - فیلم: «دانلود همه کیفیت‌ها» + تک‌تک کیفیت‌ها.
+/// - سریال/انیمه: برای هر فصل، همهٔ قسمت‌های هر کیفیت جداگانه
+///   (بدون قاطی کردن چند کیفیت باهم)؛ تیزرها کنار گذاشته می‌شوند.
+NormalDownloadPlan normalDownloadPlan(AnimeContent content) {
+  final catalog = EpisodeCatalog.from(content);
+  final isMovie =
+      content.kind == ContentKind.movie &&
+      catalog.seasons.length == 1 &&
+      catalog.seasons.first.id == 'movie';
+  if (isMovie) {
+    final season = catalog.seasons.first;
+    final main = season.episodes.firstWhere(
+      (group) => group.id == 'logical:movie:main',
+      orElse: () => season.episodes.first,
+    );
+    final mains = main.variants
+        .where(
+          (variant) =>
+              !isTrailerLabel(variant.episode.name) &&
+              !isTrailerLabel(variant.season.name),
+        )
+        .toList(growable: false);
+    if (mains.isEmpty) return const NormalDownloadPlan(isMovie: true, batches: []);
+    final qualities = _qualityList(mains);
+    if (qualities.every(isUnknownQuality)) {
+      final episodes = _distinctEpisodes(mains.map((item) => item.episode));
+      return NormalDownloadPlan(
+        isMovie: true,
+        batches: [
+          QualityDownloadBatch(
+            label: 'دانلود فیلم',
+            season: AnimeSeason(
+              id: 'movie-all',
+              name: 'کیفیت‌های پخش',
+              episodes: episodes,
+            ),
+            episodes: episodes,
+          ),
+        ],
+      );
+    }
+    final known = qualities
+        .where((quality) => !isUnknownQuality(quality))
+        .toList(growable: false);
+    final effective = known.isEmpty ? qualities : known;
+    return NormalDownloadPlan(
+      isMovie: true,
+      movieAll: QualityDownloadBatch(
+        label: 'دانلود همه ${mains.length} کیفیت',
+        season: AnimeSeason(
+          id: 'movie-all',
+          name: 'کیفیت‌های پخش',
+          episodes: _distinctEpisodes(mains.map((item) => item.episode)),
+        ),
+        episodes: _distinctEpisodes(mains.map((item) => item.episode)),
+      ),
+      batches: [
+        for (final quality in effective)
+          for (final variant in mains.where(
+            (item) => item.quality == quality,
+          ))
+            QualityDownloadBatch(
+              label: 'دانلود کیفیت ${qualityDisplayLabel(quality)}',
+              season: AnimeSeason(
+                id: 'movie-$quality',
+                name: 'کیفیت‌های پخش · $quality',
+                episodes: [variant.episode],
+              ),
+              episodes: [variant.episode],
+            ),
+      ],
+    );
+  }
+
+  final batches = <QualityDownloadBatch>[];
+  for (final season in catalog.seasons) {
+    if (season.isTrailerSeason) continue;
+    final groups = season.episodes
+        .where((group) => !group.isTrailer)
+        .toList(growable: false);
+    if (groups.isEmpty) continue;
+    final qualities = season.displayQualities;
+    if (qualities.isEmpty) {
+      final episodes = _distinctEpisodes(
+        groups.expand((group) => group.variants.map((item) => item.episode)),
+      );
+      if (episodes.isEmpty) continue;
+      batches.add(
+        QualityDownloadBatch(
+          label: '${season.name} · دانلود همه ${episodes.length} قسمت',
+          season: AnimeSeason(
+            id: '${season.id}-all',
+            name: season.name,
+            episodes: episodes,
+          ),
+          episodes: episodes,
+        ),
+      );
+      continue;
+    }
+    for (final quality in qualities) {
+      final episodes = _distinctEpisodes([
+        for (final group in groups)
+          if (group.variants.any((item) => item.quality == quality))
+            group.variantFor(quality).episode,
+      ]);
+      if (episodes.isEmpty) continue;
+      batches.add(
+        QualityDownloadBatch(
+          label:
+              '${season.name} · ${qualityDisplayLabel(quality)} · دانلود همه ${episodes.length} قسمت',
+          season: AnimeSeason(
+            id: '${season.id}-$quality',
+            name: '${season.name} · $quality',
+            episodes: episodes,
+          ),
+          episodes: episodes,
+        ),
+      );
+    }
+  }
+  return NormalDownloadPlan(isMovie: false, batches: batches);
+}
+
 List<EpisodeVariant> _uniqueVariants(Iterable<EpisodeVariant> input) {
   final values = <EpisodeVariant>[];
   final counts = <String, int>{};

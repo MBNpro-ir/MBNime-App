@@ -25,6 +25,7 @@ class ContentArt extends StatefulWidget {
     this.showTitle = true,
     this.imageUrl,
     this.orientation = ArtworkOrientation.portrait,
+    this.lockToImageUrl = false,
   });
 
   final AnimeContent content;
@@ -32,6 +33,11 @@ class ContentArt extends StatefulWidget {
   final bool showTitle;
   final String? imageUrl;
   final ArtworkOrientation orientation;
+
+  /// وقتی true باشد فقط همان [imageUrl] نمایش داده می‌شود و انتخاب
+  /// خودکار بین پوستر/بک‌دراپ (بر اساس ابعاد دیکدشده) انجام نمی‌شود.
+  /// برای اسلات‌های ثابت صفحهٔ جزئیات تا کاور بزرگ و کوچک جابه‌جا نشوند.
+  final bool lockToImageUrl;
 
   @override
   State<ContentArt> createState() => _ContentArtState();
@@ -60,11 +66,15 @@ class _ContentArtState extends State<ContentArt> {
   ImageConfiguration _imageConfig = ImageConfiguration.empty;
   bool _didInitDeps = false;
 
-  List<String> get _candidates => <String?>[
-    widget.imageUrl,
-    widget.content.imageUrl,
-    widget.content.backdropUrl,
-  ].whereType<String>().where((url) => url.trim().isNotEmpty).toSet().toList();
+  List<String> get _candidates {
+    final locked = widget.imageUrl?.trim() ?? '';
+    if (widget.lockToImageUrl && locked.isNotEmpty) return [locked];
+    return <String?>[
+      widget.imageUrl,
+      widget.content.imageUrl,
+      widget.content.backdropUrl,
+    ].whereType<String>().where((url) => url.trim().isNotEmpty).toSet().toList();
+  }
 
   @override
   void initState() {
@@ -84,21 +94,23 @@ class _ContentArtState extends State<ContentArt> {
     }
   }
 
+  List<String> _candidatesOf(ContentArt widget) {
+    final locked = widget.imageUrl?.trim() ?? '';
+    if (widget.lockToImageUrl && locked.isNotEmpty) return [locked];
+    return <String?>[
+      widget.imageUrl,
+      widget.content.imageUrl,
+      widget.content.backdropUrl,
+    ].whereType<String>().where((url) => url.trim().isNotEmpty).toSet().toList();
+  }
+
   @override
   void didUpdateWidget(covariant ContentArt oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final oldCandidates =
-        <String?>[
-              oldWidget.imageUrl,
-              oldWidget.content.imageUrl,
-              oldWidget.content.backdropUrl,
-            ]
-            .whereType<String>()
-            .where((url) => url.trim().isNotEmpty)
-            .toSet()
-            .toList();
+    final oldCandidates = _candidatesOf(oldWidget);
     final candidatesChanged = !_sameStrings(_candidates, oldCandidates);
     if (oldWidget.orientation != widget.orientation ||
+        oldWidget.lockToImageUrl != widget.lockToImageUrl ||
         (candidatesChanged && !_candidates.contains(_selectedUrl))) {
       _resolveArtwork();
     }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
+import '../core/download_bundles.dart';
 import '../services/download_manager.dart';
 import '../services/device_bridge.dart';
 import '../services/external_apps.dart';
@@ -21,6 +22,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
   final manager = DownloadManager.instance;
   String _search = '';
   String _filter = 'همه';
+  final _expandedBundles = <String>{};
   @override
   void initState() {
     super.initState();
@@ -153,6 +155,11 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                 (a, b) => b.task.creationTime.compareTo(a.task.creationTime),
               );
         final allRecords = manager.records.values.toList(growable: false);
+        final bundles = groupDownloadRecords(records);
+        final fileCount = bundles.fold<int>(
+          0,
+          (sum, bundle) => sum + bundle.records.length,
+        );
         return LayoutBuilder(
           builder: (context, constraints) {
             final desktop = constraints.maxWidth >= 1000;
@@ -190,7 +197,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '${records.length} مورد',
+                                  '${bundles.length} باندل · $fileCount فایل',
                                   style: const TextStyle(color: Colors.white60),
                                 ),
                               ],
@@ -213,9 +220,20 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                           24,
                         ),
                         sliver: SliverList.builder(
-                          itemCount: records.length,
-                          itemBuilder: (context, index) =>
-                              _downloadCard(records[index], desktop: desktop),
+                          itemCount: bundles.length,
+                          itemBuilder: (context, index) {
+                            final bundle = bundles[index];
+                            if (bundle.isSingle) {
+                              return _downloadCard(
+                                bundle.records.single,
+                                desktop: desktop,
+                              );
+                            }
+                            return _bundleCard(
+                              bundle,
+                              desktop: desktop,
+                            );
+                          },
                         ),
                       ),
                   ],
@@ -445,6 +463,195 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
       ),
     );
   }
+
+  /// کارت باندل: چند فایل هم‌خانواده (چند کیفیت فیلم / چند قسمت
+  /// یک کیفیت) یکجا با پیشرفت تجمیعی؛ بازشونده و قابل مدیریت گروهی.
+  Widget _bundleCard(DownloadBundle bundle, {required bool desktop}) {
+    final percent = (bundle.progress.clamp(0, 1) * 100).round();
+    return Card(
+      margin: const EdgeInsets.only(top: 10),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: PageStorageKey('bundle-${bundle.id}'),
+        initiallyExpanded: _expandedBundles.contains(bundle.id),
+        onExpansionChanged: (expanded) => setState(() {
+          if (expanded) {
+            _expandedBundles.add(bundle.id);
+          } else {
+            _expandedBundles.remove(bundle.id);
+          }
+        }),
+        leading: _cover(bundle.coverPath, 46, 64),
+        title: Text(
+          bundle.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (bundle.subtitle.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                bundle.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: bundle.progress.clamp(0, 1),
+              minHeight: 7,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 3,
+              children: [
+                Text(
+                  '${bundle.completeCount} از ${bundle.records.length} تکمیل‌شده · $percent٪',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                if (bundle.totalBytes > 0)
+                  Text(
+                    '${(bundle.totalBytes / 1048576).toStringAsFixed(1)} MB',
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              desktop ? 16 : 12,
+              0,
+              desktop ? 16 : 12,
+              4,
+            ),
+            child: _bundleActions(bundle),
+          ),
+          const Divider(height: 1),
+          for (final record in bundle.records) ...[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                desktop ? 16 : 12,
+                10,
+                desktop ? 16 : 12,
+                10,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _downloadDetails(
+                    record,
+                    manager.progress[record.task.taskId],
+                  ),
+                  const SizedBox(height: 8),
+                  _downloadActions(record),
+                ],
+              ),
+            ),
+            const Divider(height: 1, indent: 12, endIndent: 12),
+          ],
+          const SizedBox(height: 6),
+        ],
+      ),
+    );
+  }
+
+  Widget _bundleActions(DownloadBundle bundle) => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    alignment: WrapAlignment.end,
+    children: [
+      if (bundle.hasPaused || bundle.hasRunning)
+        FilledButton.tonalIcon(
+          onPressed: () => _action(() async {
+            var ok = true;
+            for (final record in bundle.records) {
+              if (record.status == TaskStatus.paused ||
+                  record.status == TaskStatus.enqueued) {
+                try {
+                  ok = await manager.resume(record.task) && ok;
+                } catch (_) {
+                  ok = false;
+                }
+              }
+            }
+            return ok;
+          }),
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('ادامه همه'),
+        ),
+      if (bundle.hasRunning)
+        OutlinedButton.icon(
+          onPressed: () => _action(() async {
+            var ok = true;
+            for (final record in bundle.records) {
+              if (record.status == TaskStatus.running) {
+                try {
+                  ok = await manager.pause(record.task) && ok;
+                } catch (_) {
+                  ok = false;
+                }
+              }
+            }
+            return ok;
+          }),
+          icon: const Icon(Icons.pause_rounded),
+          label: const Text('توقف همه'),
+        ),
+      if (bundle.hasRetryable)
+        FilledButton.tonalIcon(
+          onPressed: () => _action(() async {
+            var ok = true;
+            for (final record in bundle.records) {
+              if (record.status == TaskStatus.failed ||
+                  record.status == TaskStatus.notFound ||
+                  record.status == TaskStatus.canceled) {
+                try {
+                  ok = await manager.retry(record.task) && ok;
+                } catch (_) {
+                  ok = false;
+                }
+              }
+            }
+            return ok;
+          }),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('تلاش مجدد همه'),
+        ),
+      if (bundle.hasActive)
+        IconButton.outlined(
+          tooltip: 'لغو همهٔ باندل',
+          onPressed: () => _action(() async {
+            var ok = true;
+            for (final record in bundle.records) {
+              if (record.status != TaskStatus.complete &&
+                  record.status != TaskStatus.failed &&
+                  record.status != TaskStatus.notFound &&
+                  record.status != TaskStatus.canceled) {
+                try {
+                  ok = await manager.cancel(record.task) && ok;
+                } catch (_) {
+                  ok = false;
+                }
+              }
+            }
+            return ok;
+          }),
+          icon: const Icon(Icons.close_rounded),
+        ),
+    ],
+  );
 
   Widget _downloadDetails(TaskRecord record, TaskProgressUpdate? live) {
     final percent = (record.progress.clamp(0, 1) * 100).round();
