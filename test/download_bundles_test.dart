@@ -21,7 +21,9 @@ TaskRecord record(
     directory: '/tmp',
     baseDirectory: BaseDirectory.root,
     displayName: displayName,
-    metaData: jsonEncode(meta),
+    // پیش‌فرض یک باندل مشترک تا تست‌های منطق دکمه یک باندل چندعضوی بگیرند؛
+    // با دادن bundleId صریح می‌شود جدا یا هم‌باندل کرد.
+    metaData: jsonEncode({'bundleId': 'test-bundle', ...meta}),
   );
   return TaskRecord(task, status, progress, 1000);
 }
@@ -53,6 +55,51 @@ void main() {
           .displayName,
       'سریال · قسمت 1',
     );
+  });
+
+  test('bundle pause/resume buttons show only when meaningful', () {
+    DownloadBundle bundleOf(List<TaskRecord> members) =>
+        groupDownloadRecords(members).single;
+
+    // فقط در حال اجرا: توقف معنادار، ادامه نه.
+    final runningOnly = bundleOf([
+      record('r1', 'a', status: TaskStatus.running, progress: .5),
+      record('r2', 'b', status: TaskStatus.enqueued),
+    ]);
+    expect(bundleCanPause(runningOnly), isTrue);
+    expect(bundleCanResume(runningOnly), isFalse);
+
+    // فقط در صف (شروع‌نشده): توقف گروهی باید دیده شود تا صف نگه داشته شود.
+    final queuedOnly = bundleOf([
+      record('q1', 'a'),
+      record('q2', 'b'),
+    ]);
+    expect(bundleCanPause(queuedOnly), isTrue);
+    expect(bundleCanResume(queuedOnly), isFalse);
+
+    // فقط متوقف: ادامه معنادار، توقف نه.
+    final pausedOnly = bundleOf([
+      record('p1', 'a', status: TaskStatus.paused, progress: .3),
+    ]);
+    expect(bundleCanPause(pausedOnly), isFalse);
+    expect(bundleCanResume(pausedOnly), isTrue);
+
+    // holdِ توقف گروهی دسکتاپ هم «ادامه همه» را روشن می‌کند.
+    final held = bundleOf([
+      record('h1', 'a', status: TaskStatus.canceled),
+    ]);
+    expect(bundleCanResume(held), isFalse);
+    expect(
+      bundleCanResume(held, {held.records.single.task.taskId}),
+      isTrue,
+    );
+
+    // تکمیل‌شده: هیچ‌کدام.
+    final done = bundleOf([
+      record('d1', 'a', status: TaskStatus.complete, progress: 1),
+    ]);
+    expect(bundleCanPause(done), isFalse);
+    expect(bundleCanResume(done), isFalse);
   });
 
   testWidgets('bundle of two files shows as one expandable group', (
@@ -99,8 +146,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('فیلم · 1080p'), findsWidgets);
     expect(find.text('فیلم · 720p'), findsWidgets);
-    // یکی در پنل کنترل کلی، یکی در اکشن‌های باندل.
-    expect(find.text('ادامه همه'), findsNWidgets(2));
+    // باندلِ در صف: «توقف همه» دارد (یکی پنل، یکی باندل) ولی «ادامه همه»
+    // ندارد چون عضوی متوقف نیست.
+    expect(find.text('توقف همه'), findsNWidgets(2));
+    expect(find.text('ادامه همه'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

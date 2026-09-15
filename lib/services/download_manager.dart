@@ -259,12 +259,168 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  Future<bool> pause(Task task) =>
-      task is DownloadTask ? downloader.pause(task) : Future.value(false);
-  Future<bool> resume(Task task) =>
-      task is DownloadTask ? downloader.resume(task) : Future.value(false);
-  Future<bool> cancel(Task task) => downloader.cancelTaskWithId(task.taskId);
+  /// تسک‌هایی که «توقف گروهی» نگه‌شان داشته: روی دسکتاپ pause تکی
+  /// برای تسکِ هنوز-شروع‌نشده no-op است (ایزوله‌ای ندارد)، پس تمیز
+  /// کنسل می‌شوند (صفری بایت دانلود نشده) و id نگه داشته می‌شود تا
+  /// «ادامه» همان‌ها را دوباره در صف بگذارد. روی موبایل pause سطح
+  /// کیو کافی است و این مجموعه استفاده نمی‌شود.
+  final Set<String> heldForPause = {};
+
+  static bool _isNativeMobile() {
+    try {
+      return Platform.isAndroid || Platform.isIOS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> pause(Task task) async {
+    if (task is! DownloadTask) return false;
+    final record = records[task.taskId];
+    if (record != null &&
+        !_isNativeMobile() &&
+        (record.status == TaskStatus.enqueued ||
+            record.status == TaskStatus.waitingToRetry)) {
+      // دسکتاپ: pause تسکِ در صف بی‌اثر است؛ hold تمیز.
+      try {
+        if (await downloader.cancelTaskWithId(task.taskId)) {
+          heldForPause.add(task.taskId);
+          notifyListeners();
+          return true;
+        }
+        return false;
+      } catch (_) {
+        return false;
+      }
+    }
+    return downloader.pause(task);
+  }
+
+  Future<bool> resume(Task task) async {
+    if (heldForPause.remove(task.taskId)) {
+      // ادامهٔ hold گروهی/تکی: ورود دوباره از مسیر صف هلدینگ تا
+      // سقف دانلود هم‌زمان کاربر رعایت شود.
+      try {
+        final ok = await downloader.enqueue(task);
+        notifyListeners();
+        return ok;
+      } catch (_) {
+        return false;
+      }
+    }
+    return task is DownloadTask
+        ? downloader.resume(task)
+        : Future.value(false);
+  }
+
+  /// توقف واقعی همهٔ اعضای فعال یک باندل (در حال اجرا + در صف).
+  /// فقط همین باندل می‌ایستد؛ سقف هم‌زمانی بقیه دست نخورده می‌ماند.
+  Future<bool> pauseBundleTasks(List<TaskRecord> bundleRecords) async {
+    await initialize();
+    final running = [
+      for (final record in bundleRecords)
+        if (record.status == TaskStatus.running) record.task,
+    ];
+    final waiting = [
+      for (final record in bundleRecords)
+        if (record.status == TaskStatus.enqueued ||
+            record.status == TaskStatus.waitingToRetry)
+          record.task,
+    ];
+    if (running.isEmpty && waiting.isEmpty) return true;
+    var ok = true;
+    // ۱) در حال اجراها: pause واقعی (resume-data حفظ می‌شود).
+    for (final task in running) {
+      try {
+        ok =
+            await downloader.pause(task as DownloadTask) &&
+            ok;
+      } catch (_) {
+        ok = false;
+      }
+    }
+    // ۲) در صف‌ها: hold سطح کیو در موبایل؛ hold تمیز در دسکتاپ.
+    if (waiting.isNotEmpty) {
+      if (_isNativeMobile()) {
+        try {
+          await downloader.pauseAll(
+            tasks: waiting.whereType<DownloadTask>().toList(growable: false),
+          );
+        } catch (_) {
+          ok = false;
+        }
+      } else {
+        for (final task in waiting) {
+          try {
+            if (await downloader.cancelTaskWithId(task.taskId)) {
+              heldForPause.add(task.taskId);
+            } else {
+              ok = false;
+            }
+          } catch (_) {
+            ok = false;
+          }
+        }
+      }
+    }
+    notifyListeners();
+    return ok;
+  }
+
+  /// ادامهٔ همهٔ اعضای متوقف یک باندل.
+  /// hold سراسری («توقف همه» پنل) برداشته می‌شود تا ادامه واقعاً اجرا شود،
+  /// ولی فقط همین باندل resume می‌شود و ورود دوباره از مسیر صف هلدینگ
+  /// است تا سقف دانلود هم‌زمان کاربر رعایت شود.
+  Future<bool> resumeBundleTasks(List<TaskRecord> bundleRecords) async {
+    await initialize();
+    if (allPaused) {
+      allPaused = false;
+      await (await SharedPreferences.getInstance()).setBool(
+        'downloads_all_paused',
+        false,
+      );
+      await _configureQueue();
+    }
+    final paused = [
+      for (final record in bundleRecords)
+        if (record.status == TaskStatus.paused) record.task,
+    ];
+    final held = [
+      for (final record in bundleRecords)
+        if (heldForPause.contains(record.task.taskId)) record.task,
+    ];
+    if (paused.isEmpty && held.isEmpty) return true;
+    var ok = true;
+    if (paused.isNotEmpty) {
+      try {
+        // API رسمی ادامهٔ گروهی: با فاصلهٔ زمانی، پاک‌سازی hold کیو،
+        // و ورود از مسیر صف هلدینگ (رعایت سقف هم‌زمانی).
+        final resumed = await downloader.resumeAll(
+          tasks: paused.whereType<DownloadTask>().toList(growable: false),
+        );
+        ok = resumed.length == paused.length && ok;
+      } catch (_) {
+        ok = false;
+      }
+    }
+    for (final task in held) {
+      try {
+        heldForPause.remove(task.taskId);
+        ok = await downloader.enqueue(task) && ok;
+      } catch (_) {
+        ok = false;
+      }
+    }
+    notifyListeners();
+    return ok;
+  }
+
+  Future<bool> cancel(Task task) {
+    heldForPause.remove(task.taskId);
+    return downloader.cancelTaskWithId(task.taskId);
+  }
   Future<bool> retry(Task task) async {
+    heldForPause.remove(task.taskId);
     if (await File(await task.filePath()).exists()) return false;
     return downloader.enqueue(task.copyWith(retriesRemaining: task.retries));
   }
@@ -336,6 +492,7 @@ class DownloadManager extends ChangeNotifier {
       if ([TaskStatus.complete, TaskStatus.canceled].contains(record.status)) {
         await downloader.database.deleteRecordWithId(record.taskId);
         records.remove(record.taskId);
+        heldForPause.remove(record.taskId);
       }
     }
     notifyListeners();

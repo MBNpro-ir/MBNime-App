@@ -92,6 +92,16 @@ class DownloadBundle {
   );
 }
 
+/// دکمهٔ «ادامه همه» باندل معنادار است وقتی عضوی paused یا holdشده
+/// (توقف گروهی دسکتاپ) داشته باشد — نه وقتی همه در حال اجراند.
+bool bundleCanResume(DownloadBundle bundle, [Set<String> heldIds = const {}]) =>
+    bundle.hasPaused ||
+    bundle.records.any((record) => heldIds.contains(record.task.taskId));
+
+/// دکمهٔ «توقف همه» باندل معنادار است وقتی عضوی فعال
+/// (در حال اجرا / در صف / در انتظار تلاش مجدد) داشته باشد.
+bool bundleCanPause(DownloadBundle bundle) => bundle.hasRunning;
+
 /// رکوردها را به باندل تبدیل می‌کند؛ مرتب‌سازی جدیدترین اول حفظ می‌شود.
 List<DownloadBundle> groupDownloadRecords(Iterable<TaskRecord> input) {
   final order = <String>[];

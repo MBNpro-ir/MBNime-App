@@ -572,40 +572,19 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
     runSpacing: 6,
     alignment: WrapAlignment.end,
     children: [
-      if (bundle.hasPaused || bundle.hasRunning)
+      if (bundleCanResume(bundle, manager.heldForPause))
         FilledButton.tonalIcon(
-          onPressed: () => _action(() async {
-            var ok = true;
-            for (final record in bundle.records) {
-              if (record.status == TaskStatus.paused ||
-                  record.status == TaskStatus.enqueued) {
-                try {
-                  ok = await manager.resume(record.task) && ok;
-                } catch (_) {
-                  ok = false;
-                }
-              }
-            }
-            return ok;
-          }),
+          onPressed: () => _action(
+            () => manager.resumeBundleTasks(bundle.records),
+          ),
           icon: const Icon(Icons.play_arrow_rounded),
           label: const Text('ادامه همه'),
         ),
-      if (bundle.hasRunning)
+      if (bundleCanPause(bundle))
         OutlinedButton.icon(
-          onPressed: () => _action(() async {
-            var ok = true;
-            for (final record in bundle.records) {
-              if (record.status == TaskStatus.running) {
-                try {
-                  ok = await manager.pause(record.task) && ok;
-                } catch (_) {
-                  ok = false;
-                }
-              }
-            }
-            return ok;
-          }),
+          onPressed: () => _action(
+            () => manager.pauseBundleTasks(bundle.records),
+          ),
           icon: const Icon(Icons.pause_rounded),
           label: const Text('توقف همه'),
         ),
@@ -655,6 +634,13 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
 
   Widget _downloadDetails(TaskRecord record, TaskProgressUpdate? live) {
     final percent = (record.progress.clamp(0, 1) * 100).round();
+    // holdِ توقف گروهی (دسکتاپ) وضعیت پایه‌اش «لغوشده» است ولی از دید
+    // کاربر متوقف است و با «ادامه» برمی‌گردد.
+    final held = manager.heldForPause.contains(record.task.taskId);
+    final statusLabel = held ? 'متوقف' : downloadStatusLabel(record.status);
+    final statusColor = held
+        ? _statusColor(TaskStatus.paused)
+        : _statusColor(record.status);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -676,8 +662,8 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
           runSpacing: 3,
           children: [
             Text(
-              '${downloadStatusLabel(record.status)}  •  $percent٪',
-              style: TextStyle(color: _statusColor(record.status)),
+              '$statusLabel  •  $percent٪',
+              style: TextStyle(color: statusColor),
             ),
             if (record.expectedFileSize > 0)
               Text(
@@ -705,12 +691,19 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
 
   Widget _downloadActions(TaskRecord record) {
     final task = record.task;
+    final held = manager.heldForPause.contains(task.taskId);
     return Wrap(
       spacing: 6,
       runSpacing: 6,
       alignment: WrapAlignment.end,
       children: [
-        if (record.status == TaskStatus.running)
+        if (held)
+          FilledButton.tonalIcon(
+            onPressed: () => _action(() => manager.resume(task)),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('ادامه'),
+          ),
+        if (record.status == TaskStatus.running && !held)
           FilledButton.tonalIcon(
             onPressed: () => _action(() => manager.pause(task)),
             icon: const Icon(Icons.pause_rounded),
@@ -722,11 +715,12 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
             icon: const Icon(Icons.play_arrow_rounded),
             label: const Text('ادامه'),
           ),
-        if (const [
-          TaskStatus.failed,
-          TaskStatus.notFound,
-          TaskStatus.canceled,
-        ].contains(record.status))
+        if (!held &&
+            const [
+              TaskStatus.failed,
+              TaskStatus.notFound,
+              TaskStatus.canceled,
+            ].contains(record.status))
           FilledButton.tonalIcon(
             onPressed: () => _action(() => manager.retry(task)),
             icon: const Icon(Icons.refresh_rounded),
