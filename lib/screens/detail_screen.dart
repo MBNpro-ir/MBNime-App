@@ -759,8 +759,8 @@ class _ResumeTarget {
 }
 
 /// Same-title «ادامه تماشا» button shown under the play button (normal and
-/// +18 detail pages share this card). It NEVER leaves this title: when the
-/// global last exit belongs here its exact point is used, otherwise the
+/// +18 detail pages share this card). It NEVER leaves this title: when this
+/// section's last exit belongs here its exact point is used, otherwise the
 /// most-recently watched resumable episode of this title. A confirmation
 /// popup (title + minute) precedes playback. Hidden when this title has no
 /// resumable progress.
@@ -781,7 +781,6 @@ class _ContinueWatchButton extends StatefulWidget {
 
 class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
   final _progress = WatchProgressStore();
-  final _lastStore = LastWatchStore();
   _ResumeTarget? _target;
   bool _busy = false;
   int _generation = 0;
@@ -801,9 +800,11 @@ class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
   Future<void> _reload() async {
     final generation = ++_generation;
     final catalog = EpisodeCatalog.from(widget.item);
-    // 1) Exact exit point when the global last watch is this title.
+    // 1) Exact exit point when this section's last watch is this title.
     try {
-      final last = await _lastStore.load();
+      final last = await LastWatchStore(
+        hentai: widget.item.isHentai,
+      ).load();
       if (last != null && last.contentId == widget.item.id) {
         if (!mounted || generation != _generation) return;
         setState(
@@ -3937,12 +3938,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _exitingPlayer = true;
     try {
       await _persistProgress();
-      // Remember the exact exit point for the global «ادامه تماشا» button.
-      // Only genuinely partial watches are kept; a finished (or barely
-      // started) title clears the slot so stale continuations are never
-      // offered.
+      // Remember the exact exit point for the section-scoped «ادامه تماشا»
+      // button (normal and +18 slots are fully separate). Only genuinely
+      // partial watches are kept; a finished (or barely started) title
+      // clears the slot so stale continuations are never offered.
       try {
-        final store = LastWatchStore();
+        final store = LastWatchStore(hentai: widget.content.isHentai);
         final atExit = LastWatch(
           contentId: widget.content.id,
           title: widget.content.title,

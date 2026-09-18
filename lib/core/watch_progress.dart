@@ -168,9 +168,18 @@ class LastWatch {
   }
 }
 
-/// Persists the single most-recent playback exit (see [LastWatch]).
+/// Persists the single most-recent playback exit (see [LastWatch]),
+/// strictly separated by section: normal titles and +18 titles each own
+/// their own slot so the two «ادامه تماشا» shelves can never mix.
 class LastWatchStore {
+  const LastWatchStore({this.hentai = false});
+
+  final bool hentai;
+
   static const _key = 'watch_last_v1';
+  static const _hentaiKey = 'watch_last_hentai_v1';
+
+  String get _slot => hentai ? _hentaiKey : _key;
 
   Future<void> save(LastWatch last) async {
     final prefs = await SharedPreferences.getInstance();
@@ -178,18 +187,26 @@ class LastWatchStore {
       ...last.toJson(),
       'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
     };
-    await prefs.setString(_key, jsonEncode(payload));
+    await prefs.setString(_slot, jsonEncode(payload));
   }
 
   Future<LastWatch?> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
+    final raw = prefs.getString(_slot);
     if (raw == null || raw.isEmpty) return null;
     try {
       final data = jsonDecode(raw);
       if (data is! Map<String, dynamic>) return null;
       final last = LastWatch.fromJson(data);
       if (last == null || !last.isResumable) return null;
+      // A slot must only ever serve its own section (self-heals data
+      // written before the split).
+      if (last.isHentai != hentai) {
+        try {
+          await prefs.remove(_slot);
+        } catch (_) {}
+        return null;
+      }
       return last;
     } catch (_) {
       return null;
@@ -199,7 +216,7 @@ class LastWatchStore {
   Future<void> clear() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_key);
+      await prefs.remove(_slot);
     } catch (_) {}
   }
 }

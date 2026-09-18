@@ -128,4 +128,35 @@ void main() {
     await store.save(_lastAt(5000, 1440000));
     expect(await store.load(), isNull);
   });
+
+  test('normal and +18 continue slots never mix', () async {
+    const normal = LastWatchStore();
+    const hentai = LastWatchStore(hentai: true);
+    await normal.save(_lastAt(750000, 1440000));
+    await hentai.save(
+      LastWatch(
+        contentId: 'h1',
+        title: 'عنوان +۱۸',
+        episodeId: 'hg1',
+        episodeName: 'قسمت ۱',
+        fileUrl: 'https://cdn.invalid/h.mp4',
+        positionMs: 300000,
+        durationMs: 1200000,
+        isHentai: true,
+        updatedAtMs: 0,
+      ),
+    );
+
+    final normalLoaded = await normal.load();
+    final hentaiLoaded = await hentai.load();
+    expect(normalLoaded, isNotNull);
+    expect(normalLoaded!.contentId, 'c1');
+    expect(hentaiLoaded, isNotNull);
+    expect(hentaiLoaded!.contentId, 'h1');
+
+    await normal.clear();
+    expect(await normal.load(), isNull);
+    // Clearing one section leaves the other untouched.
+    expect((await hentai.load())?.contentId, 'h1');
+  });
 }

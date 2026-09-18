@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/episode_catalog.dart';
 import '../core/platform_ui.dart';
 import '../core/theme.dart';
+import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
@@ -15,6 +17,7 @@ import '../widgets/browsable_shelf.dart';
 import '../widgets/content_art.dart';
 import '../widgets/hentai_image.dart';
 import '../widgets/pressable.dart';
+import 'detail_screen.dart' show askAndResumeLastWatch;
 
 typedef HentaiOpenContent = Future<void> Function(AnimeContent item, String tag);
 
@@ -45,6 +48,7 @@ class HentaiSectionPage extends StatefulWidget {
 
 class _HentaiSectionPageState extends State<HentaiSectionPage> {
   late final PageController _pageController;
+  final _homeKey = GlobalKey<_HentaiHomeTabState>();
   int _index = 0;
 
   @override
@@ -60,8 +64,12 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
   }
 
   void _goToPage(int value) {
-    if (value == _index) return;
+    if (value == _index) {
+      if (value == 0) _homeKey.currentState?.refreshContinueWatch();
+      return;
+    }
     setState(() => _index = value);
+    if (value == 0) _homeKey.currentState?.refreshContinueWatch();
     if (!_pageController.hasClients) return;
     if (isLargeScreenDevice) {
       _pageController.jumpToPage(value);
@@ -92,6 +100,7 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
   Widget build(BuildContext context) {
     final pages = [
       _HentaiHomeTab(
+        key: _homeKey,
         api: widget.api,
         onOpen: widget.onOpen,
         onGo: _goToPage,
@@ -527,6 +536,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
 
 class _HentaiHomeTab extends StatefulWidget {
   const _HentaiHomeTab({
+    super.key,
     required this.api,
     required this.onOpen,
     required this.onGo,
@@ -541,15 +551,37 @@ class _HentaiHomeTab extends StatefulWidget {
 
 class _HentaiHomeTabState extends State<_HentaiHomeTab> {
   late Future<HentaiHome> _future = widget.api.home();
+  final _lastWatchStore = LastWatchStore(hentai: true);
+  LastWatch? _lastWatch;
+
+  @override
+  void initState() {
+    super.initState();
+    refreshContinueWatch();
+  }
 
   Future<void> _reload() async {
     final next = widget.api.home();
     setState(() {
       _future = next;
     });
+    unawaited(refreshContinueWatch());
     try {
       await next;
     } catch (_) {}
+  }
+
+  /// Reloads the +18 «ادامه تماشا» shelf (own slot, never mixed with normal).
+  Future<void> refreshContinueWatch() async {
+    final last = await _lastWatchStore.load();
+    if (mounted) setState(() => _lastWatch = last);
+  }
+
+  Future<void> _openItem(AnimeContent item, String tag) async {
+    await widget.onOpen(item, tag);
+    // Popping the detail fires no tab change: refresh explicitly so the
+    // shelf never sticks to the previous title.
+    await refreshContinueWatch();
   }
 
   void _pushHtmlList(
@@ -602,6 +634,13 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
             parent: AlwaysScrollableScrollPhysics(),
           ),
           slivers: [
+            if (_lastWatch case final last?)
+              SliverToBoxAdapter(
+                child: _HentaiContinueWatchSection(
+                  last: last,
+                  onPlayed: refreshContinueWatch,
+                ),
+              ),
             SliverToBoxAdapter(
               child: _ShelfHeader(
                 title: 'آخرین بروزرسانی‌ها',
@@ -612,7 +651,7 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
               child: _HentaiPosterRow(
                 items: home.latest,
                 heroPrefix: 'hhome-latest-',
-                onOpen: widget.onOpen,
+                onOpen: _openItem,
               ),
             ),
             if (home.popular.isNotEmpty) ...[
@@ -626,11 +665,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: _HentaiPosterRow(
-                  items: home.popular,
-                  heroPrefix: 'hhome-popular-',
-                  onOpen: widget.onOpen,
-                ),
+              child: _HentaiPosterRow(
+                items: home.popular,
+                heroPrefix: 'hhome-popular-',
+                onOpen: _openItem,
+              ),
               ),
             ],
             if (home.newestByYear.isNotEmpty) ...[
@@ -644,11 +683,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: _HentaiPosterRow(
-                  items: home.newestByYear,
-                  heroPrefix: 'hhome-year-',
-                  onOpen: widget.onOpen,
-                ),
+              child: _HentaiPosterRow(
+                items: home.newestByYear,
+                heroPrefix: 'hhome-year-',
+                onOpen: _openItem,
+              ),
               ),
             ],
             if (home.random.isNotEmpty) ...[
@@ -662,11 +701,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: _HentaiPosterRow(
-                  items: home.random,
-                  heroPrefix: 'hhome-random-',
-                  onOpen: widget.onOpen,
-                ),
+              child: _HentaiPosterRow(
+                items: home.random,
+                heroPrefix: 'hhome-random-',
+                onOpen: _openItem,
+              ),
               ),
             ],
             for (final section in home.genreSections) ...[
@@ -677,11 +716,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: _HentaiPosterRow(
-                  items: section.items,
-                  heroPrefix: 'hhome-${section.id}-',
-                  onOpen: widget.onOpen,
-                ),
+              child: _HentaiPosterRow(
+                items: section.items,
+                heroPrefix: 'hhome-${section.id}-',
+                onOpen: _openItem,
+              ),
               ),
             ],
             SliverToBoxAdapter(child: SizedBox(height: bottomListGap)),
@@ -713,6 +752,125 @@ class _ShelfHeader extends StatelessWidget {
       ],
     ),
   );
+}
+
+String _fmtHentaiContinuePosition(Duration value) {
+  final hours = value.inHours;
+  final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+}
+
+/// +18 home «ادامه تماشا» shelf. Reads ONLY the +18 slot, so normal titles
+/// can never appear here (and vice versa on the normal home).
+class _HentaiContinueWatchSection extends StatelessWidget {
+  const _HentaiContinueWatchSection({
+    required this.last,
+    required this.onPlayed,
+  });
+  final LastWatch last;
+  final Future<void> Function() onPlayed;
+
+  static const _red = Color(0xFFEF4444);
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = last.durationMs > 0
+        ? (last.positionMs / last.durationMs).clamp(0.0, 1.0)
+        : 0.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+      child: Pressable(
+        onTap: () async {
+          await askAndResumeLastWatch(context, last);
+          await onPlayed();
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AnimeColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _red.withValues(alpha: .35)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: _red.withValues(alpha: .16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: _red,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ادامه تماشا',
+                            style: TextStyle(
+                              color: _red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            last.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            last.episodeName.isNotEmpty
+                                ? '${episodeDisplayName(last.episodeName)} · دقیقه ${_fmtHentaiContinuePosition(last.position)}'
+                                : 'دقیقه ${_fmtHentaiContinuePosition(last.position)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AnimeColors.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_left_rounded,
+                      color: AnimeColors.muted,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    backgroundColor: Colors.white10,
+                    valueColor: const AlwaysStoppedAnimation(_red),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ------------------------------------------------------------------ archive
