@@ -163,9 +163,15 @@ class AppUpdater extends ChangeNotifier {
       if (latest.version.compareTo(current) <= 0) {
         phase = UpdatePhase.idle;
         release = null;
+        _package = null;
         return;
       }
-      release = latest;
+      // Keep the verified release/package pair together: `release`/`_package`
+      // only ever describe an installable build. The newest metadata lives
+      // in `latest` until its bytes are downloaded and hash-verified; a
+      // failed superseding download therefore cannot invalidate the
+      // previously verified fallback (and the mandatory gate never blocks
+      // on an uninstallable release).
       final cache = await _cache();
       // Digest is part of the cache identity: republishing a tag cannot reuse stale bytes.
       final target = File(
@@ -214,6 +220,8 @@ class AppUpdater extends ChangeNotifier {
         }
         await part.rename(target.path);
       }
+      // Replacement verified: only now does it become the installable pair.
+      release = latest;
       _package = target;
       phase = UpdatePhase.ready;
       progress = 1;

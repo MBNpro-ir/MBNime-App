@@ -31,8 +31,11 @@ class _PressableState extends State<Pressable> {
   }
 
   @override
+  // Keyboard activation must work for TV remotes AND desktop keyboards:
+  // limiting focus to TV left Windows keyboard-only users unable to Tab to
+  // and activate poster cards. Mobile keeps touch behavior unchanged.
   Widget build(BuildContext context) => FocusableActionDetector(
-    enabled: isAndroidTv,
+    enabled: isAndroidTv || isDesktopWindow,
     onFocusChange: (focused) {
       setState(() => _focused = focused);
       if (focused) {
@@ -60,17 +63,23 @@ class _PressableState extends State<Pressable> {
           width: 3,
         ),
       ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        onTapDown: (_) => _setPressed(true),
-        onTapUp: (_) => _setPressed(false),
-        onTapCancel: () => _setPressed(false),
-        child: AnimatedScale(
-          scale: _pressed ? widget.scale : 1,
-          duration: Duration(milliseconds: _pressed ? 65 : 150),
-          curve: Curves.easeOutCubic,
-          child: widget.child,
+      child: Semantics(
+        button: true,
+        enabled: true,
+        // Focus ring state is exposed to assistive tech on TV/desktop.
+        focused: _focused,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onTapDown: (_) => _setPressed(true),
+          onTapUp: (_) => _setPressed(false),
+          onTapCancel: () => _setPressed(false),
+          child: AnimatedScale(
+            scale: _pressed ? widget.scale : 1,
+            duration: Duration(milliseconds: _pressed ? 65 : 150),
+            curve: Curves.easeOutCubic,
+            child: widget.child,
+          ),
         ),
       ),
     ),

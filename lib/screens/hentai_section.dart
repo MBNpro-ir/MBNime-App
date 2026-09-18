@@ -738,6 +738,11 @@ class _HentaiArchiveTabState extends State<_HentaiArchiveTab> {
   bool _more = true;
   String? _error;
   String _appliedSearch = '';
+  // Request generation + parameter snapshot: a filter/search/sort change
+  // while a request is in flight must supersede it, never be silently
+  // dropped, and a stale response must never populate the grid under new
+  // controls or mix pages across different parameters.
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -764,12 +769,19 @@ class _HentaiArchiveTabState extends State<_HentaiArchiveTab> {
   }
 
   Future<void> _load({bool reset = false}) async {
-    if (_loading || (!_more && !reset)) return;
+    // A reset always supersedes an in-flight request; plain pagination still
+    // waits its turn. The newest reset is never silently dropped.
+    if (!reset && (_loading || !_more)) return;
+    final generation = ++_requestGeneration;
+    final snapshotSearch = reset ? _search.text.trim() : _appliedSearch;
+    final snapshotFilter = _filter;
+    final snapshotSort = _sort;
+    final requestPage = reset ? 1 : _page + 1;
     if (reset) {
       _page = 0;
       _more = true;
       _items.clear();
-      _appliedSearch = _search.text.trim();
+      _appliedSearch = snapshotSearch;
     }
     setState(() {
       _loading = true;
@@ -777,23 +789,34 @@ class _HentaiArchiveTabState extends State<_HentaiArchiveTab> {
     });
     try {
       final next = await widget.api.anime(
-        page: _page + 1,
-        search: _appliedSearch.isEmpty ? null : _appliedSearch,
-        filter: _filter,
-        sort: _sort,
+        page: requestPage,
+        search: snapshotSearch.isEmpty ? null : snapshotSearch,
+        filter: snapshotFilter,
+        sort: snapshotSort,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
+      // Drop responses whose parameters no longer match the controls.
+      if (snapshotSearch != _appliedSearch ||
+          snapshotFilter != _filter ||
+          snapshotSort != _sort) {
+        return;
+      }
+      // Pagination after a superseding reset belongs to the old generation.
+      if (!reset && requestPage != _page + 1) return;
       setState(() {
-        _page++;
+        _page = requestPage;
         for (final item in next) {
           if (!_items.any((old) => old.id == item.id)) _items.add(item);
         }
         _more = next.isNotEmpty;
       });
     } on AnimeOnApiException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (!mounted || generation != _requestGeneration) return;
+      setState(() => _error = e.message);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 

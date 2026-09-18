@@ -173,7 +173,7 @@ void main() {
       client.close();
     });
 
-    test('a non-200 response still wins its route (proves connectivity)', () async {
+    test('a slow usable response beats a fast HTTP error', () async {
       final direct = _FakeLeg((_) async => _text('bad', status: 400));
       final proxy = _FakeLeg((_) async {
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -182,8 +182,9 @@ void main() {
       final client = HentaiRaceClient(direct: direct, proxy: proxy);
 
       final response = await client.get(Uri.parse('https://example.invalid/'));
-      expect(response.statusCode, 400);
-      expect(HentaiNetwork.preferProxy, isFalse);
+      expect(response.statusCode, 200);
+      expect(response.body, 'slow');
+      expect(HentaiNetwork.preferProxy, isTrue);
       client.close();
     });
 

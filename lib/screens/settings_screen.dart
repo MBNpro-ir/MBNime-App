@@ -56,6 +56,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Color(0xFF0E7C7B),
   ];
 
+  static String _colorName(Color color) => switch (color.toARGB32()) {
+    0xFFFFFFFF => 'سفید',
+    0xFFFFE66D => 'زرد روشن',
+    0xFFFFD600 => 'زرد',
+    0xFFFFA000 => 'کهربایی',
+    0xFFFF6D00 => 'نارنجی',
+    0xFFFF3D00 => 'نارنجی تند',
+    0xFF8FE9FF => 'آبی روشن',
+    0xFF00E5FF => 'فیروزه‌ای',
+    0xFF76FF03 => 'سبز روشن',
+    0xFFFFB3C6 => 'صورتی روشن',
+    0xFFFF4081 => 'صورتی',
+    0xFF000000 => 'مشکی',
+    0xFF3A3F4B => 'خاکستری تیره',
+    0xFFFF7A1A => 'نارنجی پس‌زمینه',
+    0xFF8D6BFF => 'بنفش',
+    0xFF0E7C7B => 'سبز تیره',
+    final value =>
+      '#${value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+  };
+
   bool _loading = true;
   double _volume = 100;
   double _rate = 1;
@@ -595,20 +616,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
         runSpacing: 10,
         children: [
           for (final color in colors)
-            InkWell(
-              onTap: () => onChanged(color),
-              borderRadius: BorderRadius.circular(30),
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: color,
-                child: color == selected
-                    ? Icon(
-                        Icons.check_rounded,
-                        color: color.computeLuminance() > .6
-                            ? Colors.black
-                            : Colors.white,
-                      )
-                    : null,
+            Semantics(
+              button: true,
+              selected: color == selected,
+              label:
+                  'رنگ زیرنویس ${_colorName(color)}${color == selected ? '، انتخاب‌شده' : ''}',
+              child: InkWell(
+                onTap: () => onChanged(color),
+                borderRadius: BorderRadius.circular(30),
+                child: Padding(
+                  // 36px circle + padding = >=48px touch target.
+                  padding: const EdgeInsets.all(6),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: color,
+                    child: color == selected
+                        ? ExcludeSemantics(
+                            child: Icon(
+                              Icons.check_rounded,
+                              color: color.computeLuminance() > .6
+                                  ? Colors.black
+                                  : Colors.white,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
               ),
             ),
         ],

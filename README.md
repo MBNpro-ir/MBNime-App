@@ -25,12 +25,13 @@ the ignored `.signing/api-config.json` automatically (no secret in shell history
 Use `-Device <device-id>` for Android. After changing build-time configuration,
 stop the previous run and start again; hot reload does not update Dart defines.
 
-The service client key is supplied at build time. No user passwords, sessions,
-login-code generator or signing keys are included. Account access and content
+The service client key is supplied at build time. No user passwords, sessions
+or signing keys are included. Session import/export codes are validated
+server-side before local persistence. Account access and content
 availability depend on the upstream service. Only access content you are
 authorized to view/download.
 
-See [Persian release guide](docs/RELEASES_FA.md) and [release notes](changelogs/1.4.2.fa.md).
+See [Persian release guide](docs/RELEASES_FA.md) and [release notes](changelogs/1.9.0.fa.md).
 Official packages: [GitHub Releases](https://github.com/MBNpro-ir/MBNime-App/releases).
 
 `tools/Test-WindowsUpdater.ps1` tests replacement, rollback, relaunch and rejection

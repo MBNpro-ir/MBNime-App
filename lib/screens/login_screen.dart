@@ -50,6 +50,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    // Single-flight guard shared by button + keyboard (Enter) submissions:
+    // without it, repeated Enter presses while a request is pending fire
+    // parallel authentication callbacks.
+    if (_loading) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
@@ -82,17 +86,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _pasteAndLogin() async {
     if (_loading) return;
+    // Acquire the same single-flight guard before the clipboard await so a
+    // second tap during the clipboard read cannot start a parallel login.
+    setState(() => _loading = true);
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     final code = clipboard?.text?.trim() ?? '';
     if (code.isEmpty) {
       if (mounted) {
+        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('کد ورودی در کلیپ‌بورد پیدا نشد.')),
         );
       }
       return;
     }
-    setState(() => _loading = true);
     try {
       await widget.onLoginWithCode(code);
     } on AnimeOnApiException catch (error) {

@@ -63,6 +63,14 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   void initState() {
     super.initState();
     _catalog = EpisodeCatalog.from(widget.content);
+    if (_catalog.seasons.isEmpty) {
+      // Guard the public empty-state contract: quality/season lookup below
+      // indexes seasons[0] and would crash before build() shows its empty UI.
+      _seasonIndex = 0;
+      _selectedQuality = unknownQualityLabel;
+      _contentReady = true;
+      return;
+    }
     _seasonIndex = _defaultSeason(_catalog.seasons);
     _selectedQuality = recommendedEpisodeQuality(
       _catalog.seasons[_seasonIndex].displayQualities,
@@ -92,26 +100,69 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   Future<void> _loadSaved() async {
     final entries = <String, SavedWatchProgress>{};
     for (final group in _catalog.episodes) {
-      SavedWatchProgress? best = await _progress.load(
+      // Canonical group record is authoritative once present; legacy
+      // per-variant positions only seed it on first migration and are then
+      // retired so a stale 20-minute legacy value can never overwrite a
+      // newer 2-minute canonical rewind.
+      final canonical = await _progress.load(
         contentId: widget.content.id,
         episodeId: group.id,
       );
+      SavedWatchProgress? legacyBest;
+      var legacyWatched = false;
       for (final variant in group.variants) {
+        if (variant.episode.id == group.id) continue;
         final legacy = await _progress.load(
           contentId: widget.content.id,
           episodeId: variant.episode.id,
         );
-        best = _newerProgress(best, legacy);
+        if (legacy == null) continue;
+        if (legacy.watched) legacyWatched = true;
+        legacyBest = _newerProgress(legacyBest, legacy);
       }
-      if (best != null) {
-        entries[group.id] = best;
+      if (canonical != null) {
+        var merged = canonical;
+        if (legacyWatched && !canonical.watched) {
+          merged = SavedWatchProgress(
+            positionMs: canonical.positionMs,
+            durationMs: canonical.durationMs,
+            watched: true,
+          );
+          await _progress.save(
+            contentId: widget.content.id,
+            episodeId: group.id,
+            position: merged.position,
+            duration: merged.duration,
+            markWatched: true,
+          );
+        }
+        entries[group.id] = merged;
+        // Retire legacy keys now that the canonical record rules.
+        for (final variant in group.variants) {
+          if (variant.episode.id == group.id) continue;
+          await _progress.clear(
+            contentId: widget.content.id,
+            episodeId: variant.episode.id,
+          );
+        }
+        continue;
+      }
+      if (legacyBest != null) {
+        entries[group.id] = legacyBest;
         await _progress.save(
           contentId: widget.content.id,
           episodeId: group.id,
-          position: best.position,
-          duration: best.duration,
-          markWatched: best.watched,
+          position: legacyBest.position,
+          duration: legacyBest.duration,
+          markWatched: legacyBest.watched,
         );
+        for (final variant in group.variants) {
+          if (variant.episode.id == group.id) continue;
+          await _progress.clear(
+            contentId: widget.content.id,
+            episodeId: variant.episode.id,
+          );
+        }
       }
     }
     if (mounted) {
@@ -135,6 +186,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   }
 
   Future<void> _loadQualityPreference() async {
+    if (_catalog.seasons.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     final quality = prefs.getString('preferred_stream_quality');
     final available = _catalog.seasons[_seasonIndex].displayQualities;

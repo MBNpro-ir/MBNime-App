@@ -593,7 +593,24 @@ abstract base class BaseDownloader {
             record.status != TaskStatus.complete,
       )) {
         final filePath = await record.task.filePath();
+        // Never mistake a leftover staging file for a download.
+        try {
+          await File('$filePath.__mbnime-incomplete').delete();
+        } catch (_) {}
         if (await File(filePath).exists()) {
+          // Destination existence alone is not completion evidence: a
+          // crash during final copy (pre-atomic builds) could leave a
+          // truncated file. Validate the size whenever it is known.
+          var valid = true;
+          if (record.expectedFileSize >= 0) {
+            try {
+              valid =
+                  await File(filePath).length() == record.expectedFileSize;
+            } catch (_) {
+              valid = false;
+            }
+          }
+          if (!valid) continue;
           processStatusUpdate(
             TaskStatusUpdate(record.task, TaskStatus.complete),
           );

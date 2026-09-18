@@ -74,6 +74,12 @@ class SmartCastController {
   static final instance = SmartCastController._();
   final CastService _service;
   CastSession? _session;
+  // Serializes overlapping cast attempts: only the newest generation may
+  // publish ownership. Superseded/failing candidates are always closed so
+  // two concurrent sessions can never both load media with the loser left
+  // unowned, and a dismissed sheet's late connection never overwrites a
+  // newer one (it is closed instead).
+  int _castGeneration = 0;
 
   Stream<List<CastDevice>> discover(CastProtocol protocol) =>
       _service.startDiscovery(
@@ -88,30 +94,63 @@ class SmartCastController {
     required AnimeContent content,
     required AnimeEpisode episode,
   }) async {
+    final generation = ++_castGeneration;
     final previous = _session;
     _session = null;
-    if (previous != null) await previous.disconnect();
-    final CastSession session = switch (device.protocol) {
+    if (previous != null) {
+      try {
+        await previous.disconnect();
+      } catch (_) {}
+    }
+    if (generation != _castGeneration) return;
+    final CastSession candidate = switch (device.protocol) {
       CastProtocol.chromecast => ChromecastSession(device: device),
       CastProtocol.dlna => DlnaSession.fromDevice(device),
       CastProtocol.airplay => AirPlaySession(device),
     };
-    await session.connect();
-    _session = session;
-    await session.loadMedia(
-      CastMedia(
-        url: episode.fileUrl,
-        type: _mediaType(episode.fileUrl, episode.fileType),
-        title: '${content.title} · ${episode.name}',
-        imageUrl: content.imageUrl,
-      ),
-    );
+    try {
+      await candidate.connect();
+    } catch (e) {
+      try {
+        await candidate.disconnect();
+      } catch (_) {}
+      if (generation == _castGeneration) rethrow;
+      return;
+    }
+    if (generation != _castGeneration) {
+      try {
+        await candidate.disconnect();
+      } catch (_) {}
+      return;
+    }
+    _session = candidate;
+    try {
+      await candidate.loadMedia(
+        CastMedia(
+          url: episode.fileUrl,
+          type: _mediaType(episode.fileUrl, episode.fileType),
+          title: '${content.title} · ${episode.name}',
+          imageUrl: content.imageUrl,
+        ),
+      );
+    } catch (e) {
+      if (_session == candidate) _session = null;
+      try {
+        await candidate.disconnect();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   Future<void> disconnect() async {
+    _castGeneration++;
     final current = _session;
     _session = null;
-    if (current != null) await current.disconnect();
+    if (current != null) {
+      try {
+        await current.disconnect();
+      } catch (_) {}
+    }
   }
 
   static CastMediaType _mediaType(String url, String fileType) {

@@ -9,9 +9,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/download_paths.dart';
+import '../core/episode_catalog.dart';
 import '../models/anime_content.dart';
 import 'device_bridge.dart';
 import 'hentai_network.dart';
+import 'hentai_relay.dart';
 
 class DownloadManager extends ChangeNotifier {
   DownloadManager._();
@@ -27,6 +29,106 @@ class DownloadManager extends ChangeNotifier {
   int concurrency = 2;
   bool allPaused = false;
   String? error;
+  static const _heldKey = 'downloads_held';
+
+  /// Displayed status: desktop/mobile bundle holds cancel waiting tasks but
+  /// keep their ids in [heldForPause]; the UI must show them as paused, not
+  /// canceled, and filters/cleanup/resume must use this too.
+  TaskStatus effectiveStatus(TaskRecord record) =>
+      heldForPause.contains(record.task.taskId) &&
+              record.status == TaskStatus.canceled
+          ? TaskStatus.paused
+          : record.status;
+
+  Future<void> _loadHeld() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      heldForPause
+        ..clear()
+        ..addAll(prefs.getStringList(_heldKey) ?? const <String>[]);
+    } catch (_) {}
+  }
+
+  Future<void> _saveHeld() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_heldKey, heldForPause.toList());
+    } catch (_) {}
+  }
+
+  /// Long-lived loopback relay for +18 downloads on Windows.
+  /// The desktop Dart downloader never reads the WinINET system proxy, so
+  /// when the proxy route wins, hentai files are fetched from localhost
+  /// (DIRECT, no proxy needed) while the relay forwards upstream over the
+  /// system proxy with Range passthrough (pause/resume keeps working).
+  /// Normal-anime traffic never touches this relay and stays DIRECT.
+  HentaiMediaRelay? _downloadRelay;
+
+  /// Routes a +18 download URL through the loopback relay when the proxy
+  /// side wins on Windows. Returns (taskUrl, originUrl). Never throws:
+  /// any failure falls back to the original URL (today's behavior).
+  Future<(String, String?)> _routeHentaiDownloadUrl(
+    String url, {
+    required bool isHentai,
+    bool? forceProxy,
+  }) async {
+    if (!isHentai) return (url, null);
+    try {
+      if (!Platform.isWindows) return (url, null);
+    } catch (_) {
+      return (url, null);
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return (url, null);
+    }
+    try {
+      final useProxy =
+          forceProxy ??
+          await HentaiNetwork.probeRoute(
+            uri,
+          ).timeout(const Duration(seconds: 8));
+      if (!useProxy) return (url, null);
+      final relay = _downloadRelay ??= HentaiMediaRelay();
+      final served = await relay.serve(uri);
+      return (served.toString(), url);
+    } catch (_) {
+      return (url, null);
+    }
+  }
+
+  static Map<String, dynamic> _taskMetadata(Task task) {
+    try {
+      if (task is DownloadTask) {
+        return Map<String, dynamic>.from(
+          jsonDecode(task.metaData) as Map,
+        );
+      }
+    } catch (_) {}
+    return const {};
+  }
+
+  /// Refreshes a stale loopback-relay URL (app restart drops relay tokens)
+  /// before re-enqueueing. Returns a task with a fresh URL, or the original
+  /// task when no refresh is needed/possible.
+  Future<DownloadTask> _freshDownloadTask(DownloadTask task) async {
+    final uri = Uri.tryParse(task.url);
+    if (uri == null || uri.host != '127.0.0.1') return task;
+    final metadata = _taskMetadata(task);
+    final origin = (metadata['originUrl'] as String?)?.trim() ?? '';
+    if (origin.isEmpty) return task;
+    final originUri = Uri.tryParse(origin);
+    if (originUri == null) return task;
+    try {
+      final relay = _downloadRelay ??= HentaiMediaRelay();
+      final served = await relay.serve(originUri);
+      return task.copyWith(url: served.toString());
+    } catch (_) {
+      return task;
+    }
+  }
 
   Future<void> initialize() =>
       _initialization ??= _initialize().catchError((Object exception) {
@@ -62,7 +164,19 @@ class DownloadManager extends ChangeNotifier {
     for (final record in await downloader.database.allRecords(group: group)) {
       records[record.taskId] = record;
     }
+    await _loadHeld();
+    // Drop hold markers for tasks that no longer exist (e.g. DB cleaned
+    // externally) so they can never block future deduplication forever.
+    heldForPause.retainWhere(records.containsKey);
+    await _saveHeld();
     await downloader.start(autoCleanDatabase: false);
+    // Apply the stored Wi-Fi policy to already-enqueued tasks as well;
+    // on desktop this is a documented no-op (see settings()).
+    try {
+      await downloader.requireWiFi(
+        wifiOnly ? RequireWiFi.forAllTasks : RequireWiFi.forNoTasks,
+      );
+    } catch (_) {}
     if (prefs.getBool('downloads_resume_after_update') == true) {
       await prefs.remove('downloads_resume_after_update');
       await resumeAll();
@@ -101,6 +215,15 @@ class DownloadManager extends ChangeNotifier {
     await prefs.setBool('downloads_wifi', wifiOnly);
     await prefs.setInt('downloads_concurrency', concurrency);
     await _configureQueue();
+    // Changing the switch must affect existing downloads too, not just
+    // future tasks. Native platforms reschedule enqueued/inactive tasks;
+    // on desktop (Dart HttpClient) this is a no-op and the option is
+    // qualified in the UI.
+    try {
+      await downloader.requireWiFi(
+        wifiOnly ? RequireWiFi.forAllTasks : RequireWiFi.forNoTasks,
+      );
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -155,6 +278,72 @@ class DownloadManager extends ChangeNotifier {
     // شناسهٔ باندل: همهٔ فایل‌های یک افزودنِ یکجا (چند کیفیت فیلم یا
     // چند قسمت یک کیفیت) در مدیریت دانلود یک گروه بازشونده می‌شوند.
     final bundleId = DateTime.now().microsecondsSinceEpoch.toString();
+    // Canonical media identity is independent of the synthetic bundle season
+    // (movie-all, movie-720p, season-720p, …): the same file reached from an
+    // individual button or a bulk button must deduplicate.
+    String canonicalSeasonFor(AnimeEpisode item) {
+      for (final original in content.seasons) {
+        if (original.episodes.any(
+          (e) => e.id == item.id && e.fileUrl == item.fileUrl,
+        )) {
+          return original.id;
+        }
+      }
+      var id = season.id;
+      // Strip known synthetic suffixes (movie-all, movie-720p, S-all, S-720p).
+      id = id.replaceFirst(RegExp(r'-all$'), '');
+      id = id.replaceFirst(RegExp(r'-(1080p|720p|480p|4K)$'), '');
+      if (id.endsWith('-all')) id = id.substring(0, id.length - 4);
+      return id.isEmpty ? season.id : id;
+    }
+
+    String originOf(TaskRecord record) {
+      if (record.task is! DownloadTask) return '';
+      final task = record.task as DownloadTask;
+      final origin =
+          (_taskMetadata(task)['originUrl'] as String?)?.trim() ?? '';
+      return origin.isNotEmpty ? origin : task.url;
+    }
+
+    final activeUrls = <String>{
+      for (final record in records.values)
+        if (![
+          TaskStatus.failed,
+          TaskStatus.notFound,
+        ].contains(record.status) ||
+            heldForPause.contains(record.task.taskId))
+          ...[
+            if (record.task is DownloadTask)
+              (record.task as DownloadTask).url,
+            if (originOf(record).isNotEmpty) originOf(record),
+          ],
+    };
+    // +18 batch routing decision is probed once (same host family) so a
+    // 10-file bulk does not race the probe 10 times.
+    bool? batchProxyDecision;
+    if (content.isHentai) {
+      try {
+        if (Platform.isWindows) {
+          String firstValid = '';
+          for (final item in episodes) {
+            final parsed = Uri.tryParse(item.fileUrl);
+            if (parsed != null &&
+                (parsed.scheme == 'http' || parsed.scheme == 'https') &&
+                parsed.host.isNotEmpty) {
+              firstValid = item.fileUrl;
+              break;
+            }
+          }
+          if (firstValid.isNotEmpty) {
+            batchProxyDecision = await HentaiNetwork.probeRoute(
+              Uri.parse(firstValid),
+            ).timeout(const Duration(seconds: 8));
+          }
+        }
+      } catch (_) {
+        batchProxyDecision = null;
+      }
+    }
     var count = 0;
     for (final episode in episodes) {
       final url = Uri.tryParse(episode.fileUrl);
@@ -163,23 +352,57 @@ class DownloadManager extends ChangeNotifier {
           url.host.isEmpty) {
         continue;
       }
-      final identity = downloadIdentity(content.id, season.id, episode.id);
+      // Same bytes from another entry point (individual vs bulk/quality)
+      // must not enqueue twice, even though synthetic season ids differ.
+      // Relay tasks store localhost urls, so compare origin urls too.
+      if (activeUrls.contains(episode.fileUrl)) continue;
+      final canonicalSeason = canonicalSeasonFor(episode);
+      final identity = downloadIdentity(
+        content.id,
+        canonicalSeason,
+        episode.id,
+      );
       final duplicate = records.values.any(
         (record) =>
-            record.task.taskId.startsWith('$identity-') &&
-            ![
-              TaskStatus.failed,
-              TaskStatus.notFound,
-              TaskStatus.canceled,
-            ].contains(record.status),
+            (record.task.taskId.startsWith('$identity-') ||
+                originOf(record) == episode.fileUrl) &&
+            (![
+                  TaskStatus.failed,
+                  TaskStatus.notFound,
+                  TaskStatus.canceled,
+                ].contains(record.status) ||
+                heldForPause.contains(record.task.taskId)),
       );
       if (duplicate) continue;
       // Never overwrite an existing user file, including after history was cleared.
+      // A truncated leftover from a failed finalization must not block an
+      // ordinary retry: when the size is known and mismatches, allow
+      // re-download (the atomic finalizer overwrites only on success).
       var filename = episodeDownloadFilename(episode, identity);
-      if (await File(p.join(directory, filename)).exists()) continue;
+      final destination = File(p.join(directory, filename));
+      if (await destination.exists()) {
+        var blocksRetry = true;
+        try {
+          final record = records.values
+              .where((r) => r.task is DownloadTask)
+              .firstWhere((r) => originOf(r) == episode.fileUrl);
+          if (record.expectedFileSize >= 0) {
+            blocksRetry =
+                await destination.length() == record.expectedFileSize;
+          }
+        } catch (_) {}
+        if (blocksRetry) continue;
+      }
+      // +18 on Windows travels over the loopback relay when the proxy route
+      // wins (the desktop downloader never reads the WinINET system proxy).
+      final routed = await _routeHentaiDownloadUrl(
+        url.toString(),
+        isHentai: content.isHentai,
+        forceProxy: content.isHentai ? batchProxyDecision : null,
+      );
       final task = DownloadTask(
         taskId: '$identity-${DateTime.now().microsecondsSinceEpoch}',
-        url: url.toString(),
+        url: routed.$1,
         filename: filename,
         directory: directory,
         baseDirectory: BaseDirectory.root,
@@ -197,12 +420,18 @@ class DownloadManager extends ChangeNotifier {
           'episode': episode.name,
           'contentId': content.id,
           'seasonId': season.id,
+          'canonicalSeasonId': canonicalSeason,
           'episodeId': episode.id,
+          'groupId': _logicalGroupId(content, episode),
           'bundleId': bundleId,
+          'isHentai': content.isHentai,
+          if (routed.$2 != null) 'originUrl': routed.$2,
         }),
       );
       records[task.taskId] = TaskRecord(task, TaskStatus.enqueued, 0, -1);
       if (await downloader.enqueue(task)) {
+        activeUrls.add(episode.fileUrl);
+        activeUrls.add(routed.$1);
         count++;
       } else {
         records[task.taskId] = TaskRecord(task, TaskStatus.failed, 0, -1);
@@ -222,8 +451,9 @@ class DownloadManager extends ChangeNotifier {
       p.join(directory.path, '${downloadIdentity(content.id, '', '')}.img'),
     );
     if (await file.exists()) return file.path;
-    // +18 covers on Windows may need the system proxy; the native
-    // downloader tasks (real downloads) already follow it via WinINet.
+    // +18 covers on Windows may need the system proxy via HentaiNetwork.
+    // Media file downloads use the same routing decision (see _hentaiTaskUrl
+    // handling in _add): the desktop Dart client never implies WinINet.
     if (content.isHentai && Platform.isWindows) {
       try {
         final response = await HentaiNetwork.fetchBytes(
@@ -259,32 +489,26 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  /// تسک‌هایی که «توقف گروهی» نگه‌شان داشته: روی دسکتاپ pause تکی
-  /// برای تسکِ هنوز-شروع‌نشده no-op است (ایزوله‌ای ندارد)، پس تمیز
-  /// کنسل می‌شوند (صفری بایت دانلود نشده) و id نگه داشته می‌شود تا
-  /// «ادامه» همان‌ها را دوباره در صف بگذارد. روی موبایل pause سطح
-  /// کیو کافی است و این مجموعه استفاده نمی‌شود.
+  /// تسک‌های نگه‌داشته‌شده (hold): تسکِ هنوز-شروع‌نشده در همه پلتفرم‌ها
+  /// تمیز کنسل می‌شود (صفری بایت دانلود نشده) و id به‌صورت پایدار نگه
+  /// داشته می‌شود تا «ادامه» همان‌ها را دوباره در صف بگذارد.
+  /// دلیل یکسان‌سازی: در پیاده‌سازی اندرویدی، pauseAll صرفاً id را در
+  /// pausedTaskIds می‌گذارد و صف نگه‌دارنده آن را لحاظ نمی‌کند؛ تسک در صف
+  /// می‌تواند بعداً اجرا شود. hold صریحِ سطح اپ، رفتار همه پلتفرم‌ها را
+  /// یکسان و قابل بازیابی پس از restart می‌کند.
   final Set<String> heldForPause = {};
-
-  static bool _isNativeMobile() {
-    try {
-      return Platform.isAndroid || Platform.isIOS;
-    } catch (_) {
-      return false;
-    }
-  }
 
   Future<bool> pause(Task task) async {
     if (task is! DownloadTask) return false;
     final record = records[task.taskId];
     if (record != null &&
-        !_isNativeMobile() &&
         (record.status == TaskStatus.enqueued ||
             record.status == TaskStatus.waitingToRetry)) {
-      // دسکتاپ: pause تسکِ در صف بی‌اثر است؛ hold تمیز.
+      // تسکِ در صف: pause تکی/سطح کیو قابل اتکا نیست؛ hold تمیز.
       try {
         if (await downloader.cancelTaskWithId(task.taskId)) {
           heldForPause.add(task.taskId);
+          await _saveHeld();
           notifyListeners();
           return true;
         }
@@ -299,12 +523,18 @@ class DownloadManager extends ChangeNotifier {
   Future<bool> resume(Task task) async {
     if (heldForPause.remove(task.taskId)) {
       // ادامهٔ hold گروهی/تکی: ورود دوباره از مسیر صف هلدینگ تا
-      // سقف دانلود هم‌زمان کاربر رعایت شود.
+      // سقف دانلود هم‌زمان کاربر رعایت شود. لینک relay منقضی نوسازی
+      // می‌شود چون restart توکن‌های loopback را باطل می‌کند.
       try {
-        final ok = await downloader.enqueue(task);
+        final fresh = task is DownloadTask
+            ? await _freshDownloadTask(task)
+            : task;
+        final ok = await downloader.enqueue(fresh);
+        await _saveHeld();
         notifyListeners();
         return ok;
       } catch (_) {
+        await _saveHeld();
         return false;
       }
     }
@@ -339,29 +569,20 @@ class DownloadManager extends ChangeNotifier {
         ok = false;
       }
     }
-    // ۲) در صف‌ها: hold سطح کیو در موبایل؛ hold تمیز در دسکتاپ.
+    // ۲) در صف‌ها: hold تمیز و پایدار در همه پلتفرم‌ها (به توضیح heldForPause).
     if (waiting.isNotEmpty) {
-      if (_isNativeMobile()) {
+      for (final task in waiting) {
         try {
-          await downloader.pauseAll(
-            tasks: waiting.whereType<DownloadTask>().toList(growable: false),
-          );
+          if (await downloader.cancelTaskWithId(task.taskId)) {
+            heldForPause.add(task.taskId);
+          } else {
+            ok = false;
+          }
         } catch (_) {
           ok = false;
         }
-      } else {
-        for (final task in waiting) {
-          try {
-            if (await downloader.cancelTaskWithId(task.taskId)) {
-              heldForPause.add(task.taskId);
-            } else {
-              ok = false;
-            }
-          } catch (_) {
-            ok = false;
-          }
-        }
       }
+      await _saveHeld();
     }
     notifyListeners();
     return ok;
@@ -406,22 +627,49 @@ class DownloadManager extends ChangeNotifier {
     for (final task in held) {
       try {
         heldForPause.remove(task.taskId);
-        ok = await downloader.enqueue(task) && ok;
+        final fresh = task is DownloadTask
+            ? await _freshDownloadTask(task)
+            : task;
+        ok = await downloader.enqueue(fresh) && ok;
       } catch (_) {
         ok = false;
       }
     }
+    await _saveHeld();
     notifyListeners();
     return ok;
   }
 
-  Future<bool> cancel(Task task) {
+  Future<bool> cancel(Task task) async {
     heldForPause.remove(task.taskId);
+    await _saveHeld();
     return downloader.cancelTaskWithId(task.taskId);
   }
+
   Future<bool> retry(Task task) async {
     heldForPause.remove(task.taskId);
-    if (await File(await task.filePath()).exists()) return false;
+    await _saveHeld();
+    final path = await task.filePath();
+    if (await File(path).exists()) {
+      // A size-validated destination blocks retry; a truncated leftover
+      // from a failed finalization must remain retryable.
+      try {
+        final record = records[task.taskId];
+        if (record == null ||
+            record.expectedFileSize < 0 ||
+            await File(path).length() == record.expectedFileSize) {
+          return false;
+        }
+      } catch (_) {
+        return false;
+      }
+    }
+    if (task is DownloadTask) {
+      final fresh = await _freshDownloadTask(task);
+      return downloader.enqueue(
+        fresh.copyWith(retriesRemaining: task.retries),
+      );
+    }
     return downloader.enqueue(task.copyWith(retriesRemaining: task.retries));
   }
 
@@ -448,7 +696,12 @@ class DownloadManager extends ChangeNotifier {
     );
     await _configureQueue();
     for (final record in records.values.toList()) {
-      if (record.status == TaskStatus.paused) await resume(record.task);
+      // Global resume must include bundle-held (canceled-but-held) tasks,
+      // not just native-paused ones; otherwise held work is stranded.
+      if (record.status == TaskStatus.paused ||
+          heldForPause.contains(record.task.taskId)) {
+        await resume(record.task);
+      }
     }
     notifyListeners();
   }
@@ -489,13 +742,30 @@ class DownloadManager extends ChangeNotifier {
 
   Future<void> clearFinished() async {
     for (final record in records.values.toList()) {
+      // Held tasks look canceled underneath but are user-paused work;
+      // clearing them would silently discard paused downloads.
+      if (heldForPause.contains(record.task.taskId)) continue;
       if ([TaskStatus.complete, TaskStatus.canceled].contains(record.status)) {
         await downloader.database.deleteRecordWithId(record.taskId);
         records.remove(record.taskId);
         heldForPause.remove(record.taskId);
       }
     }
+    await _saveHeld();
     notifyListeners();
+  }
+}
+
+/// Logical episode-group id for [episode] inside the full [content] catalog.
+/// Stored in download metadata so offline playback reads/writes the same
+/// canonical progress record as streaming (instead of a raw per-variant id
+/// that would fork into the legacy/canonical conflict).
+String _logicalGroupId(AnimeContent content, AnimeEpisode episode) {
+  try {
+    final catalog = EpisodeCatalog.from(content);
+    return catalog.groupFor(episode)?.id ?? episode.id;
+  } catch (_) {
+    return episode.id;
   }
 }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/desktop_window_frame.dart';
 import 'core/session_store.dart';
@@ -59,6 +60,16 @@ class _MbnimeAppState extends State<MbnimeApp> {
             )
           : AnimeTheme.dark,
       locale: const Locale('fa', 'IR'),
+      // Actually localize framework-provided strings (back-button tooltips,
+      // selection menus, accessibility labels): a bare `locale` + forced
+      // RTL only affects app-authored text/layout, leaving Flutter's own
+      // controls in English without delegates + supportedLocales.
+      supportedLocales: const [Locale('fa', 'IR'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       builder: (context, child) => DesktopWindowFrame(
         child: Directionality(
           textDirection: TextDirection.rtl,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Saved playback position of a single episode.
@@ -6,11 +8,16 @@ class SavedWatchProgress {
     required this.positionMs,
     required this.durationMs,
     this.watched = false,
+    this.updatedAtMs = 0,
   });
 
   final int positionMs;
   final int durationMs;
   final bool watched;
+
+  /// Last write time (epoch ms). Picks the most-recently watched episode of
+  /// a title for its «ادامه تماشا» button. 0 = written before tracking.
+  final int updatedAtMs;
 
   Duration get position => Duration(milliseconds: positionMs);
   Duration get duration => Duration(milliseconds: durationMs);
@@ -38,6 +45,8 @@ class WatchProgressStore {
       'watch_dur_${contentId}_$episodeId';
   static String _watchedKey(String contentId, String episodeId) =>
       'watch_done_${contentId}_$episodeId';
+  static String _timeKey(String contentId, String episodeId) =>
+      'watch_time_${contentId}_$episodeId';
 
   Future<void> save({
     required String contentId,
@@ -49,6 +58,10 @@ class WatchProgressStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_posKey(contentId, episodeId), position.inMilliseconds);
     await prefs.setInt(_durKey(contentId, episodeId), duration.inMilliseconds);
+    await prefs.setInt(
+      _timeKey(contentId, episodeId),
+      DateTime.now().millisecondsSinceEpoch,
+    );
     final reachedEnd =
         duration > Duration.zero &&
         position >= duration - const Duration(seconds: 10);
@@ -70,6 +83,7 @@ class WatchProgressStore {
       positionMs: pos ?? 0,
       durationMs: dur,
       watched: watched,
+      updatedAtMs: prefs.getInt(_timeKey(contentId, episodeId)) ?? 0,
     );
   }
 
@@ -81,5 +95,111 @@ class WatchProgressStore {
     await prefs.remove(_posKey(contentId, episodeId));
     await prefs.remove(_durKey(contentId, episodeId));
     await prefs.remove(_watchedKey(contentId, episodeId));
+    await prefs.remove(_timeKey(contentId, episodeId));
+  }
+}
+
+/// The single most-recent playback exit across all titles: what the user was
+/// watching last and the exact position when they left the player. Backs the
+/// global «ادامه تماشا» button shown under the play button.
+class LastWatch {
+  const LastWatch({
+    required this.contentId,
+    required this.title,
+    required this.episodeId,
+    required this.episodeName,
+    required this.fileUrl,
+    required this.positionMs,
+    required this.durationMs,
+    required this.isHentai,
+    required this.updatedAtMs,
+  });
+
+  final String contentId;
+  final String title;
+  final String episodeId;
+  final String episodeName;
+  final String fileUrl;
+  final int positionMs;
+  final int durationMs;
+  final bool isHentai;
+  final int updatedAtMs;
+
+  Duration get position => Duration(milliseconds: positionMs);
+  Duration get duration => Duration(milliseconds: durationMs);
+
+  /// Same resumability contract as [SavedWatchProgress]: only genuinely
+  /// partial watches are offered for continuation.
+  bool get isResumable =>
+      positionMs > 15000 &&
+      (durationMs <= 0 || positionMs < durationMs - 30000);
+
+  Map<String, dynamic> toJson() => {
+    'contentId': contentId,
+    'title': title,
+    'episodeId': episodeId,
+    'episodeName': episodeName,
+    'fileUrl': fileUrl,
+    'positionMs': positionMs,
+    'durationMs': durationMs,
+    'isHentai': isHentai,
+    'updatedAtMs': updatedAtMs,
+  };
+
+  static LastWatch? fromJson(Map<String, dynamic> json) {
+    try {
+      final contentId = json['contentId']?.toString() ?? '';
+      final fileUrl = json['fileUrl']?.toString() ?? '';
+      if (contentId.isEmpty || fileUrl.isEmpty) return null;
+      return LastWatch(
+        contentId: contentId,
+        title: json['title']?.toString() ?? 'بدون عنوان',
+        episodeId: json['episodeId']?.toString() ?? '',
+        episodeName: json['episodeName']?.toString() ?? '',
+        fileUrl: fileUrl,
+        positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+        durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
+        isHentai: json['isHentai'] == true,
+        updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Persists the single most-recent playback exit (see [LastWatch]).
+class LastWatchStore {
+  static const _key = 'watch_last_v1';
+
+  Future<void> save(LastWatch last) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = <String, dynamic>{
+      ...last.toJson(),
+      'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+    };
+    await prefs.setString(_key, jsonEncode(payload));
+  }
+
+  Future<LastWatch?> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map<String, dynamic>) return null;
+      final last = LastWatch.fromJson(data);
+      if (last == null || !last.isResumable) return null;
+      return last;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> clear() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_key);
+    } catch (_) {}
   }
 }

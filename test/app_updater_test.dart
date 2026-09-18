@@ -82,6 +82,24 @@ void main() {
     expect(instance.release?.version.toString(), '1.3.0');
     expect(downloads, 2);
   });
+  test(
+    'failed superseding download keeps the previous verified fallback',
+    () async {
+      final instance = updater();
+      await instance.initialize();
+      expect(instance.phase, UpdatePhase.ready);
+      expect(instance.release?.version.toString(), '1.2.0');
+      // A newer release appears but its bytes fail verification.
+      availableVersion = '1.3.0';
+      corrupt = true;
+      await instance.check();
+      // The previously verified 1.2.0 package must remain installable;
+      // the failed 1.3.0 bytes must never become the installable pair.
+      expect(instance.phase, UpdatePhase.ready);
+      expect(instance.release?.version.toString(), '1.2.0');
+      expect(instance.error, isNotNull);
+    },
+  );
   test('checksum mismatch never becomes installable and can retry', () async {
     corrupt = true;
     final instance = updater();

@@ -191,7 +191,9 @@ class HentaiNetwork {
 
   /// Single GET with sticky order + fallback to the other side.
   /// Used for payloads where doubling traffic (posters, covers) is wasteful
-  /// but route switching on failure is still required.
+  /// but route switching on failure is still required. A fast HTTP error
+  /// (proxy denial, 4xx/5xx) never wins over a usable response: non-2xx
+  /// falls through to the other leg.
   static Future<http.Response> fetchBytes(
     Uri uri, {
     Map<String, String>? headers,
@@ -199,28 +201,34 @@ class HentaiNetwork {
   }) async {
     final race = await _sharedClient();
     final order = _preferProxy ? const [1, 0] : const [0, 1];
-    Object? error;
+    http.Response? firstError;
+    Object? transportError;
     for (final leg in order) {
       try {
         final request = http.Request('GET', uri);
         if (headers != null) request.headers.addAll(headers);
-        final streamed = await race
-            .sendOnLeg(leg, request)
-            .timeout(timeout);
+        final streamed = await race.sendOnLeg(leg, request).timeout(timeout);
         final response = await http.Response.fromStream(streamed);
-        noteRoute(proxy: leg == 1);
-        return response;
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          noteRoute(proxy: leg == 1);
+          return response;
+        }
+        firstError ??= response;
+        noteRouteFailure(proxy: leg == 1);
       } catch (e) {
-        error = e;
+        transportError = e;
         noteRouteFailure(proxy: leg == 1);
       }
     }
-    throw error ?? StateError('HentaiNetwork.fetchBytes: no route');
+    if (firstError != null) return firstError;
+    throw transportError ?? StateError('HentaiNetwork.fetchBytes: no route');
   }
 
   /// Lightweight parallel probe of a stream URL (`Range: bytes=0-0` on both
-  /// legs). Returns true when the proxy side wins. Any completed HTTP
-  /// response counts as "route works" — only transport exceptions fail.
+  /// legs). Returns true when the proxy side wins. Only a usable
+  /// media status (200/206) counts as "route works": a fast proxy error or
+  /// denial must not beat a slower playable response, and a stalled body
+  /// after headers must not win either.
   static Future<bool> probeRoute(Uri uri) async {
     final race = await _sharedClient();
     Future<bool> attempt(int leg) async {
@@ -230,6 +238,13 @@ class HentaiNetwork {
       final streamed = await race
           .sendOnLeg(leg, request)
           .timeout(const Duration(seconds: 6));
+      if (streamed.statusCode != 200 && streamed.statusCode != 206) {
+        await streamed.stream.drain().timeout(const Duration(seconds: 6));
+        throw HttpException(
+          'probe leg $leg answered ${streamed.statusCode}',
+          uri: uri,
+        );
+      }
       await streamed.stream.drain().timeout(const Duration(seconds: 6));
       return leg == 1;
     }
@@ -269,9 +284,10 @@ class HentaiNetwork {
 }
 
 /// `package:http` client racing every request over DIRECT and the Windows
-/// system proxy in parallel. The first completed HTTP response wins — even
-/// a 4xx/5xx status proves its route works (e.g. WP's 400 past-last-page is
-/// meaningful); only transport exceptions fall through to the other leg.
+/// system proxy in parallel. The first usable (2xx) response wins; a fast
+/// 4xx/5xx from one route never beats a slower usable response from the
+/// other. Callers needing specific error semantics (e.g. WordPress
+/// pagination exhaustion) validate the structured body themselves.
 /// The loser's body is drained in the background so its socket returns to
 /// the pool. Inject legs in tests; production uses [HentaiRaceClient.new].
 class HentaiRaceClient extends http.BaseClient {
@@ -340,30 +356,59 @@ class HentaiRaceClient extends http.BaseClient {
       }
     }
 
-    Future<http.StreamedResponse> attempt(int leg) async {
+    Future<(int, http.StreamedResponse)> attemptLeg(int leg) async {
       try {
         final response = await (leg == 1 ? _proxyLeg! : _direct).send(
           copies[leg],
         );
-        note(leg == 1);
-        return response;
+        // Transport succeeded; usability (2xx) is decided by the race
+        // below so a fast denial cannot shadow a slow success.
+        return (leg, response);
       } catch (e) {
         HentaiNetwork.noteRouteFailure(proxy: leg == 1);
         rethrow;
       }
     }
 
-    final first = attempt(0);
-    final second = attempt(1);
-    final winner = await HentaiNetwork.firstSuccess(first, second);
+    bool usable(http.StreamedResponse response) =>
+        response.statusCode >= 200 && response.statusCode < 300;
+
+    final leg0 = attemptLeg(0);
+    final leg1 = attemptLeg(1);
+    late int winningLeg;
+    late http.StreamedResponse winner;
+    try {
+      final first = await HentaiNetwork.firstSuccess(leg0, leg1);
+      winningLeg = first.$1;
+      winner = first.$2;
+    } catch (_) {
+      rethrow;
+    }
+    if (!usable(winner)) {
+      // The fast leg answered with an HTTP error: give the slow leg a
+      // bounded chance to produce a usable response before accepting it.
+      try {
+        final other = await (winningLeg == 0 ? leg1 : leg0).timeout(
+          const Duration(seconds: 25),
+        );
+        if (usable(other.$2)) {
+          unawaited(winner.stream.drain().catchError((Object _) {}));
+          winningLeg = other.$1;
+          winner = other.$2;
+        }
+      } catch (_) {
+        // Loser failed or timed out: fall through with the first answer.
+      }
+    }
+    note(winningLeg == 1);
     // Drain ONLY the loser in the background so its socket returns to the
     // pool. The winner's body belongs to the caller and must stay intact.
-    for (final pending in [first, second]) {
+    for (final pending in [leg0, leg1]) {
       unawaited(
         pending
-            .then((response) {
-              if (!identical(response, winner)) {
-                return response.stream.drain();
+            .then((result) {
+              if (!identical(result.$2, winner)) {
+                return result.$2.stream.drain();
               }
             })
             .catchError((Object _) {}),

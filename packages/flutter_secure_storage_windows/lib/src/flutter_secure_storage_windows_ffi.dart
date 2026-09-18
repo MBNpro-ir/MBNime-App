@@ -256,6 +256,20 @@ abstract class MapStorage {
 @visibleForTesting
 const String encryptedJsonFileName = 'flutter_secure_storage.dat';
 
+/// True for transient filesystem races worth a bounded retry (another
+/// process deleting the file/parent directory). Permanent conditions —
+/// access denied, disk full, locks, sharing violations — must fail fast
+/// instead of wedging the plugin's serial write lock in an endless loop.
+bool _isTransientFileError(FileSystemException error) {
+  final code = error.osError?.errorCode;
+  // Unknown codes: be conservative and retry (historical behavior) but the
+  // caller still bounds attempts with backoff.
+  if (code == null) return true;
+  // Windows: ERROR_FILE_NOT_FOUND (2), ERROR_PATH_NOT_FOUND (3).
+  // POSIX errno for the same races, in case the code surfaces that way.
+  return code == 2 || code == 3 || code == 0x2 || code == 0x3;
+}
+
 /// A `MapStorage` implementation that uses DPAPI (Data Protection API) for
 /// encryption and stores data in a JSON file on disk.
 ///
@@ -453,22 +467,40 @@ class DpapiJsonFileMapStorage extends MapStorage {
         final encryptedText = encryptedTextBlob.ref.pbData
             .asTypedList(encryptedTextBlob.ref.cbData);
 
-        // Loop to handle race condition.
-        while (true) {
+        // Crash-atomic persistence: stage beside the live file, flush,
+        // then atomically rename into place. A crash mid-write can
+        // therefore never leave a truncated live file behind.
+        // Retries are bounded with backoff and only for transient races
+        // (another process deleting the file/parent); permanent errors
+        // (access denied, disk full, lock) fail fast so the plugin's
+        // serial lock is never wedged behind an endless loop.
+        const maxAttempts = 4;
+        FileSystemException? lastError;
+        var saved = false;
+        for (var attempt = 0; attempt < maxAttempts && !saved; attempt++) {
+          final staging = File(
+            '${file.path}.tmp.${pid}.${DateTime.now().microsecondsSinceEpoch}',
+          );
           try {
-            await (await file.create(recursive: true))
-                .writeAsBytes(encryptedText, flush: true);
-            // If success, finish loop.
-            break;
+            await file.parent.create(recursive: true);
+            await staging.writeAsBytes(encryptedText, flush: true);
+            staging.renameSync(file.path);
+            saved = true;
           } on FileSystemException catch (e) {
-            // Another process has been deleted a file or parent directory
-            // since previous File.create() call.
-            // We will retry writing.
-            debugPrint(
-              'Reading file has been deleted by another process. $e',
+            lastError = e;
+            try {
+              if (staging.existsSync()) staging.deleteSync();
+            } catch (_) {}
+            if (attempt + 1 >= maxAttempts || !_isTransientFileError(e)) {
+              rethrow;
+            }
+            debugPrint('Retrying secure-storage write after $e');
+            await Future<void>.delayed(
+              Duration(milliseconds: 50 * (1 << attempt)),
             );
           }
         }
+        if (!saved && lastError != null) throw lastError;
       } finally {
         if (encryptedTextBlob.ref.pbData.address != NULL) {
           final Win32Result(value: localFreeResult, error: localFreeError) =

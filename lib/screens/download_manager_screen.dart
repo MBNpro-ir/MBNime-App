@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/material.dart';
 import '../core/download_bundles.dart';
+import '../core/watch_progress.dart';
 import '../services/download_manager.dart';
 import '../services/device_bridge.dart';
 import '../services/external_apps.dart';
@@ -55,11 +56,30 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
       try {
         metadata = Map<String, dynamic>.from(jsonDecode(task.metaData) as Map);
       } catch (_) {}
+      // Resume offline playback from the canonical streaming progress record
+      // (stored as groupId at enqueue time); fall back to the raw episode id
+      // for downloads created before that metadata existed.
+      final contentId =
+          metadata['contentId'] as String? ?? 'download-${task.taskId}';
+      final episodeId = metadata['episodeId'] as String? ?? task.taskId;
+      final groupId =
+          (metadata['groupId'] as String?)?.trim().isNotEmpty == true
+          ? (metadata['groupId'] as String)
+          : episodeId;
+      Duration startAt = Duration.zero;
+      try {
+        final saved = await WatchProgressStore().load(
+          contentId: contentId,
+          episodeId: groupId,
+        );
+        if (saved != null && saved.isResumable) startAt = saved.position;
+      } catch (_) {}
+      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => PlayerScreen(
             content: AnimeContent(
-              id: metadata['contentId'] as String? ?? 'download-${task.taskId}',
+              id: contentId,
               title: metadata['title'] as String? ?? task.displayName,
               subtitle: '',
               description: '',
@@ -70,10 +90,12 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
               genres: const [],
             ),
             episode: AnimeEpisode(
-              id: metadata['episodeId'] as String? ?? task.taskId,
+              id: episodeId,
               name: metadata['episode'] as String? ?? task.displayName,
               fileUrl: Uri.file(path).toString(),
             ),
+            initialPosition: startAt,
+            progressEpisodeId: groupId,
           ),
         ),
       );
@@ -148,7 +170,10 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                         _search.toLowerCase(),
                       ) &&
                       (_filter == 'همه' ||
-                          _filter == downloadStatusLabel(r.status)),
+                          _filter ==
+                              downloadStatusLabel(
+                                manager.effectiveStatus(r),
+                              )),
                 )
                 .toList()
               ..sort(
@@ -342,7 +367,16 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
               ),
               FilterChip(
                 avatar: const Icon(Icons.wifi_rounded, size: 18),
-                label: const Text('فقط Wi-Fi'),
+                label: Text(
+                  Platform.isWindows || Platform.isLinux || Platform.isMacOS
+                      ? 'فقط Wi-Fi (موبایل)'
+                      : 'فقط Wi-Fi',
+                ),
+                tooltip: Platform.isWindows ||
+                        Platform.isLinux ||
+                        Platform.isMacOS
+                    ? 'روی دسکتاپ، دانلودر Dart محدودیت شبکه اعمال نمی‌کند؛ این گزینه فقط روی موبایل اثر دارد.'
+                    : null,
                 selected: manager.wifiOnly,
                 onSelected: (value) => _action(() async {
                   await manager.settings(wifi: value);

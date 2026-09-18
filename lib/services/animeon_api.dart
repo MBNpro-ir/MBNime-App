@@ -82,17 +82,36 @@ class AnimeOnApi implements ContentApi {
   void restoreCookie(String cookie) => _sessionCookie = cookie;
   void clearSession() => _sessionCookie = null;
 
+  static bool isAccountUri(Uri uri) =>
+      uri.scheme == 'https' && uri.host == Uri.parse(_origin).host;
+
   Future<bool> login({required String email, required String password}) async {
     _sessionCookie = null;
-    await _get(Uri.parse(_loginPage));
-    await _post(
+    final probe = await _get(Uri.parse(_loginPage));
+    if (probe.statusCode != 200) return false;
+    final action = await _post(
       Uri.parse(_loginAction),
       body: {'email': email.trim(), 'password': password},
     );
+    if (action.statusCode != 200) {
+      _sessionCookie = null;
+      return false;
+    }
     final verification = await _get(Uri.parse(_loginPage));
     final body = verification.body.trim();
-    if (body.contains('id="login-form"')) return false;
-    return _sessionCookie != null && body.isEmpty;
+    if (verification.statusCode != 200) {
+      _sessionCookie = null;
+      return false;
+    }
+    if (body.contains('id="login-form"')) {
+      _sessionCookie = null;
+      return false;
+    }
+    if (_sessionCookie == null || body.isNotEmpty) {
+      _sessionCookie = null;
+      return false;
+    }
+    return true;
   }
 
   Future<bool> validateCurrentSession() async {
@@ -641,9 +660,9 @@ class AnimeOnApi implements ContentApi {
   Future<http.Response> _get(Uri uri) async {
     try {
       final response = await _client
-          .get(uri, headers: _headers())
+          .get(uri, headers: _headers(uri))
           .timeout(const Duration(seconds: 25));
-      _captureCookie(response);
+      _captureCookie(response, uri);
       return response;
     } on TimeoutException {
       throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
@@ -658,9 +677,9 @@ class AnimeOnApi implements ContentApi {
   }) async {
     try {
       final response = await _client
-          .post(uri, headers: _headers(), body: body)
+          .post(uri, headers: _headers(uri), body: body)
           .timeout(const Duration(seconds: 25));
-      _captureCookie(response);
+      _captureCookie(response, uri);
       return response;
     } on TimeoutException {
       throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
@@ -669,13 +688,18 @@ class AnimeOnApi implements ContentApi {
     }
   }
 
-  Map<String, String> _headers() => {
+  Map<String, String> _headers(Uri uri) => {
     'Accept': 'text/html,application/json',
     'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 17) MBNime/1.0',
-    'Cookie': ?_sessionCookie,
+    // Account cookie is scoped to the exact HTTPS account origin only.
+    // Legacy/catalog traffic (HTTP or other hosts) never carries it.
+    'Cookie': ?(isAccountUri(uri) ? _sessionCookie : null),
   };
 
-  void _captureCookie(http.Response response) {
+  void _captureCookie(http.Response response, Uri uri) {
+    // Only the trusted HTTPS account origin may mint/rotate the session.
+    // Plaintext or third-party responses can never overwrite it.
+    if (!isAccountUri(uri)) return;
     final setCookie = response.headers['set-cookie'];
     if (setCookie == null) return;
     final match = RegExp(r'ci_session=([^;]+)').firstMatch(setCookie);

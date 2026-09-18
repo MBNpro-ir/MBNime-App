@@ -235,12 +235,19 @@ class _ContentArtState extends State<ContentArt> {
     while (_probeCache.length >= _maxProbeEntries) {
       _probeCache.remove(_probeCache.keys.first);
     }
-    final future = _decodeProbe(url, targetWidth, config).then((result) {
+    // Transient failures (offline decode errors) resolve to null. They are
+    // evicted (guarded by future identity so an older completion can never
+    // remove a newer attempt) so a retry after connectivity returns can
+    // actually re-probe instead of serving a process-lifetime cached null.
+    late final Future<_ArtworkProbe?> future;
+    future = _decodeProbe(url, targetWidth, config).then((result) {
       if (result != null) {
         while (_probeResults.length >= _maxProbeEntries) {
           _probeResults.remove(_probeResults.keys.first);
         }
         _probeResults[cacheKey] = result;
+      } else if (identical(_probeCache[cacheKey], future)) {
+        _probeCache.remove(cacheKey);
       }
       return result;
     });
@@ -265,6 +272,11 @@ class _ContentArtState extends State<ContentArt> {
     late final ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
+        // NOTE: the decoded handle is intentionally NOT disposed here. The
+        // provider/completer stays in the framework ImageCache and the Image
+        // widget below reuses that exact cached artwork; disposing the
+        // shared handle would destroy the image the card is about to paint.
+        // Only dimensions + provider are retained.
         if (!completer.isCompleted) {
           completer.complete(
             _ArtworkProbe(provider, info.image.width / info.image.height),

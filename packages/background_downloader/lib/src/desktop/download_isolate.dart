@@ -219,11 +219,39 @@ Future<TaskStatus> processOkDownloadResponse(
     );
     switch (transferBytesResult) {
       case TaskStatus.complete:
-        // copy file to destination, creating dirs if needed
+        // Atomic finalization: stage beside the destination, validate,
+        // then rename into place. A crash during copy can therefore never
+        // leave a truncated file at the final path that startup would
+        // later mistake for a complete download.
         await outStream.flush();
+        try {
+          await outStream.close();
+        } catch (_) {}
+        outStream = null;
         final dirPath = p.dirname(filePath);
         Directory(dirPath).createSync(recursive: true);
-        File(actualTempFilePath).copySync(filePath);
+        final stagingPath = '$filePath.__mbnime-incomplete';
+        try {
+          try {
+            File(stagingPath).deleteSync();
+          } catch (_) {}
+          File(actualTempFilePath).copySync(stagingPath);
+          if (contentLength > 0) {
+            final expected = contentLength + startByte;
+            final staged = File(stagingPath).lengthSync();
+            if (staged != expected) {
+              throw TaskException(
+                'Final size mismatch: expected $expected, got $staged',
+              );
+            }
+          }
+          File(stagingPath).renameSync(filePath);
+        } catch (e) {
+          try {
+            File(stagingPath).deleteSync();
+          } catch (_) {}
+          rethrow;
+        }
         resultStatus = TaskStatus.complete;
 
       case TaskStatus.canceled:

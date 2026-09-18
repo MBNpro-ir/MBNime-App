@@ -11,7 +11,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}-${{ inputs.release_tag }}
@@ -26,6 +26,8 @@ jobs:
     if: github.ref == 'refs/heads/master'
     name: Build Android
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out master
         uses: actions/checkout@v6
@@ -99,6 +101,8 @@ jobs:
     if: github.ref == 'refs/heads/master'
     name: Build Windows x64
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out master
         uses: actions/checkout@v6
@@ -146,6 +150,8 @@ jobs:
     name: Publish GitHub release
     needs: [android, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out release notes
         uses: actions/checkout@v6

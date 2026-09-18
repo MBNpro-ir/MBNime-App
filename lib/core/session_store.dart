@@ -14,6 +14,8 @@ class SessionStore {
 
   static const _emailKey = 'animeon_secure_email';
   static const _cookieKey = 'animeon_secure_session';
+  static const _sessionKey = 'animeon_secure_session_v1';
+  static const _signedOutKey = 'animeon_signed_out';
   static const _legacyEmailKey = 'animeon_session_email';
   static const _secureStorage = FlutterSecureStorage();
 
@@ -24,22 +26,51 @@ class SessionStore {
 
   /// Restores a previously saved session. Never throws: a storage failure
   /// (e.g. a corrupt file) simply means "not logged in".
+  /// A durable signed-out marker always wins over leftover secure values so
+  /// a failed delete can never silently resurrect the previous account.
   Future<void> restore() async {
-    final restoredEmail = await _readKey(_emailKey);
-    if (restoredEmail != null) {
-      email = restoredEmail;
-      final cookie = await _readKey(_cookieKey);
-      if (cookie != null) {
-        api.restoreCookie(cookie);
-      }
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {
+      prefs = null;
+    }
+    final signedOut = prefs?.getBool(_signedOutKey) ?? false;
+
+    final record = await _readSessionRecord();
+    if (!signedOut && record != null) {
+      email = record.email;
+      api.restoreCookie(record.cookie);
     } else {
-      email = null;
+      // Legacy split keys are only honored as a complete pair; a lone
+      // email (e.g. interrupted write) is never treated as signed in.
+      final restoredEmail = await _readKey(_emailKey);
+      final cookie = await _readKey(_cookieKey);
+      if (!signedOut &&
+          restoredEmail != null &&
+          restoredEmail.isNotEmpty &&
+          cookie != null &&
+          cookie.isNotEmpty) {
+        email = restoredEmail;
+        api.restoreCookie(cookie);
+        // Opportunistically migrate to the atomic record.
+        await _writeSessionRecord(email!, cookie);
+      } else {
+        email = null;
+        api.clearSession();
+        if (signedOut) {
+          // Best-effort cleanup of leftovers from a previously failed delete.
+          await _deleteKey(_emailKey);
+          await _deleteKey(_cookieKey);
+          await _deleteKey(_sessionKey);
+        }
+      }
     }
 
     // Remove the local-only preview session from earlier builds.
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_legacyEmailKey);
+      final instance = prefs ?? await SharedPreferences.getInstance();
+      await instance.remove(_legacyEmailKey);
     } catch (_) {
       // Best effort only; a prefs failure must not affect the session.
     }
@@ -103,16 +134,36 @@ class SessionStore {
   Future<void> _persist(String normalizedEmail) async {
     // Persist BEFORE exposing the session: if device storage fails we must
     // not let the user in for this run only to sign them out on restart.
+    final cookie = api.sessionCookie;
+    if (cookie == null || cookie.isEmpty) {
+      throw const AnimeOnApiException('نشست ورود ذخیره نشد؛ دوباره تلاش کن.');
+    }
     try {
-      await _secureStorage.write(key: _emailKey, value: normalizedEmail);
-      await _secureStorage.write(key: _cookieKey, value: api.sessionCookie);
-      final roundTrip = await _secureStorage.read(key: _emailKey);
-      if (roundTrip != normalizedEmail) {
+      await _writeSessionRecord(normalizedEmail, cookie);
+      final roundTrip = await _readSessionRecord();
+      if (roundTrip == null ||
+          roundTrip.email != normalizedEmail ||
+          roundTrip.cookie != cookie) {
         throw const AnimeOnApiException('ذخیره نشست ناموفق بود.');
       }
+      // Legacy split keys stay for downgrade tolerance; failures here must
+      // not invalidate the already-verified atomic record.
+      try {
+        await _secureStorage.write(key: _emailKey, value: normalizedEmail);
+      } catch (_) {}
+      try {
+        await _secureStorage.write(key: _cookieKey, value: cookie);
+      } catch (_) {}
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_signedOutKey);
+      } catch (_) {}
     } on AnimeOnApiException {
+      // Never expose a session that was not durably stored.
+      api.clearSession();
       rethrow;
     } catch (_) {
+      api.clearSession();
       throw const AnimeOnApiException('نشست ورود ذخیره نشد؛ دوباره تلاش کن.');
     }
     email = normalizedEmail;
@@ -144,23 +195,70 @@ class SessionStore {
   }
 
   /// Signs out and wipes the stored session. Memory is always cleared, even
-  /// if a storage delete fails.
+  /// if a storage delete fails. A durable signed-out marker is written first
+  /// so a failed delete can never silently restore the previous account on
+  /// the next launch; verification failures are surfaced to the caller.
   Future<void> logout() async {
+    Object? failure;
     try {
-      await _secureStorage.delete(key: _emailKey);
-    } catch (_) {
-      // Best effort; memory is cleared below regardless.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_signedOutKey, true);
+    } catch (e) {
+      failure = e;
     }
-    try {
-      await _secureStorage.delete(key: _cookieKey);
-    } catch (_) {
-      // Best effort; memory is cleared below regardless.
+    for (final key in [_sessionKey, _emailKey, _cookieKey]) {
+      try {
+        await _secureStorage.delete(key: key);
+      } catch (e) {
+        failure ??= e;
+      }
     }
     api.clearSession();
     email = null;
+    if (failure != null) {
+      // Verify whether any credential survived; the signed-out marker
+      // already blocks silent restore, but the user must know cleanup
+      // needs a retry.
+      final leftover = await _readSessionRecord();
+      final legacyEmail = await _readKey(_emailKey);
+      final legacyCookie = await _readKey(_cookieKey);
+      if (leftover != null || legacyEmail != null || legacyCookie != null) {
+        throw const AnimeOnApiException(
+          'خروج انجام شد اما پاک‌سازی حافظه امن کامل نشد؛ یک‌بار دیگر خروج را بزن.',
+        );
+      }
+    }
   }
 
-  Future<String?> _readKey(String key) async {
+  static Future<void> _writeSessionRecord(String email, String cookie) async {
+    final payload = jsonEncode({'v': 1, 'e': email, 's': cookie});
+    await _secureStorage.write(key: _sessionKey, value: payload);
+  }
+
+  static Future<_SessionRecord?> _readSessionRecord() async {
+    final raw = await _readKey(_sessionKey);
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map<String, dynamic> || data['v'] != 1) return null;
+      final email = data['e']?.toString().trim().toLowerCase() ?? '';
+      final cookie = data['s']?.toString().trim() ?? '';
+      if (email.isEmpty || cookie.isEmpty) return null;
+      if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) return null;
+      if (!RegExp(r'^ci_session=[^;\s]+$').hasMatch(cookie)) return null;
+      return _SessionRecord(email, cookie);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _deleteKey(String key) async {
+    try {
+      await _secureStorage.delete(key: key);
+    } catch (_) {}
+  }
+
+  static Future<String?> _readKey(String key) async {
     try {
       final value = await _secureStorage.read(key: key);
       return (value == null || value.isEmpty) ? null : value;
@@ -172,6 +270,12 @@ class SessionStore {
 
 class _LoginCode {
   const _LoginCode(this.email, this.cookie);
+  final String email;
+  final String cookie;
+}
+
+class _SessionRecord {
+  const _SessionRecord(this.email, this.cookie);
   final String email;
   final String cookie;
 }

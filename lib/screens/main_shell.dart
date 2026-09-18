@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/country_flags.dart';
+import '../core/episode_catalog.dart';
 import '../core/library_store.dart';
 import '../core/platform_ui.dart';
 import '../core/theme.dart';
+import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
@@ -45,6 +47,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   final _store = LibraryStore();
   final _hentaiApi = HentaiIranApi();
+  final _homeKey = GlobalKey<_HomePageState>();
   late final PageController _pageController;
   final Map<String, AnimeContent> _favorites = {};
   final Map<String, AnimeContent> _hentaiFavorites = {};
@@ -164,12 +167,17 @@ class _MainShellState extends State<MainShell> {
       // Desktop: detail opens as a large modal. Outside taps must NOT
       // close it (barrierDismissible: false); the back arrow closes it.
       await showDesktopPopup<void>(context, detail());
+      // Popping back to home changes no tab, so refresh its «ادامه تماشا»
+      // shelf explicitly — otherwise it keeps showing the previous title.
+      unawaited(_homeKey.currentState?.refreshContinueWatch());
       return;
     }
     await Navigator.push<void>(
       context,
       slideUpRoute(detail(), durationMs: 520),
     );
+    // Same as above: a pop return fires no tab change.
+    unawaited(_homeKey.currentState?.refreshContinueWatch());
   }
 
   void _select(int value) {
@@ -178,8 +186,14 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _goToPage(int value) {
-    if (value == _index) return;
+    if (value == _index) {
+      // Re-tapping home still refreshes its «ادامه تماشا» shelf.
+      if (value == 0) _homeKey.currentState?.refreshContinueWatch();
+      return;
+    }
     setState(() => _index = value);
+    // The home «ادامه تماشا» shelf must reflect the latest player exit.
+    if (value == 0) _homeKey.currentState?.refreshContinueWatch();
     if (!_pageController.hasClients) return;
     if (isDesktopWindow) {
       _pageController.jumpToPage(value);
@@ -290,8 +304,11 @@ class _MainShellState extends State<MainShell> {
       title: 'بازدیدشده‌های +۱۸',
       emptyText: 'هنوز عنوانی از بخش +۱۸ باز نکرده‌ای',
       emptyIcon: Icons.history_rounded,
-      items: _hentaiHistory,
+      itemsProvider: () => _hentaiHistory.toList(),
       onOpen: _open,
+      clearTooltip: 'پاک کردن تاریخچه',
+      clearTitle: 'پاک کردن تاریخچه؟',
+      clearMessage: 'فهرست عنوان‌های بازدیدشده پاک می‌شود.',
       onClear: () async {
         await _store.clearHentaiHistory();
         if (mounted) setState(() { _hentaiHistory.clear(); });
@@ -304,8 +321,11 @@ class _MainShellState extends State<MainShell> {
       title: 'علاقه‌مندی‌های +۱۸',
       emptyText: 'هنوز چیزی به علاقه‌مندی‌های +۱۸ اضافه نکرده‌ای',
       emptyIcon: Icons.favorite_outline_rounded,
-      items: _hentaiFavorites.values.toList(),
+      itemsProvider: () => _hentaiFavorites.values.toList(),
       onOpen: _open,
+      clearTooltip: 'پاک کردن علاقه‌مندی‌ها',
+      clearTitle: 'پاک کردن علاقه‌مندی‌ها؟',
+      clearMessage: 'همهٔ علاقه‌مندی‌های +۱۸ پاک می‌شود.',
       onClear: () async {
         _hentaiFavorites.clear();
         await _store.saveHentaiFavorites([]);
@@ -319,8 +339,11 @@ class _MainShellState extends State<MainShell> {
       title: 'بازدیدشده‌ها',
       emptyText: 'هنوز عنوانی باز نکرده‌ای',
       emptyIcon: Icons.history_rounded,
-      items: _history,
+      itemsProvider: () => _history.toList(),
       onOpen: _open,
+      clearTooltip: 'پاک کردن تاریخچه',
+      clearTitle: 'پاک کردن تاریخچه؟',
+      clearMessage: 'فهرست عنوان‌های بازدیدشده پاک می‌شود.',
       onClear: () async {
         await _store.clearHistory();
         if (mounted) setState(() { _history.clear(); });
@@ -333,8 +356,11 @@ class _MainShellState extends State<MainShell> {
       title: 'علاقه‌مندی‌ها',
       emptyText: 'هنوز چیزی به علاقه‌مندی‌ها اضافه نکرده‌ای',
       emptyIcon: Icons.favorite_outline_rounded,
-      items: _favorites.values.toList(),
+      itemsProvider: () => _favorites.values.toList(),
       onOpen: _open,
+      clearTooltip: 'پاک کردن علاقه‌مندی‌ها',
+      clearTitle: 'پاک کردن علاقه‌مندی‌ها؟',
+      clearMessage: 'همهٔ علاقه‌مندی‌ها پاک می‌شود.',
       onClear: () async {
         _favorites.clear();
         await _store.saveFavorites([]);
@@ -346,7 +372,12 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _HomePage(api: widget.api, onOpen: _open),
+      _HomePage(
+        key: _homeKey,
+        api: widget.api,
+        onOpen: _open,
+        onTab: _goToPage,
+      ),
       _CatalogPage(
         key: const ValueKey('movies'),
         api: widget.api,
@@ -801,26 +832,60 @@ class _MenuDrawer extends StatelessWidget {
 }
 
 class _HomePage extends StatefulWidget {
-  const _HomePage({required this.api, required this.onOpen});
+  const _HomePage({
+    super.key,
+    required this.api,
+    required this.onOpen,
+    required this.onTab,
+  });
   final AnimeOnApi api;
   final OpenContent onOpen;
+
+  /// Switches the bottom-nav tab (1 = movies, 2 = series) for «مشاهده همه».
+  final void Function(int index) onTab;
   @override
   State<_HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<_HomePage> {
   late Future<HomeCatalog> _future = widget.api.home();
+  final _lastWatchStore = LastWatchStore();
+  LastWatch? _lastWatch;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadContinueWatch();
+  }
 
   Future<void> _reload() async {
     final next = widget.api.home();
     setState(() {
       _future = next;
     });
+    unawaited(_reloadContinueWatch());
     try {
       await next;
     } catch (_) {
       // FutureBuilder displays the failure. Do not leak it from a tap/refresh.
     }
+  }
+
+  Future<void> _reloadContinueWatch() => refreshContinueWatch();
+
+  /// Reloads the «ادامه تماشا» shelf (called on tab select + after resume).
+  Future<void> refreshContinueWatch() async {
+    final last = await _lastWatchStore.load();
+    if (mounted) setState(() => _lastWatch = last);
+  }
+
+  void _openSectionAll(HomeSection section) {
+    Navigator.push<void>(
+      context,
+      slideUpRoute(
+        _SectionAllPage(section: section, onOpen: widget.onOpen),
+      ),
+    );
   }
 
   @override
@@ -855,13 +920,26 @@ class _HomePageState extends State<_HomePage> {
                   child: _Featured(items: featured, onOpen: widget.onOpen),
                 ),
               ),
+            if (_lastWatch case final last?)
+              SliverToBoxAdapter(
+                child: _SectionEntrance(
+                  index: 1,
+                  child: _ContinueWatchSection(
+                    last: last,
+                    onPlayed: refreshContinueWatch,
+                  ),
+                ),
+              ),
             SliverToBoxAdapter(
               child: _SectionEntrance(
                 index: 1,
                 child: Column(
                   children: [
                     const SizedBox(height: 24),
-                    const _SectionTitle('آخرین سریال‌ها'),
+                    _SectionTitle(
+                      'آخرین سریال‌ها',
+                      onAll: () => widget.onTab(2),
+                    ),
                     _PosterRow(
                       items: data.series,
                       onOpen: widget.onOpen,
@@ -877,7 +955,10 @@ class _HomePageState extends State<_HomePage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 26),
-                    const _SectionTitle('آخرین فیلم‌ها'),
+                    _SectionTitle(
+                      'آخرین فیلم‌ها',
+                      onAll: () => widget.onTab(1),
+                    ),
                     _PosterRow(
                       items: data.movies,
                       onOpen: widget.onOpen,
@@ -894,7 +975,11 @@ class _HomePageState extends State<_HomePage> {
                   child: Column(
                     children: [
                       const SizedBox(height: 26),
-                      _SectionTitle(data.sections[index].title),
+                      _SectionTitle(
+                        data.sections[index].title,
+                        onAll: () =>
+                            _openSectionAll(data.sections[index]),
+                      ),
                       _PosterRow(
                         items: data.sections[index].items,
                         onOpen: widget.onOpen,
@@ -1470,6 +1555,10 @@ class _SearchPageState extends State<_SearchPage> {
   List<AnimeContent> results = [];
   bool loading = false;
   String? error;
+  // Monotonic request generation: every search captures its id and only the
+  // latest may touch results/error/loading, so a slow earlier request can
+  // never overwrite the current query's state.
+  int _searchGeneration = 0;
 
   @override
   void dispose() {
@@ -1492,17 +1581,36 @@ class _SearchPageState extends State<_SearchPage> {
   Future<void> search() async {
     final query = controller.text.trim();
     if (query.length < 2) return;
-    setState(() => loading = true);
+    final generation = ++_searchGeneration;
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final found = await widget.api.search(query);
-      if (mounted && query == controller.text.trim()) {
-        setState(() => results = found);
-      }
+      if (!mounted || generation != _searchGeneration) return;
+      if (query != controller.text.trim()) return;
+      setState(() => results = found);
     } on AnimeOnApiException catch (e) {
-      if (mounted) setState(() => error = e.message);
+      if (!mounted || generation != _searchGeneration) return;
+      if (query != controller.text.trim()) return;
+      setState(() => error = e.message);
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && generation == _searchGeneration) {
+        setState(() => loading = false);
+      }
     }
+  }
+
+  void clearSearch() {
+    _searchGeneration++;
+    debounce?.cancel();
+    controller.clear();
+    setState(() {
+      results = [];
+      error = null;
+      loading = false;
+    });
   }
 
   @override
@@ -1524,10 +1632,7 @@ class _SearchPageState extends State<_SearchPage> {
               trailing: [
                 if (controller.text.isNotEmpty)
                   IconButton(
-                    onPressed: () {
-                      controller.clear();
-                      setState(() => results = []);
-                    },
+                    onPressed: clearSearch,
                     icon: const Icon(Icons.close_rounded),
                   ),
               ],
@@ -1907,35 +2012,61 @@ class _GroupResultsPageState extends State<_GroupResultsPage> {
   );
 }
 
-class _SavedPage extends StatelessWidget {
+class _SavedPage extends StatefulWidget {
   const _SavedPage({
     required this.title,
     required this.emptyText,
     required this.emptyIcon,
-    required this.items,
+    required this.itemsProvider,
     required this.onOpen,
     required this.onClear,
+    this.clearTooltip = 'پاک کردن تاریخچه',
+    this.clearTitle = 'پاک کردن تاریخچه؟',
+    this.clearMessage = 'فهرست عنوان‌های بازدیدشده پاک می‌شود.',
   });
   final String title;
   final String emptyText;
   final IconData emptyIcon;
-  final List<AnimeContent> items;
+
+  /// Fresh snapshot on every build/return: the page must reflect favorite
+  /// removals made in a pushed detail route instead of a one-time list.
+  final List<AnimeContent> Function() itemsProvider;
   final OpenContent onOpen;
   final Future<void> Function() onClear;
+  final String clearTooltip;
+  final String clearTitle;
+  final String clearMessage;
+
+  @override
+  State<_SavedPage> createState() => _SavedPageState();
+}
+
+class _SavedPageState extends State<_SavedPage> {
+  late List<AnimeContent> _items = widget.itemsProvider();
+
+  void _refresh() {
+    if (!mounted) return;
+    setState(() => _items = widget.itemsProvider());
+  }
+
+  Future<void> _openAndRefresh(AnimeContent item, String tag) async {
+    await widget.onOpen(item, tag);
+    _refresh();
+  }
 
   @override
   Widget build(BuildContext context) => _InnerScaffold(
-    title: title,
+    title: widget.title,
     actions: [
-      if (items.isNotEmpty)
+      if (_items.isNotEmpty)
         IconButton(
-          tooltip: 'پاک کردن تاریخچه',
+          tooltip: widget.clearTooltip,
           onPressed: () async {
             final yes = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
-                title: const Text('پاک کردن تاریخچه؟'),
-                content: const Text('فهرست عنوان‌های بازدیدشده پاک می‌شود.'),
+                title: Text(widget.clearTitle),
+                content: Text(widget.clearMessage),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
@@ -1949,7 +2080,8 @@ class _SavedPage extends StatelessWidget {
               ),
             );
             if (yes == true) {
-              await onClear();
+              await widget.onClear();
+              _refresh();
               if (context.mounted) Navigator.pop(context);
             }
           },
@@ -1958,10 +2090,10 @@ class _SavedPage extends StatelessWidget {
     ],
     child: _SavedBody(
       title: '',
-      emptyText: emptyText,
-      emptyIcon: emptyIcon,
-      items: items,
-      onOpen: onOpen,
+      emptyText: widget.emptyText,
+      emptyIcon: widget.emptyIcon,
+      items: _items,
+      onOpen: _openAndRefresh,
       heroPrefix: 'hist-',
     ),
   );
@@ -2084,13 +2216,171 @@ class _PosterRow extends StatelessWidget {
   );
 }
 
+/// Home shelf header mirroring the +18 section style: title on the right,
+/// «مشاهده همه» facing it on the left (RTL row order handles the sides).
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title);
+  const _SectionTitle(this.title, {required this.onAll});
   final String title;
+  final VoidCallback onAll;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-    child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
+        TextButton.icon(
+          onPressed: onAll,
+          icon: const Icon(Icons.arrow_back_rounded, size: 16),
+          label: const Text('مشاهده همه'),
+        ),
+      ],
+    ),
+  );
+}
+
+String _fmtContinuePosition(Duration value) {
+  final hours = value.inHours;
+  final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+}
+
+/// Home «ادامه تماشا» shelf: the last playback exit with its exact position
+/// and a progress bar. Tapping asks the shared confirmation popup (title +
+/// minute) and resumes directly. Hidden when there is no resumable exit.
+class _ContinueWatchSection extends StatelessWidget {
+  const _ContinueWatchSection({required this.last, required this.onPlayed});
+  final LastWatch last;
+  final Future<void> Function() onPlayed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = last.durationMs > 0
+        ? (last.positionMs / last.durationMs).clamp(0.0, 1.0)
+        : 0.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+      child: Pressable(
+        onTap: () async {
+          await askAndResumeLastWatch(context, last);
+          await onPlayed();
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AnimeColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AnimeColors.orange.withValues(alpha: .35),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: AnimeColors.orange.withValues(alpha: .16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: AnimeColors.orange,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ادامه تماشا',
+                            style: TextStyle(
+                              color: AnimeColors.orange,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            last.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            last.episodeName.isNotEmpty
+                                ? '${episodeDisplayName(last.episodeName)} · دقیقه ${_fmtContinuePosition(last.position)}'
+                                : 'دقیقه ${_fmtContinuePosition(last.position)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AnimeColors.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_left_rounded,
+                      color: AnimeColors.muted,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    backgroundColor: Colors.white10,
+                    valueColor: const AlwaysStoppedAnimation(
+                      AnimeColors.orange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full grid of one home shelf («مشاهده همه» target). Shows the shelf's
+/// loaded items with distinct Hero tags so the shelf row beneath stays intact.
+class _SectionAllPage extends StatelessWidget {
+  const _SectionAllPage({required this.section, required this.onOpen});
+  final HomeSection section;
+  final OpenContent onOpen;
+  @override
+  Widget build(BuildContext context) => _InnerScaffold(
+    title: section.title,
+    child: CustomScrollView(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      slivers: [
+        _ContentGrid(
+          items: section.items,
+          onOpen: onOpen,
+          heroPrefix: 'all-${section.id}-',
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: bottomListGap)),
+      ],
+    ),
   );
 }
 

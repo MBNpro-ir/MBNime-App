@@ -75,15 +75,31 @@ class _DetailScreenState extends State<DetailScreen> {
     // Hero while its 520 ms flight is active. A response landing mid-flight
     // used to cause a visible hitch and briefly put the artwork over controls.
     final request = widget.api.details(widget.content);
+    // Observe immediately: without this, a failure inside the flight delay
+    // (or while another tab is selected for comments) has no error listener
+    // yet and surfaces as an uncaught async error before the FutureBuilder
+    // ever subscribes. The no-op branch only marks the error as observed;
+    // `return request` still delivers it to the UI.
+    unawaited(request.then<void>((_) {}, onError: (_) {}));
     if (initial) {
       await Future<void>.delayed(const Duration(milliseconds: 540));
     }
     return request;
   }
 
+  @override
+  void initState() {
+    super.initState();
+    // Comments are preloaded for instant tab switches, but their FutureBuilder
+    // only exists on the comments tab. Guard eagerly so an early failure
+    // cannot report as unhandled while another tab is selected.
+    unawaited(_comments.then<void>((_) {}, onError: (_) {}));
+  }
+
   void _retry() => setState(() {
     _details = _loadDetails();
     _comments = widget.api.comments(widget.content.id);
+    unawaited(_comments.then<void>((_) {}, onError: (_) {}));
   });
 
   void _toggleFavorite() {
@@ -561,6 +577,8 @@ class _DetailScreenState extends State<DetailScreen> {
                     portraitImageUrl: posterUrl,
                     loading: loading,
                     hasPlayable: hasPlayable,
+                    onPlay: (content, episode, startAt) =>
+                        _play(content, episode, startAt: startAt),
                     onCoverTap: () => _showCover(
                       item,
                       requestedImageUrl: posterUrl,
@@ -664,6 +682,246 @@ class _AnimatedDetailBackdrop extends StatelessWidget {
   }
 }
 
+String _fmtWatchPosition(Duration value) {
+  final hours = value.inHours;
+  final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+  final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+}
+
+/// Shows the «بریم ادامه‌شو ببینیم؟» confirmation popup for [last] (title +
+/// exact minute) and, on confirmation, plays it from that position.
+/// Shared by the detail-page button and the home «ادامه تماشا» shelf.
+Future<void> askAndResumeLastWatch(BuildContext context, LastWatch last) async {
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.history_rounded),
+      title: Text(last.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      content: Text(
+        last.episodeName.isNotEmpty
+            ? '${episodeDisplayName(last.episodeName)}\nدقیقه ${_fmtWatchPosition(last.position)}'
+                  ' از ${_fmtWatchPosition(last.duration)} مانده.\nبریم ادامه‌شو ببینیم؟'
+            : 'دقیقه ${_fmtWatchPosition(last.position)}'
+                  ' از ${_fmtWatchPosition(last.duration)}.\nبریم ادامه‌شو ببینیم؟',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('انصراف'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('بریم ادامه‌شو ببینیم'),
+        ),
+      ],
+    ),
+  );
+  if (go != true || !context.mounted) return;
+  await Navigator.of(context).push(
+    slideUpRoute(
+      PlayerScreen(
+        content: AnimeContent(
+          id: last.contentId,
+          title: last.title,
+          subtitle: last.episodeName,
+          description: '',
+          year: 0,
+          rating: 0,
+          kind: ContentKind.movie,
+          colors: const [],
+          genres: const [],
+          isHentai: last.isHentai,
+        ),
+        episode: AnimeEpisode(
+          id: last.episodeId.isNotEmpty ? last.episodeId : last.contentId,
+          name: last.episodeName.isNotEmpty ? last.episodeName : last.title,
+          fileUrl: last.fileUrl,
+        ),
+        initialPosition: last.position,
+        progressEpisodeId: last.episodeId.isNotEmpty ? last.episodeId : null,
+      ),
+      durationMs: 520,
+    ),
+  );
+}
+
+class _ResumeTarget {
+  const _ResumeTarget({
+    required this.position,
+    required this.duration,
+    required this.episode,
+  });
+  final Duration position;
+  final Duration duration;
+  final AnimeEpisode episode;
+}
+
+/// Same-title «ادامه تماشا» button shown under the play button (normal and
+/// +18 detail pages share this card). It NEVER leaves this title: when the
+/// global last exit belongs here its exact point is used, otherwise the
+/// most-recently watched resumable episode of this title. A confirmation
+/// popup (title + minute) precedes playback. Hidden when this title has no
+/// resumable progress.
+class _ContinueWatchButton extends StatefulWidget {
+  const _ContinueWatchButton({required this.item, required this.onPlay});
+
+  final AnimeContent item;
+  final Future<void> Function(
+    AnimeContent content,
+    AnimeEpisode episode,
+    Duration startAt,
+  )
+  onPlay;
+
+  @override
+  State<_ContinueWatchButton> createState() => _ContinueWatchButtonState();
+}
+
+class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
+  final _progress = WatchProgressStore();
+  final _lastStore = LastWatchStore();
+  _ResumeTarget? _target;
+  bool _busy = false;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ContinueWatchButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id) _reload();
+  }
+
+  Future<void> _reload() async {
+    final generation = ++_generation;
+    final catalog = EpisodeCatalog.from(widget.item);
+    // 1) Exact exit point when the global last watch is this title.
+    try {
+      final last = await _lastStore.load();
+      if (last != null && last.contentId == widget.item.id) {
+        if (!mounted || generation != _generation) return;
+        setState(
+          () => _target = _ResumeTarget(
+            position: last.position,
+            duration: last.duration,
+            episode: AnimeEpisode(
+              id: last.episodeId.isNotEmpty
+                  ? last.episodeId
+                  : widget.item.id,
+              name: last.episodeName.isNotEmpty
+                  ? last.episodeName
+                  : widget.item.title,
+              fileUrl: last.fileUrl,
+            ),
+          ),
+        );
+        return;
+      }
+    } catch (_) {}
+    // 2) Most-recently watched resumable episode of this title.
+    String? preferred;
+    try {
+      preferred = (await SharedPreferences.getInstance()).getString(
+        'preferred_stream_quality',
+      );
+    } catch (_) {}
+    SavedWatchProgress? best;
+    EpisodeGroup? bestGroup;
+    for (final group in catalog.episodes) {
+      late final SavedWatchProgress? saved;
+      try {
+        saved = await _progress.load(
+          contentId: widget.item.id,
+          episodeId: group.id,
+        );
+      } catch (_) {
+        continue;
+      }
+      if (saved == null || !saved.isResumable) continue;
+      if (best == null || saved.updatedAtMs >= best.updatedAtMs) {
+        best = saved;
+        bestGroup = group;
+      }
+    }
+    if (!mounted || generation != _generation) return;
+    if (best == null || bestGroup == null) {
+      setState(() => _target = null);
+      return;
+    }
+    setState(
+      () => _target = _ResumeTarget(
+        position: best!.position,
+        duration: best.duration,
+        episode: bestGroup!.variantFor(preferred).episode,
+      ),
+    );
+  }
+
+  Future<void> _askAndResume() async {
+    final target = _target;
+    if (target == null || _busy) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.history_rounded),
+        title: Text(
+          widget.item.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        content: Text(
+          '${episodeDisplayName(target.episode.name)}\nدقیقه ${_fmtWatchPosition(target.position)}'
+          ' از ${_fmtWatchPosition(target.duration)} مانده.\nبریم ادامه‌شو ببینیم؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('بریم ادامه‌شو ببینیم'),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onPlay(widget.item, target.episode, target.position);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      await _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final target = _target;
+    if (target == null) return const SizedBox.shrink();
+    // Full width like the «شروع تماشا» button above it.
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.tonalIcon(
+        onPressed: _busy ? null : _askAndResume,
+        icon: const Icon(Icons.play_circle_fill_rounded),
+        label: Text(
+          'ادامه تماشا · ${_fmtWatchPosition(target.position)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+}
+
 class _InlineError extends StatelessWidget {
   const _InlineError({required this.onRetry});
   final VoidCallback onRetry;
@@ -694,6 +952,7 @@ class _DetailSummaryCard extends StatelessWidget {
     required this.hasPlayable,
     required this.onCoverTap,
     required this.pickerBuilder,
+    required this.onPlay,
   });
 
   final AnimeContent item;
@@ -703,6 +962,14 @@ class _DetailSummaryCard extends StatelessWidget {
   final bool hasPlayable;
   final VoidCallback onCoverTap;
   final WidgetBuilder pickerBuilder;
+
+  /// Direct playback for the same-title «ادامه تماشا» button.
+  final Future<void> Function(
+    AnimeContent content,
+    AnimeEpisode episode,
+    Duration startAt,
+  )
+  onPlay;
 
   @override
   Widget build(BuildContext context) =>
@@ -772,7 +1039,15 @@ class _DetailSummaryCard extends StatelessWidget {
           const SizedBox(width: 18),
           SizedBox(
             width: 210,
-            child: _animatedWatchButton(context, desktop: true),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _animatedWatchButton(context, desktop: true),
+                const SizedBox(height: 8),
+                _ContinueWatchButton(item: item, onPlay: onPlay),
+              ],
+            ),
           ),
         ],
       ),
@@ -887,6 +1162,8 @@ class _DetailSummaryCard extends StatelessWidget {
                 Wrap(spacing: 7, runSpacing: 7, children: _metadata()),
                 const SizedBox(height: 12),
                 _animatedWatchButton(context, desktop: false),
+                const SizedBox(height: 8),
+                _ContinueWatchButton(item: item, onPlay: onPlay),
               ],
             ),
           ),
@@ -2325,10 +2602,16 @@ class PlayerScreen extends StatefulWidget {
     required this.content,
     required this.episode,
     this.initialPosition = Duration.zero,
+    this.progressEpisodeId,
   });
   final AnimeContent content;
   final AnimeEpisode episode;
   final Duration initialPosition;
+
+  /// Canonical progress identity override (download metadata's logical
+  /// group id). When set, progress is read/written under this id so offline
+  /// playback shares the streaming record instead of forking a raw id.
+  final String? progressEpisodeId;
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -2378,6 +2661,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   bool _windowResizing = false;
   bool _exitingPlayer = false;
   bool _allowPlayerPop = false;
+  // Single generation for the whole playback lifecycle: every async media
+  // operation captures it and aborts before touching the player/relay once
+  // a newer operation started or the screen was disposed. Together with
+  // [_transitioning] this serializes open/quality/episode/next as one
+  // transaction so two overlapping switches cannot interleave open→seek→play.
+  int _mediaGeneration = 0;
+  bool _transitioning = false;
+  bool _playerTornDown = false;
+
+  bool _isCurrentMediaOp(int generation) =>
+      mounted && !_playerTornDown && generation == _mediaGeneration;
   Offset? _doubleTapPosition;
   List<String> _subtitles = const [];
   Tracks _tracks = const Tracks();
@@ -2422,7 +2716,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _restorePlayerPrefs();
     unawaited(_restoreAndroidDisplayPrefs());
     _armSaveTimer();
-    _openMedia();
+    // Own the future: an unobserved open failure must surface as player
+    // error state, never as an unhandled async error.
+    unawaited(
+      _openMedia().catchError((Object error) {
+        if (!mounted || _playerTornDown) return;
+        setState(() => _error = '$error');
+      }),
+    );
     _armHideTimer();
     _pokeCursor();
     unawaited(_initializePictureInPicture());
@@ -2498,7 +2799,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<String> _resolvePlaybackUrl(
     String fileUrl, {
     bool? forceProxy,
+    int? generation,
   }) async {
+    bool cancelled() => generation != null && !_isCurrentMediaOp(generation);
     if (!_shouldRoutePlayback) {
       await _clearMpvProxy();
       return fileUrl;
@@ -2516,10 +2819,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           await HentaiNetwork.probeRoute(
             uri,
           ).timeout(const Duration(seconds: 10));
+      if (cancelled() || _playerTornDown) return fileUrl;
       await _clearMpvProxy();
       if (!useProxy) return fileUrl;
-      _relay ??= HentaiMediaRelay();
-      return (await _relay!.serve(uri)).toString();
+      if (_playerTornDown) return fileUrl;
+      final relay = _relay ??= HentaiMediaRelay();
+      final served = await relay.serve(uri);
+      if (cancelled()) {
+        // Started after exit: do not leak an unowned relay server.
+        try {
+          await relay.close();
+        } catch (_) {}
+        if (_relay == relay) _relay = null;
+        return fileUrl;
+      }
+      return served.toString();
     } catch (_) {
       await _clearMpvProxy();
       return fileUrl;
@@ -2529,12 +2843,26 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   /// Opens [fileUrl] in mpv with +18 route handling on Windows: probe race,
   /// then a single flip-retry on the other route if the open itself fails.
   /// Callers keep their existing fallback logic for anything beyond that.
-  Future<void> _openRoutedMedia(String fileUrl, {required bool play}) async {
+  /// Throws [StateError] when this operation was superseded or the player
+  /// was torn down, so stale continuations never touch native resources.
+  Future<void> _openRoutedMedia(
+    String fileUrl, {
+    required bool play,
+    required int generation,
+  }) async {
+    void requireCurrent() {
+      if (!_isCurrentMediaOp(generation)) {
+        throw StateError('superseded playback operation');
+      }
+    }
+
     const headers = {'User-Agent': 'MBNime/1.0 Android'};
-    final routed = await _resolvePlaybackUrl(fileUrl);
+    final routed = await _resolvePlaybackUrl(fileUrl, generation: generation);
+    requireCurrent();
     try {
       await _player.open(Media(routed, httpHeaders: headers), play: play);
     } catch (_) {
+      requireCurrent();
       if (!_shouldRoutePlayback) rethrow;
       // The winning route died between probe and open: flip once and retry
       // on the other side before the caller falls back further.
@@ -2542,28 +2870,44 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       final retry = await _resolvePlaybackUrl(
         fileUrl,
         forceProxy: HentaiNetwork.preferProxy,
+        generation: generation,
       );
+      requireCurrent();
       await _player.open(Media(retry, httpHeaders: headers), play: play);
     }
+    requireCurrent();
+    // `Player.open` only issues load commands; transport/decoder failures
+    // arrive later over `stream.error`. Wait for a readiness signal scoped
+    // to this operation so route fallback/rollback sees real load failures.
+    await _awaitLoadReady(generation: generation);
   }
 
   Future<void> _openMedia() async {
+    final generation = ++_mediaGeneration;
     final resumeAt = widget.initialPosition;
     // Starting playback immediately can make mpv reset an early seek to
     // zero while the remote file is still being prepared.
-    await _openRoutedMedia(_episode.fileUrl, play: false);
+    await _openRoutedMedia(
+      _episode.fileUrl,
+      play: false,
+      generation: generation,
+    );
+    if (!_isCurrentMediaOp(generation)) return;
     if (resumeAt > Duration.zero) {
-      await _waitUntilSeekable();
+      await _waitUntilSeekable(generation: generation);
+      if (!_isCurrentMediaOp(generation)) return;
       await _player.seek(_safeResumePosition(resumeAt));
+      if (!_isCurrentMediaOp(generation)) return;
     }
     await _player.play();
+    if (!_isCurrentMediaOp(generation)) return;
 
     if (resumeAt > Duration.zero) {
       // Some Android decoders recreate the media clock on the first play.
       // Verify once after startup and re-apply the requested position if it
       // was reset, instead of silently starting the episode from zero.
       await Future<void>.delayed(const Duration(milliseconds: 550));
-      if (!mounted) return;
+      if (!_isCurrentMediaOp(generation)) return;
       final expected = _safeResumePosition(resumeAt);
       if (_player.state.position < expected - const Duration(seconds: 4)) {
         await _player.seek(expected);
@@ -2571,7 +2915,48 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     }
   }
 
-  Future<void> _waitUntilSeekable() async {
+  /// Waits until this generation's media is actually loadable: duration (or
+  /// a progressing position) wins, a player error loses, otherwise a bounded
+  /// timeout lets HLS-without-duration continue (today's behavior).
+  Future<void> _awaitLoadReady({required int generation}) async {
+    if (_player.state.duration > Duration.zero) return;
+    StreamSubscription<Duration>? durationSub;
+    StreamSubscription<String>? errorSub;
+    Timer? timer;
+    final completer = Completer<void>();
+    void finish([Object? error]) {
+      timer?.cancel();
+      unawaited(durationSub?.cancel());
+      unawaited(errorSub?.cancel());
+      if (completer.isCompleted) return;
+      if (error != null) {
+        completer.completeError(error);
+      } else {
+        completer.complete();
+      }
+    }
+
+    durationSub = _player.stream.duration.listen((value) {
+      if (value > Duration.zero) finish();
+    });
+    errorSub = _player.stream.error.listen((value) {
+      finish(StateError('پخش شروع نشد: $value'));
+    });
+    // Some HLS servers expose a seekable timeline without a duration.
+    timer = Timer(const Duration(seconds: 15), () => finish());
+    try {
+      await completer.future;
+    } finally {
+      timer.cancel();
+      await durationSub.cancel();
+      await errorSub.cancel();
+    }
+    if (!_isCurrentMediaOp(generation)) {
+      throw StateError('superseded playback operation');
+    }
+  }
+
+  Future<void> _waitUntilSeekable({int? generation}) async {
     if (_player.state.duration > Duration.zero) return;
     try {
       await _player.stream.duration
@@ -2580,6 +2965,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     } on TimeoutException {
       // Some HLS servers expose a seekable timeline without a duration.
       // mpv can still accept the saved absolute position in that case.
+      // A quality switch intentionally keeps today's lenient behavior here;
+      // real load failures are already caught by [_awaitLoadReady].
+    }
+    if (generation != null && !_isCurrentMediaOp(generation)) {
+      throw StateError('superseded playback operation');
     }
   }
 
@@ -2593,20 +2983,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
 
   void _armSaveTimer() {
     _saveTimer?.cancel();
-    _saveTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _persistProgress(),
-    );
+    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // Suspend ordinary progress writes during a media transition so the
+      // new timeline/duration cannot be attributed to the previous episode.
+      if (_transitioning) return;
+      _persistProgress();
+    });
   }
 
-  Future<void> _persistProgress({bool markWatched = false, Duration? at}) {
+  String get _progressEpisodeId =>
+      widget.progressEpisodeId ??
+      _episodeCatalog.groupFor(_episode)?.id ??
+      _episode.id;
+
+  Future<void> _persistProgress({
+    bool markWatched = false,
+    Duration? at,
+    Duration? duration,
+    String? episodeId,
+  }) {
     final position = at ?? _position;
     if (position <= Duration.zero && !markWatched) return Future.value();
     return _progressStore.save(
       contentId: widget.content.id,
-      episodeId: _episodeCatalog.groupFor(_episode)?.id ?? _episode.id,
+      episodeId: episodeId ?? _progressEpisodeId,
       position: position,
-      duration: _duration,
+      duration: duration ?? _duration,
       markWatched: markWatched,
     );
   }
@@ -2906,12 +3308,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   Future<void> _switchQuality(EpisodeVariant target) async {
-    if (_switchingQuality || target.episode.fileUrl == _episode.fileUrl) return;
+    // One serialized media transaction: quality, episode and auto-next
+    // share [_transitioning] and a generation so overlapping taps cannot
+    // interleave open→seek→play or misattribute progress.
+    if (_transitioning ||
+        _switchingQuality ||
+        target.episode.fileUrl == _episode.fileUrl) {
+      return;
+    }
+    final generation = ++_mediaGeneration;
     final previous = _episode;
+    final previousId = _episodeCatalog.groupFor(_episode)?.id ?? _episode.id;
     final position = _player.state.position;
+    final durationAtSwitch = _duration;
     final wasPlaying = _player.state.playing;
+    _transitioning = true;
     _switchingQuality = true;
-    await _persistProgress(at: position);
+    await _persistProgress(
+      at: position,
+      duration: durationAtSwitch,
+      episodeId: previousId,
+    );
+    if (!_isCurrentMediaOp(generation)) {
+      _switchingQuality = false;
+      _transitioning = false;
+      return;
+    }
     if (mounted) {
       setState(() {
         _buffering = true;
@@ -2919,15 +3341,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       });
     }
     try {
-      await _openRoutedMedia(target.episode.fileUrl, play: false);
-      await _waitUntilSeekable();
+      await _openRoutedMedia(
+        target.episode.fileUrl,
+        play: false,
+        generation: generation,
+      );
+      if (!_isCurrentMediaOp(generation)) return;
+      await _waitUntilSeekable(generation: generation);
       await _player.seek(_safeResumePosition(position));
+      if (!_isCurrentMediaOp(generation)) return;
       if (wasPlaying) await _player.play();
+      if (!_isCurrentMediaOp(generation)) return;
+      // Commit media identity and timeline together for the current op only.
       _episode = target.episode;
+      _position = position;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('preferred_stream_quality', target.quality);
       await _configurePictureInPicture();
-      if (mounted) {
+      if (!mounted) return;
+      if (_isCurrentMediaOp(generation)) {
         setState(() {
           _buffering = false;
           _subtitles = const [];
@@ -2942,12 +3374,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         );
       }
     } catch (_) {
+      if (!mounted || !_isCurrentMediaOp(generation)) return;
       try {
-        await _openRoutedMedia(previous.fileUrl, play: false);
+        await _openRoutedMedia(
+          previous.fileUrl,
+          play: false,
+          generation: generation,
+        );
         await _player.seek(_safeResumePosition(position));
         if (wasPlaying) await _player.play();
       } catch (_) {}
-      if (mounted) {
+      if (!mounted) return;
+      if (_isCurrentMediaOp(generation)) {
         setState(() => _buffering = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2956,32 +3394,53 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         );
       }
     } finally {
-      _switchingQuality = false;
+      if (_isCurrentMediaOp(generation) || _switchingQuality) {
+        _switchingQuality = false;
+        _transitioning = false;
+      }
     }
   }
 
   Future<SavedWatchProgress?> _bestProgressForGroup(EpisodeGroup group) async {
-    SavedWatchProgress? best = await _progressStore.load(
+    // Canonical record is authoritative once it exists: a stale legacy
+    // per-variant position must never override a newer rewind/replay.
+    // The watched marker is preserved independently across both.
+    final canonical = await _progressStore.load(
       contentId: widget.content.id,
       episodeId: group.id,
     );
+    var legacyWatched = false;
+    SavedWatchProgress? legacyBest;
     for (final variant in group.variants) {
+      if (variant.episode.id == group.id) continue;
       final legacy = await _progressStore.load(
         contentId: widget.content.id,
         episodeId: variant.episode.id,
       );
       if (legacy == null) continue;
-      if (best == null ||
-          legacy.watched && !best.watched ||
-          legacy.positionMs > best.positionMs) {
-        best = legacy;
+      if (legacy.watched) legacyWatched = true;
+      if (legacyBest == null ||
+          (legacy.watched && !legacyBest.watched) ||
+          legacy.positionMs > legacyBest.positionMs) {
+        legacyBest = legacy;
       }
     }
-    return best;
+    if (canonical != null) {
+      if (legacyWatched && !canonical.watched) {
+        return SavedWatchProgress(
+          positionMs: canonical.positionMs,
+          durationMs: canonical.durationMs,
+          watched: true,
+        );
+      }
+      return canonical;
+    }
+    return legacyBest;
   }
 
   Future<void> _showEpisodePicker() async {
-    if (_changingEpisode ||
+    if (_transitioning ||
+        _changingEpisode ||
         _switchingQuality ||
         _episodeCatalog.seasons.isEmpty) {
       return;
@@ -3304,16 +3763,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   Future<void> _switchEpisode(EpisodeGroup group, EpisodeVariant target) async {
-    if (_changingEpisode || target.episode.fileUrl == _episode.fileUrl) return;
+    if (_transitioning ||
+        _changingEpisode ||
+        target.episode.fileUrl == _episode.fileUrl) {
+      return;
+    }
+    // Acquire the single media transaction before the first await so a
+    // concurrent quality/next tap cannot interleave with this switch.
+    final generation = ++_mediaGeneration;
+    _transitioning = true;
+    _changingEpisode = true;
     final previous = _episode;
+    final previousId = _episodeCatalog.groupFor(_episode)?.id ?? _episode.id;
     final previousPosition = _player.state.position;
+    final previousDuration = _duration;
     final wasPlaying = _player.state.playing;
     final saved = await _bestProgressForGroup(group);
+    if (!_isCurrentMediaOp(generation)) return;
     final startAt = saved?.isResumable == true
         ? saved!.position
         : Duration.zero;
-    _changingEpisode = true;
-    await _persistProgress(at: previousPosition);
+    await _persistProgress(
+      at: previousPosition,
+      duration: previousDuration,
+      episodeId: previousId,
+    );
+    if (!_isCurrentMediaOp(generation)) return;
     if (mounted) {
       setState(() {
         _buffering = true;
@@ -3322,17 +3797,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       });
     }
     try {
-      await _openRoutedMedia(target.episode.fileUrl, play: false);
+      await _openRoutedMedia(
+        target.episode.fileUrl,
+        play: false,
+        generation: generation,
+      );
+      if (!_isCurrentMediaOp(generation)) return;
       if (startAt > Duration.zero) {
-        await _waitUntilSeekable();
+        await _waitUntilSeekable(generation: generation);
         await _player.seek(_safeResumePosition(startAt));
+        if (!_isCurrentMediaOp(generation)) return;
       }
       await _player.play();
+      if (!mounted || !_isCurrentMediaOp(generation)) return;
       _episode = target.episode;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('preferred_stream_quality', target.quality);
       await _configurePictureInPicture();
-      if (mounted) {
+      if (!mounted) return;
+      if (_isCurrentMediaOp(generation)) {
         setState(() {
           _position = startAt;
           _duration = _player.state.duration;
@@ -3351,13 +3834,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         );
       }
     } catch (_) {
+      if (!mounted || !_isCurrentMediaOp(generation)) return;
       try {
-        await _openRoutedMedia(previous.fileUrl, play: false);
-        await _waitUntilSeekable();
+        await _openRoutedMedia(
+          previous.fileUrl,
+          play: false,
+          generation: generation,
+        );
+        await _waitUntilSeekable(generation: generation);
         await _player.seek(_safeResumePosition(previousPosition));
         if (wasPlaying) await _player.play();
       } catch (_) {}
-      if (mounted) {
+      if (!mounted) return;
+      if (_isCurrentMediaOp(generation)) {
         setState(() => _buffering = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -3366,7 +3855,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         );
       }
     } finally {
-      _changingEpisode = false;
+      if (_isCurrentMediaOp(generation) || _changingEpisode) {
+        _changingEpisode = false;
+        _transitioning = false;
+      }
     }
   }
 
@@ -3395,17 +3887,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Future<void> _finishCurrentAndPlayNext({
     bool completedNaturally = false,
   }) async {
-    if (_changingEpisode) return;
+    if (_transitioning || _changingEpisode) return;
+    final generation = ++_mediaGeneration;
+    _transitioning = true;
     _changingEpisode = true;
     try {
       final next = _nextEpisode;
+      final currentId = _episodeCatalog.groupFor(_episode)?.id ?? _episode.id;
       await _persistProgress(
         markWatched: true,
         at: completedNaturally && _duration > Duration.zero
             ? _duration
             : _position,
+        duration: _duration,
+        episodeId: currentId,
       );
-      if (!mounted) return;
+      if (!mounted || !_isCurrentMediaOp(generation)) return;
       if (next == null) {
         setState(() => _nextEpisodeVisible = false);
         return;
@@ -3420,13 +3917,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         _controlsVisible = false;
       });
       await _configurePictureInPicture();
-      await _openRoutedMedia(next.fileUrl, play: true);
+      if (!mounted || !_isCurrentMediaOp(generation)) return;
+      await _openRoutedMedia(next.fileUrl, play: true, generation: generation);
     } catch (error) {
-      if (mounted) {
+      if (!mounted) return;
+      if (_isCurrentMediaOp(generation)) {
         setState(() => _error = 'پخش قسمت بعدی انجام نشد: $error');
       }
     } finally {
-      _changingEpisode = false;
+      if (_isCurrentMediaOp(generation) || _changingEpisode) {
+        _changingEpisode = false;
+        _transitioning = false;
+      }
     }
   }
 
@@ -3435,6 +3937,29 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _exitingPlayer = true;
     try {
       await _persistProgress();
+      // Remember the exact exit point for the global «ادامه تماشا» button.
+      // Only genuinely partial watches are kept; a finished (or barely
+      // started) title clears the slot so stale continuations are never
+      // offered.
+      try {
+        final store = LastWatchStore();
+        final atExit = LastWatch(
+          contentId: widget.content.id,
+          title: widget.content.title,
+          episodeId: _progressEpisodeId,
+          episodeName: _episode.name,
+          fileUrl: _episode.fileUrl,
+          positionMs: _position.inMilliseconds,
+          durationMs: _duration.inMilliseconds,
+          isHentai: widget.content.isHentai,
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+        );
+        if (atExit.isResumable) {
+          await store.save(atExit);
+        } else {
+          await store.clear();
+        }
+      } catch (_) {}
     } finally {
       if (mounted) {
         setState(() => _allowPlayerPop = true);
@@ -3618,6 +4143,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
 
   @override
   void dispose() {
+    // Invalidate every in-flight media operation first so late probe/relay
+    // continuations abort before creating resources or touching the player.
+    _mediaGeneration++;
+    _playerTornDown = true;
+    _transitioning = false;
+    _changingEpisode = false;
+    _switchingQuality = false;
     // Restore the window chrome on the NEXT frame: writing the notifier
     // synchronously here runs inside the framework's unmount lock and
     // throws ("setState() called when widget tree was locked"), which

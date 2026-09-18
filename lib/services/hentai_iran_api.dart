@@ -152,8 +152,12 @@ class HentaiIranApi implements ContentApi {
       rethrow;
     }
     if (response.statusCode == 400 || response.statusCode == 404) {
-      // Past the last page.
-      return const [];
+      // Past the last page ONLY when WordPress says so with its structured
+      // error code; any other 400/404 (proxy denial, route failure, HTML
+      // error page) must surface as an error so the other route/leg can be
+      // tried instead of silently showing an empty archive.
+      if (_isWordPressPaginationExhaustion(response)) return const [];
+      throw const AnimeOnApiException('فهرست هنتای ایران در دسترس نیست.');
     }
     if (response.statusCode != 200) {
       throw const AnimeOnApiException('فهرست هنتای ایران در دسترس نیست.');
@@ -343,8 +347,9 @@ class HentaiIranApi implements ContentApi {
     final status = _firstTerm(terms[taxonomyStatus]);
     final censor = _firstTerm(terms[taxonomyCensor]);
     final subtitle = _firstTerm(terms[taxonomySubtitle]);
-    final year = _yearFromTerms(terms[taxonomyYear]) ??
-        int.tryParse((row['date'] ?? '').toString().substring(0, 4)) ??
+    final year =
+        _yearFromTerms(terms[taxonomyYear]) ??
+        _yearFromDate(row['date']) ??
         0;
     final genreTerms = terms[taxonomyGenre] ?? const <String>[];
     final tagNames = terms[taxonomyTag] ?? const <String>[];
@@ -479,7 +484,7 @@ class HentaiIranApi implements ContentApi {
       downloadsText: page.downloadsCount,
       publishDateText: page.publishDate.isNotEmpty
           ? page.publishDate
-          : (restDate.isNotEmpty ? restDate.substring(0, 10) : ''),
+          : _safeDatePrefix(restDate, 10),
       ageRating: '18+',
       tags: tags,
       related: page.related,
@@ -796,7 +801,8 @@ class HentaiIranApi implements ContentApi {
     );
     final response = await _get(uri);
     if (response.statusCode == 400 || response.statusCode == 404) {
-      return const [];
+      if (_isWordPressPaginationExhaustion(response)) return const [];
+      throw const AnimeOnApiException('وبلاگ هنتای ایران در دسترس نیست.');
     }
     if (response.statusCode != 200) {
       throw const AnimeOnApiException('وبلاگ هنتای ایران در دسترس نیست.');
@@ -841,6 +847,36 @@ class HentaiIranApi implements ContentApi {
     } on http.ClientException {
       throw const AnimeOnApiException('اتصال به هنتای ایران برقرار نشد.');
     }
+  }
+
+  /// True only for WordPress's structured pagination-exhaustion error
+  /// (e.g. `{"code":"rest_post_invalid_page_number",...}`), not for any
+  /// bare 400/404 which may be a proxy denial or route failure.
+  static bool _isWordPressPaginationExhaustion(http.Response response) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        final code = data['code']?.toString().toLowerCase() ?? '';
+        if (code.contains('invalid_page') ||
+            code.contains('rest_post_invalid') ||
+            code == 'rest_invalid_page_number') {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static int? _yearFromDate(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.length < 4) return null;
+    return int.tryParse(text.substring(0, 4));
+  }
+
+  static String _safeDatePrefix(String value, int length) {
+    final text = value.trim();
+    if (text.isEmpty) return '';
+    return text.length <= length ? text : text.substring(0, length);
   }
 
   static Map<String, List<String>> _embeddedTerms(Object? embedded) {

@@ -2,6 +2,18 @@ import 'package:mbnime/core/watch_progress.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+LastWatch _lastAt(int positionMs, int durationMs) => LastWatch(
+  contentId: 'c1',
+  title: 'فیلم تست',
+  episodeId: 'g1',
+  episodeName: 'قسمت ۱',
+  fileUrl: 'https://cdn.invalid/v.mp4',
+  positionMs: positionMs,
+  durationMs: durationMs,
+  isHentai: false,
+  updatedAtMs: 0,
+);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -90,5 +102,30 @@ void main() {
     expect(saved, isNotNull);
     expect(saved!.almostWatched, isTrue);
     expect(saved.watched, isFalse);
+  });
+
+  test('last watch round-trips the exact exit point', () async {
+    final store = LastWatchStore();
+    expect(await store.load(), isNull);
+
+    await store.save(_lastAt(750000, 1440000));
+    final last = await store.load();
+    expect(last, isNotNull);
+    expect(last!.title, 'فیلم تست');
+    expect(last.position, const Duration(milliseconds: 750000));
+    expect(last.isResumable, isTrue);
+
+    await store.clear();
+    expect(await store.load(), isNull);
+  });
+
+  test('finished or barely-started exits are never offered', () async {
+    final store = LastWatchStore();
+    // Finished: 5 seconds before a 24-minute episode ends.
+    await store.save(_lastAt(1435000, 1440000));
+    expect(await store.load(), isNull);
+    // Barely started: 5 seconds in.
+    await store.save(_lastAt(5000, 1440000));
+    expect(await store.load(), isNull);
   });
 }
