@@ -769,8 +769,9 @@ String _fmt(Duration value) {  final hours = value.inHours;
 }
 
 String _variantMeta(EpisodeVariant variant) {
+  final size = formatFileSize(variant.episode.fileSize);
   final values = [
-    if (variant.episode.fileSize.isNotEmpty) '${variant.episode.fileSize} MB',
+    if (size.isNotEmpty) size,
     if (variant.episode.fileType.isNotEmpty)
       variant.episode.fileType.toUpperCase(),
   ];

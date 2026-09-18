@@ -322,6 +322,44 @@ String recommendedEpisodeQuality(Iterable<String> qualities) {
   return values.isEmpty ? unknownQualityLabel : values.first;
 }
 
+/// Formats a raw `file_size` value from the legacy API for display under an
+/// episode: `55MB`, `1.2GB`. Bare numbers are megabytes (the API's unit);
+/// values already carrying a unit are normalized (`1.2 GB` → `1.2GB`);
+/// large byte counts are scaled down. Returns '' when there is no usable
+/// size (the UI then falls back to «پخش آنلاین»).
+String formatFileSize(String raw) {
+  final text = _latinDigits(raw.trim());
+  if (text.isEmpty) return '';
+  final withUnit =
+      RegExp(r'^([\d.,]+)\s*([kKmMgGtT])\s*[bB]$').firstMatch(text);
+  if (withUnit != null) {
+    return '${_trimSizeNumber(withUnit.group(1)!)}'
+        '${withUnit.group(2)!.toUpperCase()}B';
+  }
+  // Unknown trailing text (e.g. a word unit we do not recognize): keep it
+  // untouched rather than inventing a wrong number.
+  if (RegExp(r'[a-zA-Z]').hasMatch(text)) return raw.trim();
+  final number = double.tryParse(text.replaceAll(',', ''));
+  if (number == null || number <= 0) return '';
+  if (number >= 1024 * 1024) {
+    final mb = number / (1024 * 1024);
+    if (mb >= 1024) {
+      return '${_trimSizeNumber((mb / 1024).toStringAsFixed(1))}GB';
+    }
+    return '${_trimSizeNumber(mb.toStringAsFixed(mb < 10 ? 1 : 0))}MB';
+  }
+  return '${_trimSizeNumber(text)}MB';
+}
+
+String _trimSizeNumber(String value) {
+  var text = value.replaceAll(',', '');
+  if (text.contains('.')) {
+    text = text.replaceAll(RegExp(r'0+$'), '');
+    text = text.replaceAll(RegExp(r'\.$'), '');
+  }
+  return text;
+}
+
 /// یک بستهٔ دانلودی: چند قسمت/فایل هم‌کیفیت که با یک دکمه یکجا دانلود می‌شوند.
 class QualityDownloadBatch {
   const QualityDownloadBatch({

@@ -335,8 +335,21 @@ void main() {
     expect(isUnknownQuality('720p'), isFalse);
     expect(qualityDisplayLabel('بدون برچسب کیفیت'), 'پخش');
     expect(
-      qualityDisplayLabel('بدون برچسب کیفیت · سرور 2'),
-      'سرور 2',
+      qualityDisplayLabel('بدون برچسب کیفیت • سرور ۲'),
+      'سرور ۲',
     );
+  });
+
+  test('raw file sizes display as compact MB/GB labels', () {
+    expect(formatFileSize(''), '');
+    expect(formatFileSize('714'), '714MB');
+    expect(formatFileSize('55'), '55MB');
+    expect(formatFileSize('1.2 GB'), '1.2GB');
+    expect(formatFileSize('550mb'), '550MB');
+    expect(formatFileSize('700KB'), '700KB');
+    expect(formatFileSize('1610612736'), '1.5GB');
+    expect(formatFileSize('125829120'), '120MB');
+    expect(formatFileSize('۷۱۴'), '714MB');
+    expect(formatFileSize('0'), '');
   });
 }

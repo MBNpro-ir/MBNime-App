@@ -5280,8 +5280,9 @@ List<String> _hentaiQualities(AnimeSeason season) {
 }
 
 String _playerVariantMeta(EpisodeVariant variant) {
+  final size = formatFileSize(variant.episode.fileSize);
   final values = [
-    if (variant.episode.fileSize.isNotEmpty) '${variant.episode.fileSize} MB',
+    if (size.isNotEmpty) size,
     if (variant.episode.fileType.isNotEmpty)
       variant.episode.fileType.toUpperCase(),
   ];
