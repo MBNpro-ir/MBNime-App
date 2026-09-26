@@ -1,40 +1,52 @@
-# MBNime
+<div align="center">
 
-Flutter video client for Android and Windows with a Persian RTL interface.
+![نشان متحرک ام‌بی‌انیمه](docs/readme/hero.gif)
 
-- Internal player with subtitles, Android PiP and desktop keyboard controls.
-- Responsive episode grid; internal/external player and downloader choices.
-- Background downloads, pause/resume, cover notifications and organized folders.
-- DLNA/Chromecast and system Wireless Display/Miracast connection.
-- Verified GitHub updates; C++ Windows updater with rollback and relaunch.
+# ام‌بی‌انیمه | MBNime
 
-## Development
+**انیمه‌های محبوبت، همیشه یک قدم نزدیک‌تر**
 
-Flutter 3.44.6 / Dart 3.12.2. Windows requires Visual Studio C++ tools.
-Android uses Java 17+, SDK 37, minSdk 24 and the Gradle wrapper.
+🎬 تماشا &nbsp;·&nbsp; 🔎 کشف &nbsp;·&nbsp; 📥 دانلود &nbsp;·&nbsp; ❤️ علاقه‌مندی
 
-```sh
-flutter pub get
-flutter analyze --no-pub lib test
-flutter test --no-pub
-flutter run --dart-define=MBN_API_KEY=<your-service-client-key>
-```
+[دریافت برای اندروید و ویندوز](https://github.com/MBNpro-ir/MBNime-App/releases/latest)
 
-On the maintainer's Windows checkout, run `./Run-MBNime-Debug.ps1` to pass
-the ignored `.signing/api-config.json` automatically (no secret in shell history).
-Use `-Device <device-id>` for Android. After changing build-time configuration,
-stop the previous run and start again; hot reload does not update Dart defines.
+</div>
 
-The service client key is supplied at build time. No user passwords, sessions
-or signing keys are included. Session import/export codes are validated
-server-side before local persistence. Account access and content
-availability depend on the upstream service. Only access content you are
-authorized to view/download.
+---
 
-See [Persian release guide](docs/RELEASES_FA.md) and [release notes](changelogs/1.9.0.fa.md).
-Official packages: [GitHub Releases](https://github.com/MBNpro-ir/MBNime-App/releases).
+## دنیای انیمه، مرتب و در دسترس
 
-`tools/Test-WindowsUpdater.ps1` tests replacement, rollback, relaunch and rejection
-of incomplete bundles using isolated test executables, without touching the app.
+| برای پیدا کردن | برای تماشا | برای نگه داشتن |
+| :---: | :---: | :---: |
+| 🔎 جست‌وجوی انیمه‌ها و مرور فصل‌ها و قسمت‌ها | ▶️ پخش درون برنامه با زیرنویس و کنترل‌های کاربردی | 📥 مدیریت دانلودها در پوشه‌های مرتب |
+| 🧭 رسیدن سریع به عنوان دلخواه | 📺 پخش روی نمایشگر سازگار | ❤️ علاقه‌مندی‌ها و ادامهٔ تماشا |
 
-Vendored dependencies retain their original licenses and document local patches.
+## از کجا شروع کنم؟
+
+1. از دکمهٔ **دریافت** در بالای صفحه، نسخهٔ مناسب دستگاهت را نصب کن.
+2. با **ایمیل یا نام کاربری** حساب خودت وارد شو. اگر در MBNMovie وارد شده‌ای، می‌توانی ورود با همان حساب را انتخاب کنی.
+3. انیمه‌ات را پیدا کن، قسمت دلخواه را باز کن و تماشا را شروع کن.
+
+> نمایش محتوا و امکان پخش یا دانلود به دسترسی حساب و آماده بودن لینک‌های هر عنوان بستگی دارد.
+
+## تماشای راحت‌تر
+
+- **در اندروید:** هنگام پخش می‌توانی از تصویر در تصویر استفاده کنی و در صورت پشتیبانی دستگاه، تصویر را به نمایشگر دیگری بفرستی.
+- **در ویندوز:** کنترل‌های صفحه‌کلید، جابه‌جایی در ویدئو و تغییر حالت تمام‌صفحه در دسترس‌اند.
+- **برای بعد:** عنوان‌ها را به علاقه‌مندی‌ها اضافه کن یا از بخش «ادامهٔ تماشا» به همان جایی برگرد که مانده بودی.
+
+## اشتراک و پشتیبانی
+
+از منوی برنامه وارد **مدیریت اشتراک** شو تا وضعیت اشتراک و زمان باقی‌مانده را ببینی. اگر برای ورود، پخش، دانلود یا اشتراک کمک خواستی، همان‌جا دکمهٔ **پشتیبانی** را بزن.
+
+## به‌روزرسانی برنامه
+
+برنامه نسخهٔ تازه را بررسی می‌کند. وقتی به‌روزرسانی ضروری شناسایی شود، صفحهٔ به‌روزرسانی باز می‌ماند و تا نصب نسخهٔ تازه بخش‌های دیگر در دسترس نیستند. در اندروید، تأیید نصب از سوی خود سیستم ممکن است لازم باشد. اگر دریافت فایل کامل نشد، از همان صفحه دوباره تلاش کن.
+
+<div align="center">
+
+**آماده‌ای قسمت بعدی را ببینی؟**
+
+[دریافت آخرین نسخه](https://github.com/MBNpro-ir/MBNime-App/releases/latest)
+
+</div>

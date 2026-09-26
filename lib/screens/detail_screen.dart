@@ -27,6 +27,7 @@ import '../services/hentai_iran_api.dart';
 import '../services/hentai_network.dart';
 import '../services/hentai_relay.dart';
 import '../services/device_bridge.dart';
+import '../services/mbn_sync.dart';
 import '../services/picture_in_picture.dart';
 import '../widgets/content_art.dart';
 import '../widgets/hentai_image.dart';
@@ -164,9 +165,10 @@ class _DetailScreenState extends State<DetailScreen> {
       viaUnstableRoute: item.isHentai,
     );
     try {
-      await precacheImage(provider, context).timeout(
-        const Duration(seconds: 8),
-      );
+      await precacheImage(
+        provider,
+        context,
+      ).timeout(const Duration(seconds: 8));
     } catch (_) {
       // بدون پیش‌بار هم باز می‌شود؛ صفحه خطا را خودش نشان می‌دهد.
     }
@@ -386,10 +388,12 @@ class _DetailScreenState extends State<DetailScreen> {
     AnimeSeason season,
     String quality,
   ) async {
-    final filtered = season.episodes.where((ep) {
-      final epQuality = episodeQuality(ep.name, ep.name);
-      return epQuality == quality;
-    }).toList(growable: false);
+    final filtered = season.episodes
+        .where((ep) {
+          final epQuality = episodeQuality(ep.name, ep.name);
+          return epQuality == quality;
+        })
+        .toList(growable: false);
     if (filtered.isEmpty) return;
     final qualitySeason = AnimeSeason(
       id: '${season.id}-$quality',
@@ -449,8 +453,8 @@ class _DetailScreenState extends State<DetailScreen> {
       final headerHeight = isHentai
           ? 120.0
           : isLargeScreenDevice
-              ? (viewportHeight * .42).clamp(260.0, 380.0)
-              : 430.0;
+          ? (viewportHeight * .42).clamp(260.0, 380.0)
+          : 430.0;
       final hasPlayable = item.seasons.any(
         (season) => season.episodes.isNotEmpty,
       );
@@ -527,52 +531,55 @@ class _DetailScreenState extends State<DetailScreen> {
                 background: isHentai
                     ? const ColoredBox(color: Colors.black)
                     : Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // The backdrop remains independent from the catalog's
-                    // portrait Hero, but gets its own tag for cover preview.
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _showCover(
-                        item,
-                        requestedImageUrl: backdropUrl,
-                        heroTag: 'detail-backdrop-${widget.heroTag}',
-                      ),
-                      child: Hero(
-                        tag: 'detail-backdrop-${widget.heroTag}',
-                        createRectTween: smoothHeroRectTween,
-                        child: _AnimatedDetailBackdrop(
-                          key: ValueKey(widget.heroTag),
-                          child: ContentArt(
-                            content: item,
-                            imageUrl: backdropUrl,
-                            orientation: ArtworkOrientation.landscape,
-                            borderRadius: 0,
-                            showTitle: false,
-                            lockToImageUrl: true,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Positioned(
-                      top: 0,
-                      right: 0,
-                      left: 0,
-                      height: 150,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Color(0xB3000000), Colors.transparent],
+                        fit: StackFit.expand,
+                        children: [
+                          // The backdrop remains independent from the catalog's
+                          // portrait Hero, but gets its own tag for cover preview.
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _showCover(
+                              item,
+                              requestedImageUrl: backdropUrl,
+                              heroTag: 'detail-backdrop-${widget.heroTag}',
+                            ),
+                            child: Hero(
+                              tag: 'detail-backdrop-${widget.heroTag}',
+                              createRectTween: smoothHeroRectTween,
+                              child: _AnimatedDetailBackdrop(
+                                key: ValueKey(widget.heroTag),
+                                child: ContentArt(
+                                  content: item,
+                                  imageUrl: backdropUrl,
+                                  orientation: ArtworkOrientation.landscape,
+                                  borderRadius: 0,
+                                  showTitle: false,
+                                  lockToImageUrl: true,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const Positioned(
+                            top: 0,
+                            right: 0,
+                            left: 0,
+                            height: 150,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xB3000000),
+                                      Colors.transparent,
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
             SliverPadding(
@@ -811,9 +818,7 @@ class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
     final catalog = EpisodeCatalog.from(widget.item);
     // 1) Exact exit point when this section's last watch is this title.
     try {
-      final last = await LastWatchStore(
-        hentai: widget.item.isHentai,
-      ).load();
+      final last = await LastWatchStore(hentai: widget.item.isHentai).load();
       if (last != null && last.contentId == widget.item.id) {
         if (!mounted || generation != _generation) return;
         setState(
@@ -821,9 +826,7 @@ class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
             position: last.position,
             duration: last.duration,
             episode: AnimeEpisode(
-              id: last.episodeId.isNotEmpty
-                  ? last.episodeId
-                  : widget.item.id,
+              id: last.episodeId.isNotEmpty ? last.episodeId : widget.item.id,
               name: last.episodeName.isNotEmpty
                   ? last.episodeName
                   : widget.item.title,
@@ -1252,103 +1255,103 @@ class _DetailSectionTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = hideComments ? _items.sublist(0, 3) : _items;
     return LayoutBuilder(
-    builder: (context, constraints) {
-      final compact = constraints.maxWidth < 620;
-      return SizedBox(
-        height: compact ? 62 : 52,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AnimeColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Row(
-            children: [
-              for (var index = 0; index < items.length; index++)
-                Expanded(
-                  child: InkWell(
-                    onTap: () => onSelected(index),
-                    borderRadius: BorderRadius.circular(16),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 240),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected == index
-                            ? AnimeColors.orange.withValues(alpha: .16)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border(
-                          bottom: BorderSide(
-                            color: selected == index
-                                ? AnimeColors.orange
-                                : Colors.transparent,
-                            width: 2,
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        return SizedBox(
+          height: compact ? 62 : 52,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AnimeColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                for (var index = 0; index < items.length; index++)
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => onSelected(index),
+                      borderRadius: BorderRadius.circular(16),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected == index
+                              ? AnimeColors.orange.withValues(alpha: .16)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border(
+                            bottom: BorderSide(
+                              color: selected == index
+                                  ? AnimeColors.orange
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
                           ),
                         ),
-                      ),
-                      child: compact
-                          ? Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  items[index].$1,
-                                  size: 19,
-                                  color: selected == index
-                                      ? AnimeColors.orange
-                                      : AnimeColors.muted,
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  items[index].$3,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.fade,
-                                  softWrap: false,
-                                  style: TextStyle(
-                                    fontSize: 10.5,
+                        child: compact
+                            ? Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    items[index].$1,
+                                    size: 19,
                                     color: selected == index
                                         ? AnimeColors.orange
                                         : AnimeColors.muted,
-                                    fontWeight: FontWeight.w700,
                                   ),
-                                ),
-                              ],
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  items[index].$1,
-                                  size: 19,
-                                  color: selected == index
-                                      ? AnimeColors.orange
-                                      : AnimeColors.muted,
-                                ),
-                                const SizedBox(width: 7),
-                                Flexible(
-                                  child: Text(
-                                    items[index].$2,
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    items[index].$3,
                                     maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    overflow: TextOverflow.fade,
+                                    softWrap: false,
                                     style: TextStyle(
+                                      fontSize: 10.5,
                                       color: selected == index
                                           ? AnimeColors.orange
                                           : AnimeColors.muted,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    items[index].$1,
+                                    size: 19,
+                                    color: selected == index
+                                        ? AnimeColors.orange
+                                        : AnimeColors.muted,
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Flexible(
+                                    child: Text(
+                                      items[index].$2,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: selected == index
+                                            ? AnimeColors.orange
+                                            : AnimeColors.muted,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    );
   }
 }
 
@@ -1403,7 +1406,10 @@ class _AboutSection extends StatelessWidget {
     }
   }
 
-  Future<void> _openHentaiLink(BuildContext context, HentaiRelatedLink link) async {
+  Future<void> _openHentaiLink(
+    BuildContext context,
+    HentaiRelatedLink link,
+  ) async {
     final hentaiApi = api is HentaiIranApi ? api as HentaiIranApi : null;
     if (hentaiApi == null) {
       await _launch(link.url);
@@ -1567,17 +1573,17 @@ class _AboutSection extends StatelessWidget {
             for (final link in item.relatedLinks)
               if (link.taxonomy != HentaiIranApi.taxonomySubtitle)
                 ActionChip(
-                label: Text(link.title),
-                backgroundColor: link.highlight
-                    ? const Color(0xFF16A34A).withValues(alpha: .16)
-                    : AnimeColors.surfaceHigh,
-                side: BorderSide(
-                  color: link.highlight
-                      ? const Color(0xFF16A34A).withValues(alpha: .5)
-                      : Colors.white10,
+                  label: Text(link.title),
+                  backgroundColor: link.highlight
+                      ? const Color(0xFF16A34A).withValues(alpha: .16)
+                      : AnimeColors.surfaceHigh,
+                  side: BorderSide(
+                    color: link.highlight
+                        ? const Color(0xFF16A34A).withValues(alpha: .5)
+                        : Colors.white10,
+                  ),
+                  onPressed: () => _openHentaiLink(context, link),
                 ),
-                onPressed: () => _openHentaiLink(context, link),
-              ),
           ],
         ),
       ],
@@ -1691,12 +1697,9 @@ class _AboutSection extends StatelessWidget {
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.tonalIcon(
-                      onPressed: () =>
-                          onDownloadQuality(season, quality),
+                      onPressed: () => onDownloadQuality(season, quality),
                       icon: const Icon(Icons.download_for_offline_rounded),
-                      label: Text(
-                        'دانلود همه قسمت‌ها · $quality',
-                      ),
+                      label: Text('دانلود همه قسمت‌ها · $quality'),
                     ),
                   ),
                 ),
@@ -1810,10 +1813,7 @@ class _AboutSection extends StatelessWidget {
 
 /// تطبیق نام ژانر کارت جزئیات با فهرست دسته‌های سرور (دقیق، بعد شامل).
 /// top-level تا واحدتست‌پذیر باشد.
-CatalogGroup? matchCatalogGroupByName(
-  List<CatalogGroup> groups,
-  String name,
-) {
+CatalogGroup? matchCatalogGroupByName(List<CatalogGroup> groups, String name) {
   final needle = name.trim();
   if (needle.isEmpty) return null;
   for (final group in groups) {
@@ -1843,7 +1843,8 @@ class _NormalGenreResultsPage extends StatefulWidget {
   final ValueChanged<AnimeContent> onOpen;
 
   @override
-  State<_NormalGenreResultsPage> createState() => _NormalGenreResultsPageState();
+  State<_NormalGenreResultsPage> createState() =>
+      _NormalGenreResultsPageState();
 }
 
 class _NormalGenreResultsPageState extends State<_NormalGenreResultsPage> {
@@ -2361,9 +2362,7 @@ class _HentaiExtraInfo extends StatelessWidget {
                       textAlign: TextAlign.end,
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: rows[i].danger
-                            ? const Color(0xFFEF4444)
-                            : null,
+                        color: rows[i].danger ? const Color(0xFFEF4444) : null,
                       ),
                     ),
                   ),
@@ -2729,7 +2728,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     // Own the future: an unobserved open failure must surface as player
     // error state, never as an unhandled async error.
     unawaited(
-      _openMedia().catchError((Object error) {
+      _startInitialPlayback().catchError((Object error) {
         if (!mounted || _playerTornDown) return;
         setState(() => _error = '$error');
       }),
@@ -2737,6 +2736,48 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _armHideTimer();
     _pokeCursor();
     unawaited(_initializePictureInPicture());
+  }
+
+  Future<void> _startInitialPlayback() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted || _playerTornDown) return;
+    if (!(prefs.getBool('player_gestures_introduced') ?? false)) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('راهنمای پخش'),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: Icon(Icons.touch_app_rounded),
+                title: Text('یک لمس: نمایش کنترل‌ها'),
+              ),
+              ListTile(
+                leading: Icon(Icons.double_arrow_rounded),
+                title: Text('دو لمس روی تصویر: جابه‌جایی ۱۰ ثانیه‌ای'),
+              ),
+              ListTile(
+                leading: Icon(Icons.tune_rounded),
+                title: Text('سرعت و زیرنویس: بالای پلیر'),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(context),
+              child: const Text('شروع تماشا'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || _playerTornDown) return;
+      await prefs.setBool('player_gestures_introduced', true);
+    }
+    if (mounted && !_playerTornDown) await _openMedia();
   }
 
   Future<void> _initializePictureInPicture() async {
@@ -3367,6 +3408,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       _position = position;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('preferred_stream_quality', target.quality);
+      await MbnSync.instance.pushPreferences();
       await _configurePictureInPicture();
       if (!mounted) return;
       if (_isCurrentMediaOp(generation)) {
@@ -3592,22 +3634,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                       isTrailerLabel(variant.episode.name);
                                   final episodeDisplayName =
                                       widget.content.kind == ContentKind.movie
-                                          ? (isTrailerVariant
-                                                ? (variant
-                                                          .episode
-                                                          .name
-                                                          .trim()
-                                                          .isEmpty
-                                                      ? group.name
-                                                      : variant.episode.name)
-                                                : qualityDisplayLabel(
-                                                    variant.quality,
-                                                  ))
-                                          : (widget.content.isHentai
-                                              ? _hentaiCleanEpisodeName(
-                                                  group.name,
-                                                )
-                                              : group.name);
+                                      ? (isTrailerVariant
+                                            ? (variant.episode.name
+                                                      .trim()
+                                                      .isEmpty
+                                                  ? group.name
+                                                  : variant.episode.name)
+                                            : qualityDisplayLabel(
+                                                variant.quality,
+                                              ))
+                                      : (widget.content.isHentai
+                                            ? _hentaiCleanEpisodeName(
+                                                group.name,
+                                              )
+                                            : group.name);
                                   return Material(
                                     color: isCurrent
                                         ? AnimeColors.orange.withValues(
@@ -3711,7 +3751,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                                             999,
                                                           ),
                                                       border: Border.all(
-                                                        color: AnimeColors.orange
+                                                        color: AnimeColors
+                                                            .orange
                                                             .withValues(
                                                               alpha: .28,
                                                             ),
@@ -3823,6 +3864,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       _episode = target.episode;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('preferred_stream_quality', target.quality);
+      await MbnSync.instance.pushPreferences();
       await _configurePictureInPicture();
       if (!mounted) return;
       if (_isCurrentMediaOp(generation)) {
@@ -4103,13 +4145,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('player_rate', rate ?? _rate);
     await prefs.setDouble('player_volume', volume ?? _volume);
+    await MbnSync.instance.pushPreferences();
   }
 
   void _toggleFit() {
     setState(() => _fitCover = !_fitCover);
-    SharedPreferences.getInstance().then(
-      (prefs) => prefs.setBool('player_fit_cover', _fitCover),
-    );
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setBool('player_fit_cover', _fitCover);
+      await MbnSync.instance.pushPreferences();
+    });
   }
 
   /// Toggles window fullscreen. Chrome state is applied synchronously from
@@ -4491,6 +4535,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   List<Widget> _playerToolControls({required bool compact}) {
+    final hasMultipleEpisodes =
+        _episodeCatalog.episodes.where((group) => !group.isTrailer).length > 1;
     final rawQuality = _currentVariant?.quality ?? 'کیفیت';
     final quality = isUnknownQuality(rawQuality)
         ? qualityDisplayLabel(rawQuality)
@@ -4498,9 +4544,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     final hideQualityButton =
         (_currentEpisodeGroup?.isTrailer ?? false) &&
         isUnknownQuality(rawQuality);
-    final rate = _rate == 1
-        ? '1×'
-        : '${_rate.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')}×';
     return [
       if ((_currentEpisodeGroup?.variants.length ?? 0) > 1 &&
           !hideQualityButton) ...[
@@ -4511,49 +4554,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           compactLabel: quality,
           onTap: _showQualityPicker,
         ),
-        const SizedBox(width: 8),
+        if (hasMultipleEpisodes) const SizedBox(width: 8),
       ],
-      _PlayerToolControl(
-        icon: Icons.speed_rounded,
-        label: rate,
-        compact: compact,
-        compactLabel: rate,
-        onTap: _showSpeedPicker,
-      ),
-      const SizedBox(width: 8),
-      _PlayerToolControl(
-        icon: Icons.closed_caption_rounded,
-        label: 'تنظیم زیرنویس',
-        compact: compact,
-        onTap: _showSubtitleSettings,
-      ),
-      const SizedBox(width: 8),
-      _PlayerToolControl(
-        icon: Icons.sync_alt_rounded,
-        label: 'زمان زیرنویس',
-        badge:
-            '${_subtitle.delay >= 0 ? '+' : ''}${_subtitle.delay.toStringAsFixed(1)}s',
-        compact: compact,
-        onTap: _showSubtitleTiming,
-      ),
-      const SizedBox(width: 8),
-      _PlayerToolControl(
-        icon: Icons.graphic_eq_rounded,
-        label: 'صدا و زیرنویس',
-        compact: compact,
-        onTap: _showTrackPicker,
-      ),
-      if (_episodeCatalog.episodes.isNotEmpty) ...[
-        const SizedBox(width: 8),
+      if (hasMultipleEpisodes) ...[
         _PlayerToolControl(
           icon: Icons.video_library_rounded,
-          label: widget.content.kind == ContentKind.movie
-              ? 'انتخاب فیلم'
-              : 'انتخاب قسمت',
+          label: 'انتخاب قسمت',
           compact: compact,
-          compactLabel: widget.content.kind == ContentKind.movie
-              ? 'فیلم'
-              : 'قسمت',
+          compactLabel: 'قسمت',
           onTap: _showEpisodePicker,
         ),
       ],
@@ -4659,23 +4667,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     if (mounted) Navigator.pop(context);
   }
 
-  Future<void> _showSpeedPicker() async {
-    final selected = await showModalBottomSheet<double>(
-      context: context,
-      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AnimeColors.surface,
-      showDragHandle: true,
-      builder: (context) => _SpeedPicker(initial: _rate),
-    );
-    if (selected != null) {
-      await _player.setRate(selected);
-      unawaited(_savePlayerPrefsWith(rate: selected));
-    }
-    _showControls();
-  }
-
   Future<void> _showSubtitleSettings() async {
     _hideTimer?.cancel();
     setState(() => _controlsVisible = false);
@@ -4708,9 +4699,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
             ),
             child: SizedBox(
               width: panelWidth(context, large: 1100),
-              height: (MediaQuery.sizeOf(context).height * .72).clamp(
+              height: (MediaQuery.sizeOf(context).height * .82).clamp(
                 0.0,
-                590.0,
+                340.0,
               ),
               child: _TopSubtitleSettings(
                 initial: _subtitle,
@@ -4732,21 +4723,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     _armHideTimer();
   }
 
-  Future<void> _showSubtitleTiming() async {
-    final result = await showModalBottomSheet<SubtitlePreferences>(
+  Future<void> _showSpeedSettings() async {
+    final result = await showModalBottomSheet<(SubtitlePreferences, double)>(
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
-      builder: (context) => _SubtitleTiming(initial: _subtitle),
+      builder: (context) =>
+          _SubtitleTiming(initial: _subtitle, initialRate: _rate),
     );
     if (result != null) {
-      setState(() => _subtitle = result);
-      await _applySubtitleTiming(result);
+      setState(() => _subtitle = result.$1);
+      await _player.setRate(result.$2);
+      await _savePlayerPrefsWith(rate: result.$2);
+      await _applySubtitleTiming(result.$1);
       final prefs = await SharedPreferences.getInstance();
-      await result.save(prefs);
+      await result.$1.save(prefs);
     }
     _showControls();
   }
@@ -4914,6 +4908,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                         ),
                                       ),
                                       _RoundControl(
+                                        icon: Icons.graphic_eq_rounded,
+                                        tooltip: 'صدا و زیرنویس',
+                                        onTap: _showTrackPicker,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _RoundControl(
+                                        icon: Icons.closed_caption_rounded,
+                                        tooltip: 'تنظیم زیرنویس',
+                                        onTap: _showSubtitleSettings,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _RoundControl(
+                                        icon: Icons.speed_rounded,
+                                        tooltip: 'تنظیم سرعت',
+                                        onTap: _showSpeedSettings,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _RoundControl(
                                         icon: _fitCover
                                             ? Icons.fit_screen_rounded
                                             : Icons.aspect_ratio_rounded,
@@ -5036,12 +5048,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                                     child: GestureDetector(
                                                       onDoubleTap: () {},
                                                       child: Slider(
-                                                      value: _volume.clamp(
-                                                        0,
-                                                        100,
-                                                      ),
-                                                      max: 100,
-                                                      onChanged: _setVolume,
+                                                        value: _volume.clamp(
+                                                          0,
+                                                          100,
+                                                        ),
+                                                        max: 100,
+                                                        onChanged: _setVolume,
                                                       ),
                                                     ),
                                                   ),
@@ -5104,10 +5116,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                       child: GestureDetector(
                         onDoubleTap: () {},
                         child: FilledButton.icon(
-                        key: const Key('next-episode-overlay'),
-                        onPressed: _playNextEpisode,
-                        icon: const Icon(Icons.skip_next_rounded),
-                        label: Text('قسمت بعدی: ${_nextEpisode!.name}'),
+                          key: const Key('next-episode-overlay'),
+                          onPressed: _playNextEpisode,
+                          icon: const Icon(Icons.skip_next_rounded),
+                          label: Text('قسمت بعدی: ${_nextEpisode!.name}'),
                         ),
                       ),
                     ),
@@ -5320,14 +5332,12 @@ class _PlayerToolControl extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.badge,
     this.compact = false,
     this.compactLabel,
   });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final String? badge;
   final bool compact;
   final String? compactLabel;
   @override
@@ -5349,17 +5359,7 @@ class _PlayerToolControl extends StatelessWidget {
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 21, color: AnimeColors.orange),
-            if (badge != null) ...[
-              const SizedBox(width: 5),
-              Text(
-                badge!,
-                textDirection: TextDirection.ltr,
-                style: const TextStyle(fontSize: 10, color: Colors.white70),
-              ),
-            ],
-          ],
+          children: [Icon(icon, size: 21, color: AnimeColors.orange)],
         ),
         if (!compact || compactLabel != null) ...[
           const SizedBox(height: 2),
@@ -5640,103 +5640,10 @@ class _EmptyTrackState extends StatelessWidget {
   );
 }
 
-class _SpeedPicker extends StatefulWidget {
-  const _SpeedPicker({required this.initial});
-  final double initial;
-
-  @override
-  State<_SpeedPicker> createState() => _SpeedPickerState();
-}
-
-class _SpeedPickerState extends State<_SpeedPicker> {
-  late double value = widget.initial;
-
-  String get label => value == 1
-      ? 'سرعت عادی'
-      : '${value.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '')}×';
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    top: false,
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.speed_rounded, color: AnimeColors.orange),
-              const SizedBox(width: 10),
-              Text('سرعت پخش', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
-              Text(
-                label,
-                textDirection: TextDirection.ltr,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: AnimeColors.orange,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              _StepButton(
-                icon: Icons.remove_rounded,
-                onTap: () => setState(
-                  () => value = (value - .05).clamp(.5, 2).toDouble(),
-                ),
-              ),
-              Expanded(
-                child: Slider(
-                  value: value.clamp(.5, 2),
-                  min: .5,
-                  max: 2,
-                  divisions: 30,
-                  label: label,
-                  onChanged: (next) => setState(() => value = next),
-                ),
-              ),
-              _StepButton(
-                icon: Icons.add_rounded,
-                onTap: () => setState(
-                  () => value = (value + .05).clamp(.5, 2).toDouble(),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [.5, .75, 1.0, 1.25, 1.5, 1.75, 2.0]
-                .map(
-                  (speed) => ChoiceChip(
-                    label: Text(speed == 1 ? 'عادی' : '$speed×'),
-                    selected: (value - speed).abs() < .01,
-                    onSelected: (_) => setState(() => value = speed),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, value),
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('اعمال سرعت'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class _SubtitleTiming extends StatefulWidget {
-  const _SubtitleTiming({required this.initial});
+  const _SubtitleTiming({required this.initial, required this.initialRate});
   final SubtitlePreferences initial;
+  final double initialRate;
 
   @override
   State<_SubtitleTiming> createState() => _SubtitleTimingState();
@@ -5744,6 +5651,7 @@ class _SubtitleTiming extends StatefulWidget {
 
 class _SubtitleTimingState extends State<_SubtitleTiming> {
   late SubtitlePreferences value = widget.initial;
+  late double rate = widget.initialRate;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -5757,10 +5665,7 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
             children: [
               const Icon(Icons.sync_alt_rounded, color: AnimeColors.orange),
               const SizedBox(width: 10),
-              Text(
-                'هماهنگ‌سازی زیرنویس',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('تنظیم سرعت', style: Theme.of(context).textTheme.titleLarge),
             ],
           ),
           const SizedBox(height: 8),
@@ -5769,6 +5674,22 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
             style: TextStyle(color: Colors.white60, fontSize: 12),
           ),
           const SizedBox(height: 16),
+          _TimingCard(
+            icon: Icons.speed_rounded,
+            title: 'سرعت ویدیو',
+            description: 'سرعت پخش تصویر و صدا.',
+            valueLabel: '${rate.toStringAsFixed(2)}×',
+            min: .5,
+            max: 2,
+            divisions: 30,
+            value: rate.clamp(.5, 2),
+            onChanged: (next) => setState(() => rate = next),
+            onMinus: () =>
+                setState(() => rate = (rate - .05).clamp(.5, 2).toDouble()),
+            onPlus: () =>
+                setState(() => rate = (rate + .05).clamp(.5, 2).toDouble()),
+          ),
+          const SizedBox(height: 12),
           _TimingCard(
             icon: Icons.swap_horiz_rounded,
             title: 'جابه‌جایی زمان زیرنویس',
@@ -5821,9 +5742,10 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => setState(
-                    () => value = value.copyWith(delay: 0, timingScale: 1),
-                  ),
+                  onPressed: () => setState(() {
+                    rate = 1;
+                    value = value.copyWith(delay: 0, timingScale: 1);
+                  }),
                   icon: const Icon(Icons.restart_alt_rounded),
                   label: const Text('بازنشانی'),
                 ),
@@ -5832,9 +5754,9 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
               Expanded(
                 flex: 2,
                 child: FilledButton.icon(
-                  onPressed: () => Navigator.pop(context, value),
+                  onPressed: () => Navigator.pop(context, (value, rate)),
                   icon: const Icon(Icons.check_rounded),
-                  label: const Text('اعمال تنظیم زمان'),
+                  label: const Text('اعمال سرعت'),
                 ),
               ),
             ],
@@ -5963,16 +5885,16 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(title),
-      const SizedBox(height: 8),
+      const SizedBox(height: 5),
       Wrap(
-        spacing: 10,
+        spacing: 7,
         children: [
           for (final color in colors)
             InkWell(
               onTap: () => change(update(color)),
               borderRadius: BorderRadius.circular(30),
               child: CircleAvatar(
-                radius: 18,
+                radius: 15,
                 backgroundColor: color,
                 child: selected == color
                     ? Icon(
@@ -5992,33 +5914,58 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
   @override
   Widget build(BuildContext context) {
     final first = <Widget>[
-      DropdownButtonFormField<String>(
-        initialValue: value.fontFamily,
-        decoration: const InputDecoration(labelText: 'فونت فارسی'),
-        items: const [
-          DropdownMenuItem(value: 'Vazirmatn', child: Text('وزیرمتن')),
-          DropdownMenuItem(
-            value: 'NotoSansArabic',
-            child: Text('نوتو سنس فارسی'),
+      Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              initialValue: value.fontFamily,
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: 'فونت فارسی',
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'Vazirmatn', child: Text('وزیرمتن')),
+                DropdownMenuItem(
+                  value: 'NotoSansArabic',
+                  child: Text('نوتو سنس فارسی'),
+                ),
+                DropdownMenuItem(
+                  value: 'NotoNaskhArabic',
+                  child: Text('نوتو نسخ فارسی'),
+                ),
+                DropdownMenuItem(value: 'MarkaziText', child: Text('مرکزی')),
+                DropdownMenuItem(value: 'sans-serif', child: Text('ساده')),
+                DropdownMenuItem(value: 'serif', child: Text('نسخ / سریف')),
+              ],
+              onChanged: (font) {
+                if (font != null) change(value.copyWith(fontFamily: font));
+              },
+            ),
           ),
-          DropdownMenuItem(
-            value: 'NotoNaskhArabic',
-            child: Text('نوتو نسخ فارسی'),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 98,
+            child: DropdownButtonFormField<double>(
+              initialValue: value.size.clamp(10, 52).roundToDouble(),
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: 'اندازه',
+                isDense: true,
+              ),
+              items: [
+                for (var size = 10; size <= 52; size++)
+                  DropdownMenuItem(
+                    value: size.toDouble(),
+                    child: Text('$size'),
+                  ),
+              ],
+              onChanged: (size) {
+                if (size != null) change(value.copyWith(size: size));
+              },
+            ),
           ),
-          DropdownMenuItem(value: 'MarkaziText', child: Text('مرکزی')),
-          DropdownMenuItem(value: 'sans-serif', child: Text('ساده')),
-          DropdownMenuItem(value: 'serif', child: Text('نسخ / سریف')),
         ],
-        onChanged: (font) {
-          if (font != null) change(value.copyWith(fontFamily: font));
-        },
-      ),
-      _SettingSlider(
-        label: 'اندازه',
-        value: value.size,
-        min: 18,
-        max: 52,
-        onChanged: (v) => change(value.copyWith(size: v)),
       ),
       _SettingSlider(
         label: 'فاصله خطوط',
@@ -6084,12 +6031,16 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
       ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
+        dense: true,
+        visualDensity: VisualDensity.compact,
         title: const Text('متن ضخیم'),
         value: value.bold,
         onChanged: (v) => change(value.copyWith(bold: v)),
       ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
+        dense: true,
+        visualDensity: VisualDensity.compact,
         title: const Text('سایه و حاشیه برای خوانایی'),
         value: value.shadow,
         onChanged: (v) => change(value.copyWith(shadow: v)),
@@ -6097,13 +6048,13 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
     ];
     Widget pane(List<Widget> children) => Expanded(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(children: children),
       ),
     );
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
         child: Column(
           children: [
             Row(
@@ -6436,14 +6387,14 @@ class _SettingSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 12),
+    padding: const EdgeInsets.only(top: 6),
     child: DecoratedBox(
       decoration: BoxDecoration(
         color: AnimeColors.surfaceHigh,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 5),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 2),
         child: Column(
           children: [
             Row(
@@ -6476,11 +6427,14 @@ class _SettingSlider extends StatelessWidget {
                 ),
               ],
             ),
-            Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              onChanged: onChanged,
+            SizedBox(
+              height: 30,
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
             ),
           ],
         ),

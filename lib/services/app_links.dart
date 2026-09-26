@@ -33,7 +33,8 @@ const siblingMovie = SiblingApp(
       'اپ MBNMovie برای تماشای فیلم و سریال ایرانی و خارجی (دوبله و زیرنویس فارسی) روی این دستگاه نصب نیست. از صفحه انتشار گیت‌هاب دانلود و نصب کن.',
   androidPackage: 'com.mbn.movie',
   windowsExe: 'mbnmovie.exe',
-  githubReleasesUrl: 'https://github.com/MBNpro-ir/MBNMovie-App/releases/latest',
+  githubReleasesUrl:
+      'https://github.com/MBNpro-ir/MBNMovie-App/releases/latest',
 );
 
 /// Cross-app handoff between the portable/desktop and Android builds.
@@ -41,8 +42,7 @@ const siblingMovie = SiblingApp(
 /// HKCU\Software\MBN\Apps\<id> (via reg.exe, no extra dependency) so the
 /// sibling build can be found wherever the user extracted it.
 abstract final class AppLinks {
-  static String registryKey(String appId) =>
-      r'HKCU\Software\MBN\Apps\' + appId;
+  static String registryKey(String appId) => r'HKCU\Software\MBN\Apps\' + appId;
 
   /// Parses `reg query` output for a REG_SZ value.
   @visibleForTesting
@@ -67,12 +67,26 @@ abstract final class AppLinks {
     try {
       final dir = p.dirname(Platform.resolvedExecutable);
       await Process.run('reg', [
-        'add', registryKey(appId), '/v', 'InstallDir',
-        '/t', 'REG_SZ', '/d', dir, '/f',
+        'add',
+        registryKey(appId),
+        '/v',
+        'InstallDir',
+        '/t',
+        'REG_SZ',
+        '/d',
+        dir,
+        '/f',
       ]);
       await Process.run('reg', [
-        'add', registryKey(appId), '/v', 'Exe',
-        '/t', 'REG_SZ', '/d', exeName, '/f',
+        'add',
+        registryKey(appId),
+        '/v',
+        'Exe',
+        '/t',
+        'REG_SZ',
+        '/d',
+        exeName,
+        '/f',
       ]);
     } catch (_) {}
   }
@@ -81,20 +95,81 @@ abstract final class AppLinks {
   static Future<String?> findSiblingExe(SiblingApp sibling) async {
     if (!Platform.isWindows) return null;
     try {
-      final result = await Process.run(
-        'reg',
-        ['query', registryKey(sibling.id), '/v', 'InstallDir'],
-      );
-      if (result.exitCode != 0) return null;
-      final dir = parseRegQueryValue(
-        result.stdout.toString(),
+      final result = await Process.run('reg', [
+        'query',
+        registryKey(sibling.id),
+        '/v',
         'InstallDir',
-      );
+      ]);
+      if (result.exitCode != 0) return null;
+      final dir = parseRegQueryValue(result.stdout.toString(), 'InstallDir');
       if (dir == null || dir.isEmpty) return null;
       final exe = File(p.join(dir, sibling.windowsExe));
       if (await exe.exists()) return exe.path;
     } catch (_) {}
     return null;
+  }
+
+  static Future<bool> isSiblingAvailable(SiblingApp sibling) async {
+    if (Platform.isAndroid) {
+      return DeviceBridge.isAppInstalled(sibling.androidPackage);
+    }
+    return Platform.isWindows && await findSiblingExe(sibling) != null;
+  }
+
+  static Future<bool> launchHandoff(SiblingApp sibling, String message) async {
+    if (Platform.isAndroid) {
+      return DeviceBridge.openApp(sibling.androidPackage, handoff: message);
+    }
+    if (!Platform.isWindows) return false;
+    final exe = await findSiblingExe(sibling);
+    if (exe == null) return false;
+    try {
+      final queued = await Process.run('reg', [
+        'add',
+        registryKey(sibling.id),
+        '/v',
+        'HandoffRequest',
+        '/t',
+        'REG_SZ',
+        '/d',
+        message,
+        '/f',
+      ]);
+      if (queued.exitCode != 0) return false;
+      await Process.start(exe, const [], mode: ProcessStartMode.detached);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> takeHandoff(String appId) async {
+    if (Platform.isAndroid) return DeviceBridge.takeHandoff();
+    if (!Platform.isWindows) return null;
+    try {
+      final result = await Process.run('reg', [
+        'query',
+        registryKey(appId),
+        '/v',
+        'HandoffRequest',
+      ]);
+      if (result.exitCode != 0) return null;
+      final message = parseRegQueryValue(
+        result.stdout.toString(),
+        'HandoffRequest',
+      );
+      await Process.run('reg', [
+        'delete',
+        registryKey(appId),
+        '/v',
+        'HandoffRequest',
+        '/f',
+      ]);
+      return message;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Opens the sibling app and closes this one; otherwise shows the promo
@@ -131,27 +206,26 @@ abstract final class AppLinks {
   static Future<void> showSiblingPromo(
     BuildContext context,
     SiblingApp sibling,
-  ) =>
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(sibling.name),
-          content: Text(sibling.tagline),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('بستن'),
-            ),
-            FilledButton(
-              onPressed: () {
-                launchUrl(
-                  Uri.parse(sibling.githubReleasesUrl),
-                  mode: LaunchMode.externalApplication,
-                );
-              },
-              child: const Text('دانلود از گیت‌هاب'),
-            ),
-          ],
+  ) => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(sibling.name),
+      content: Text(sibling.tagline),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('بستن'),
         ),
-      );
+        FilledButton(
+          onPressed: () {
+            launchUrl(
+              Uri.parse(sibling.githubReleasesUrl),
+              mode: LaunchMode.externalApplication,
+            );
+          },
+          child: const Text('دانلود از گیت‌هاب'),
+        ),
+      ],
+    ),
+  );
 }

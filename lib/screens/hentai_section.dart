@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/episode_catalog.dart';
 import '../core/platform_ui.dart';
+import '../core/search_direction.dart';
 import '../core/theme.dart';
 import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
@@ -19,7 +20,8 @@ import '../widgets/hentai_image.dart';
 import '../widgets/pressable.dart';
 import 'detail_screen.dart' show askAndResumeLastWatch;
 
-typedef HentaiOpenContent = Future<void> Function(AnimeContent item, String tag);
+typedef HentaiOpenContent =
+    Future<void> Function(AnimeContent item, String tag);
 
 class HentaiSectionPage extends StatefulWidget {
   const HentaiSectionPage({
@@ -156,16 +158,66 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                child: SizedBox(height: 54, child: Stack(alignment: Alignment.center, children: [
-                  Row(children: [
-                    Builder(builder: (context) => IconButton(tooltip: 'منوی هنتای', onPressed: () => Scaffold.of(context).openDrawer(), icon: const Icon(Icons.menu_rounded, size: 30))),
-                    const Spacer(),
-                    IconButton(tooltip: 'علاقه‌مندی‌های +۱۸', onPressed: widget.onOpenHentaiFavorites, icon: Badge(isLabelVisible: widget.hentaiFavorites.isNotEmpty, label: Text('${widget.hentaiFavorites.length}'), child: const Icon(Icons.favorite_rounded, size: 28))),
-                    IconButton(tooltip: 'بازدیدشده‌های +۱۸', onPressed: widget.onOpenHentaiHistory, icon: Badge(isLabelVisible: widget.hentaiHistory.isNotEmpty, label: Text('${widget.hentaiHistory.length}'), child: const Icon(Icons.history_rounded, size: 28))),
-                    IconButton(tooltip: 'جستجوی +۱۸', onPressed: _openSearch, icon: const Icon(Icons.search_rounded, size: 30)),
-                  ]),
-                  const IgnorePointer(child: BrandMark(size: 42, gradientColors: [Color(0xFFEF4444), AnimeColors.coral], accent: Color(0xFFEF4444))),
-                ])),
+                child: SizedBox(
+                  height: 54,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Row(
+                        children: [
+                          Builder(
+                            builder: (context) => IconButton(
+                              tooltip: 'منوی هنتای',
+                              onPressed: () =>
+                                  Scaffold.of(context).openDrawer(),
+                              icon: const Icon(Icons.menu_rounded, size: 30),
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'علاقه‌مندی‌های +۱۸',
+                            onPressed: widget.onOpenHentaiFavorites,
+                            icon: Badge(
+                              isLabelVisible: widget.hentaiFavorites.isNotEmpty,
+                              label: Text('${widget.hentaiFavorites.length}'),
+                              child: const Icon(
+                                Icons.favorite_rounded,
+                                size: 28,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'بازدیدشده‌های +۱۸',
+                            onPressed: widget.onOpenHentaiHistory,
+                            icon: Badge(
+                              isLabelVisible: widget.hentaiHistory.isNotEmpty,
+                              label: Text('${widget.hentaiHistory.length}'),
+                              child: const Icon(
+                                Icons.history_rounded,
+                                size: 28,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'جستجوی +۱۸',
+                            onPressed: _openSearch,
+                            icon: const Icon(Icons.search_rounded, size: 30),
+                          ),
+                        ],
+                      ),
+                      const IgnorePointer(
+                        child: BrandMark(
+                          size: 42,
+                          gradientColors: [
+                            Color(0xFFEF4444),
+                            AnimeColors.coral,
+                          ],
+                          accent: Color(0xFFEF4444),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               Expanded(
                 child: PageView(
@@ -253,9 +305,9 @@ class _HentaiBottomNav extends StatelessWidget {
                         boxShadow: selected
                             ? [
                                 BoxShadow(
-                                  color: const Color(0xFFEF4444).withValues(
-                                    alpha: .28,
-                                  ),
+                                  color: const Color(
+                                    0xFFEF4444,
+                                  ).withValues(alpha: .28),
                                   blurRadius: 14,
                                 ),
                               ]
@@ -503,7 +555,9 @@ class _HentaiSectionDrawer extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 4),
               child: ListTile(
                 selected: i == selected,
-                selectedTileColor: const Color(0xFFEF4444).withValues(alpha: .14),
+                selectedTileColor: const Color(
+                  0xFFEF4444,
+                ).withValues(alpha: .14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
@@ -591,7 +645,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
     Navigator.push<void>(
       context,
       slideUpRoute(
-        _HentaiHtmlListPage(title: title, loader: loader, onOpen: widget.onOpen),
+        _HentaiHtmlListPage(
+          title: title,
+          loader: loader,
+          onOpen: widget.onOpen,
+        ),
       ),
     );
   }
@@ -623,10 +681,7 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
           );
         }
         if (snapshot.hasError || snapshot.data == null) {
-          return _HentaiError(
-            error: snapshot.error,
-            retry: _reload,
-          );
+          return _HentaiError(error: snapshot.error, retry: _reload);
         }
         final home = snapshot.data!;
         return CustomScrollView(
@@ -665,11 +720,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-              child: _HentaiPosterRow(
-                items: home.popular,
-                heroPrefix: 'hhome-popular-',
-                onOpen: _openItem,
-              ),
+                child: _HentaiPosterRow(
+                  items: home.popular,
+                  heroPrefix: 'hhome-popular-',
+                  onOpen: _openItem,
+                ),
               ),
             ],
             if (home.newestByYear.isNotEmpty) ...[
@@ -683,11 +738,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-              child: _HentaiPosterRow(
-                items: home.newestByYear,
-                heroPrefix: 'hhome-year-',
-                onOpen: _openItem,
-              ),
+                child: _HentaiPosterRow(
+                  items: home.newestByYear,
+                  heroPrefix: 'hhome-year-',
+                  onOpen: _openItem,
+                ),
               ),
             ],
             if (home.random.isNotEmpty) ...[
@@ -701,11 +756,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-              child: _HentaiPosterRow(
-                items: home.random,
-                heroPrefix: 'hhome-random-',
-                onOpen: _openItem,
-              ),
+                child: _HentaiPosterRow(
+                  items: home.random,
+                  heroPrefix: 'hhome-random-',
+                  onOpen: _openItem,
+                ),
               ),
             ],
             for (final section in home.genreSections) ...[
@@ -716,11 +771,11 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
                 ),
               ),
               SliverToBoxAdapter(
-              child: _HentaiPosterRow(
-                items: section.items,
-                heroPrefix: 'hhome-${section.id}-',
-                onOpen: _openItem,
-              ),
+                child: _HentaiPosterRow(
+                  items: section.items,
+                  heroPrefix: 'hhome-${section.id}-',
+                  onOpen: _openItem,
+                ),
               ),
             ],
             SliverToBoxAdapter(child: SizedBox(height: bottomListGap)),
@@ -1002,35 +1057,38 @@ class _HentaiArchiveTabState extends State<_HentaiArchiveTab> {
     children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-        child: SearchBar(
-          controller: _search,
-          hintText: 'جست‌وجو در آرشیو انیمه‌ها…',
-          leading: const Icon(Icons.search_rounded),
-          trailing: [
-            if (_search.text.isNotEmpty)
+        child: Directionality(
+          textDirection: searchTextDirection(_search.text),
+          child: SearchBar(
+            controller: _search,
+            hintText: 'جست‌وجو در آرشیو انیمه‌ها…',
+            leading: const Icon(Icons.search_rounded),
+            trailing: [
+              if (_search.text.isNotEmpty)
+                IconButton(
+                  tooltip: 'پاک کردن',
+                  onPressed: () {
+                    _search.clear();
+                    _load(reset: true);
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                ),
               IconButton(
-                tooltip: 'پاک کردن',
-                onPressed: () {
-                  _search.clear();
-                  _load(reset: true);
-                },
-                icon: const Icon(Icons.close_rounded),
+                tooltip: 'فیلترها و مرتب‌سازی',
+                onPressed: _openFilters,
+                icon: Badge(
+                  isLabelVisible: _filter.activeCount > 0,
+                  label: Text('${_filter.activeCount}'),
+                  child: const Icon(Icons.tune_rounded),
+                ),
               ),
-            IconButton(
-              tooltip: 'فیلترها و مرتب‌سازی',
-              onPressed: _openFilters,
-              icon: Badge(
-                isLabelVisible: _filter.activeCount > 0,
-                label: Text('${_filter.activeCount}'),
-                child: const Icon(Icons.tune_rounded),
-              ),
-            ),
-          ],
-          onChanged: (value) {
-            setState(() {});
-            _onSearchChanged(value);
-          },
-          onSubmitted: (_) => _load(reset: true),
+            ],
+            onChanged: (value) {
+              setState(() {});
+              _onSearchChanged(value);
+            },
+            onSubmitted: (_) => _load(reset: true),
+          ),
         ),
       ),
       SizedBox(
@@ -1067,7 +1125,9 @@ class _HentaiArchiveTabState extends State<_HentaiArchiveTab> {
           ),
         )
       else if (_error != null && _items.isEmpty)
-        Expanded(child: _HentaiError(error: _error, retry: () => _load(reset: true)))
+        Expanded(
+          child: _HentaiError(error: _error, retry: () => _load(reset: true)),
+        )
       else if (_items.isEmpty)
         const Expanded(
           child: _HentaiEmpty(
@@ -1178,18 +1238,13 @@ class _HentaiFilterSheetState extends State<_HentaiFilterSheet> {
               ),
             ),
             TextButton(
-              onPressed: () => setState(
-                () => _filter = const HentaiFilter(),
-              ),
+              onPressed: () => setState(() => _filter = const HentaiFilter()),
               child: const Text('پاکسازی همه'),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        const Text(
-          'مرتب‌سازی',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+        const Text('مرتب‌سازی', style: TextStyle(fontWeight: FontWeight.w800)),
         Wrap(
           spacing: 8,
           children: [
@@ -1314,42 +1369,41 @@ class _HentaiFilterSheetState extends State<_HentaiFilterSheet> {
     required String taxonomy,
     required String? selectedId,
     required ValueChanged<String?> onSelected,
-  }) =>
-      ExpansionTile(
-        title: Text(title),
-        children: [
-          FutureBuilder<List<HentaiTerm>>(
-            future: widget.api.terms(taxonomy),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final terms = snapshot.data ?? const <HentaiTerm>[];
-              return Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  ChoiceChip(
-                    label: const Text('همه'),
-                    selected: selectedId == null,
-                    onSelected: (_) => onSelected(null),
-                  ),
-                  for (final term in terms.take(60))
-                    ChoiceChip(
-                      label: Text('${term.name} (${term.count})'),
-                      selected: selectedId == term.id,
-                      onSelected: (_) => onSelected(term.id),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-        ],
-      );
+  }) => ExpansionTile(
+    title: Text(title),
+    children: [
+      FutureBuilder<List<HentaiTerm>>(
+        future: widget.api.terms(taxonomy),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final terms = snapshot.data ?? const <HentaiTerm>[];
+          return Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              ChoiceChip(
+                label: const Text('همه'),
+                selected: selectedId == null,
+                onSelected: (_) => onSelected(null),
+              ),
+              for (final term in terms.take(60))
+                ChoiceChip(
+                  label: Text('${term.name} (${term.count})'),
+                  selected: selectedId == term.id,
+                  onSelected: (_) => onSelected(term.id),
+                ),
+            ],
+          );
+        },
+      ),
+      const SizedBox(height: 10),
+    ],
+  );
 }
 
 // ------------------------------------------------------------- term grids
@@ -1398,6 +1452,7 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
         child: TextField(
           controller: _search,
+          textDirection: searchTextDirection(_search.text),
           onChanged: (v) => setState(() => _query = v.trim()),
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search),
@@ -1423,16 +1478,12 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
                 );
               }
               if (snapshot.hasError) {
-                return _HentaiError(
-                  error: snapshot.error,
-                  retry: _reload,
-                );
+                return _HentaiError(error: snapshot.error, retry: _reload);
               }
-              final terms =
-                  (snapshot.data ?? const <HentaiTerm>[]).where((t) {
-                    if (_query.isEmpty) return true;
-                    return t.name.contains(_query);
-                  }).toList();
+              final terms = (snapshot.data ?? const <HentaiTerm>[]).where((t) {
+                if (_query.isEmpty) return true;
+                return t.name.contains(_query);
+              }).toList();
               if (terms.isEmpty) {
                 return const _HentaiEmpty(
                   icon: Icons.category_outlined,
@@ -1452,8 +1503,7 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
                 itemCount: terms.length,
                 itemBuilder: (_, i) {
                   final term = terms[i];
-                  final accent =
-                      _termAccents[i % _termAccents.length];
+                  final accent = _termAccents[i % _termAccents.length];
                   return Pressable(
                     onTap: () => Navigator.push<void>(
                       context,
@@ -1545,8 +1595,7 @@ class _HentaiTermResultsPage extends StatefulWidget {
   final HentaiOpenContent onOpen;
 
   @override
-  State<_HentaiTermResultsPage> createState() =>
-      _HentaiTermResultsPageState();
+  State<_HentaiTermResultsPage> createState() => _HentaiTermResultsPageState();
 }
 
 class _HentaiTermResultsPageState extends State<_HentaiTermResultsPage> {
@@ -1789,26 +1838,29 @@ class HentaiSearchPageState extends State<HentaiSearchPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: SearchBar(
-              controller: _controller,
-              autoFocus: widget.initialQuery.trim().isEmpty,
-              hintText: 'نام انیمه را بنویس… (حداقل ۲ حرف)',
-              leading: const Icon(Icons.search_rounded),
-              trailing: [
-                if (_controller.text.isNotEmpty)
-                  IconButton(
-                    onPressed: () {
-                      _controller.clear();
-                      setState(() => _results = []);
-                    },
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-              ],
-              onChanged: (v) {
-                setState(() {});
-                _changed(v);
-              },
-              onSubmitted: (_) => _search(),
+            child: Directionality(
+              textDirection: searchTextDirection(_controller.text),
+              child: SearchBar(
+                controller: _controller,
+                autoFocus: widget.initialQuery.trim().isEmpty,
+                hintText: 'نام انیمه را بنویس… (حداقل ۲ حرف)',
+                leading: const Icon(Icons.search_rounded),
+                trailing: [
+                  if (_controller.text.isNotEmpty)
+                    IconButton(
+                      onPressed: () {
+                        _controller.clear();
+                        setState(() => _results = []);
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                ],
+                onChanged: (v) {
+                  setState(() {});
+                  _changed(v);
+                },
+                onSubmitted: (_) => _search(),
+              ),
             ),
           ),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
@@ -1930,7 +1982,9 @@ class _HentaiBlogTabState extends State<_HentaiBlogTab> {
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
         child: TextField(
           controller: _search,
+          textDirection: searchTextDirection(_search.text),
           onChanged: (v) {
+            setState(() {});
             _debounce?.cancel();
             _debounce = Timer(
               const Duration(milliseconds: 500),
@@ -1998,18 +2052,15 @@ class _HentaiBlogTabState extends State<_HentaiBlogTab> {
                                   width: 110,
                                   height: 120,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const SizedBox(
-                                    width: 110,
-                                    height: 120,
-                                  ),
+                                  errorBuilder: (_, _, _) =>
+                                      const SizedBox(width: 110, height: 120),
                                 ),
                               ),
                             Expanded(
                               child: Padding(
                                 padding: const EdgeInsets.all(14),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       post.title,
@@ -2077,9 +2128,9 @@ class _HentaiPostPage extends StatelessWidget {
         children: [
           Text(
             post.title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
           if (post.imageUrl != null)
@@ -2217,9 +2268,7 @@ class _HentaiFeaturedState extends State<_HentaiFeatured> {
                                     if (item.studio.isNotEmpty) item.studio,
                                     '+۱۸',
                                   ].join(' · '),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                  ),
+                                  style: const TextStyle(color: Colors.white70),
                                 ),
                               ],
                             ),
@@ -2257,9 +2306,7 @@ class _HentaiFeaturedState extends State<_HentaiFeatured> {
               height: 7,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
-                color: i == _page
-                    ? const Color(0xFFEF4444)
-                    : Colors.white24,
+                color: i == _page ? const Color(0xFFEF4444) : Colors.white24,
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
@@ -2344,4 +2391,3 @@ class _HentaiEmpty extends StatelessWidget {
     ),
   );
 }
-

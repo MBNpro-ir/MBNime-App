@@ -54,10 +54,10 @@ Future<void> main() async {
       ),
     );
   }
+  UpdatePresentation.start();
   runApp(const MbnimeApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     AppLinks.registerThisApp(appId: 'MBNime', exeName: 'mbnime.exe');
-    UpdatePresentation.start();
     DownloadManager.instance.initialize().catchError((Object error) {
       DownloadManager.instance.error = 'راه‌اندازی دانلودها انجام نشد.';
     });

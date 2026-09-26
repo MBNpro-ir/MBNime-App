@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/player_preferences.dart';
 import '../core/theme.dart';
 import '../services/device_bridge.dart';
+import '../services/mbn_sync.dart';
 import '../services/external_apps.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -147,6 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await prefs.remove('player_screen_brightness');
       if (Platform.isAndroid) await DeviceBridge.setScreenBrightness(null);
     }
+    await MbnSync.instance.pushPreferences();
   }
 
   Future<void> _saveSubtitle(SubtitlePreferences value) async {
@@ -167,19 +169,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _defaultStreamer = PlaybackPreferenceStore.askEveryTime;
       _subtitle = subtitle;
     });
-    await Future.wait([
-      prefs.setDouble('player_volume', 100),
-      prefs.setDouble('player_rate', 1),
-      prefs.setBool('player_fit_cover', false),
-      prefs.remove('player_screen_brightness'),
-      PlaybackPreferenceStore.setDefaultPlayer(
-        PlaybackPreferenceStore.askEveryTime,
-      ),
-      PlaybackPreferenceStore.setDefaultStreamer(
-        PlaybackPreferenceStore.askEveryTime,
-      ),
-      subtitle.save(prefs),
-    ]);
+    await prefs.setDouble('player_volume', 100);
+    await prefs.setDouble('player_rate', 1);
+    await prefs.setBool('player_fit_cover', false);
+    await prefs.remove('player_screen_brightness');
+    await prefs.setString(
+      PlaybackPreferenceStore.defaultPlayerKey,
+      PlaybackPreferenceStore.askEveryTime,
+    );
+    await prefs.setString(
+      PlaybackPreferenceStore.defaultStreamerKey,
+      PlaybackPreferenceStore.askEveryTime,
+    );
+    await subtitle.save(prefs);
     if (Platform.isAndroid) await DeviceBridge.setScreenBrightness(null);
   }
 
@@ -393,7 +395,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _slider(
                               label: 'اندازه متن',
                               value: _subtitle.size,
-                              min: 18,
+                              min: 10,
                               max: 52,
                               suffix: _subtitle.size.round().toString(),
                               onChanged: (value) => _saveSubtitle(

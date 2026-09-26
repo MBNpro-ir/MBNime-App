@@ -9,6 +9,7 @@ import '../core/country_flags.dart';
 import '../core/episode_catalog.dart';
 import '../core/library_store.dart';
 import '../core/platform_ui.dart';
+import '../core/search_direction.dart';
 import '../core/theme.dart';
 import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
@@ -689,7 +690,6 @@ class _TopBar extends StatelessWidget {
                 onPressed: Scaffold.of(context).openDrawer,
                 icon: const Icon(Icons.menu_rounded, size: 30),
               ),
-              _AnimatedSwitchButton(onPressed: switchApp),
               const Spacer(),
               IconButton(
                 tooltip: 'علاقه‌مندی‌ها',
@@ -706,9 +706,24 @@ class _TopBar extends StatelessWidget {
                 onPressed: search,
                 icon: const Icon(Icons.search_rounded, size: 30),
               ),
+              _AnimatedSwitchButton(onPressed: switchApp),
             ],
           ),
-          const IgnorePointer(child: BrandMark(size: 42)),
+          IgnorePointer(
+            child: Align(
+              alignment: MediaQuery.sizeOf(context).width < 600
+                  ? Alignment.centerRight
+                  : Alignment.center,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: MediaQuery.sizeOf(context).width < 600 ? 66 : 0,
+                ),
+                child: BrandMark(
+                  size: MediaQuery.sizeOf(context).width < 600 ? 34 : 42,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),
@@ -726,7 +741,7 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 850),
+    duration: const Duration(milliseconds: 1400),
   )..forward();
 
   @override
@@ -736,12 +751,42 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
   }
 
   @override
-  Widget build(BuildContext context) => RotationTransition(
-    turns: _controller,
-    child: IconButton(
-      tooltip: 'رفتن به MBNMovie',
-      onPressed: widget.onPressed,
-      icon: const Icon(Icons.swap_horiz_rounded, color: AnimeColors.orange),
+  Widget build(BuildContext context) => Tooltip(
+    message: 'رفتن به MBNMovie',
+    child: AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final pulse = Curves.easeInOut.transform(_controller.value);
+        return Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF557BFF), Color(0xFF43C9CA)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(
+                  0xFF557BFF,
+                ).withValues(alpha: .25 + .3 * pulse),
+                blurRadius: 10 + 8 * pulse,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Transform.scale(scale: 1 + .07 * pulse, child: child),
+        );
+      },
+      child: InkWell(
+        onTap: widget.onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: const Icon(
+          Icons.movie_filter_rounded,
+          color: Colors.white,
+          size: 24,
+        ),
+      ),
     ),
   );
 }
@@ -1735,20 +1780,23 @@ class _SearchPageState extends State<_SearchPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
-            child: SearchBar(
-              controller: controller,
-              autoFocus: true,
-              hintText: 'نام فیلم یا سریال را بنویس…',
-              leading: const Icon(Icons.search_rounded),
-              trailing: [
-                if (controller.text.isNotEmpty)
-                  IconButton(
-                    onPressed: clearSearch,
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-              ],
-              onChanged: changed,
-              onSubmitted: (_) => search(),
+            child: Directionality(
+              textDirection: searchTextDirection(controller.text),
+              child: SearchBar(
+                controller: controller,
+                autoFocus: true,
+                hintText: 'نام فیلم یا سریال را بنویس…',
+                leading: const Icon(Icons.search_rounded),
+                trailing: [
+                  if (controller.text.isNotEmpty)
+                    IconButton(
+                      onPressed: clearSearch,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                ],
+                onChanged: changed,
+                onSubmitted: (_) => search(),
+              ),
             ),
           ),
           SizedBox(

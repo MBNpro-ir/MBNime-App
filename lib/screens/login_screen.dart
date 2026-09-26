@@ -11,11 +11,13 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
     required this.onLogin,
+    this.onUseOtherApp,
     this.onRegister,
     this.allowRegister = false,
   });
 
   final Future<void> Function(String email, String password) onLogin;
+  final Future<void> Function()? onUseOtherApp;
 
   /// Kept for a future public signup; the UI stays hidden while
   /// [allowRegister] is false.
@@ -90,6 +92,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _useOtherApp() async {
+    if (_loading || widget.onUseOtherApp == null) return;
+    setState(() => _loading = true);
+    try {
+      await widget.onUseOtherApp!();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ورود مشترک آغاز نشد؛ دوباره تلاش کن.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _openTelegram() async {
     HapticFeedback.lightImpact();
     try {
@@ -147,7 +165,20 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 1.8,
                           ),
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 20),
+                        if (!registering && widget.onUseOtherApp != null) ...[
+                          OutlinedButton.icon(
+                            onPressed: _loading ? null : _useOtherApp,
+                            icon: const Icon(Icons.account_circle_outlined),
+                            label: const Text('ورود با حساب MBNMovie'),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'می‌توانی از حساب برنامهٔ دیگر استفاده کنی یا پایین با اطلاعات متفاوت وارد شوی.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                        const SizedBox(height: 20),
                         if (registering) ...[
                           TextFormField(
                             controller: _name,
@@ -170,10 +201,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: InputDecoration(
                             labelText: registering
                                 ? 'ایمیل'
-                                : 'ایمیل یا نام کاربری',
+                                : 'ایمیل، نام کاربری یا موبایل',
                             hintText: registering
                                 ? 'name@example.com'
-                                : 'ایمیل یا نام کاربری',
+                                : 'ایمیل، نام کاربری یا موبایل',
                             prefixIcon: Icon(Icons.alternate_email_rounded),
                           ),
                           validator: (value) {
@@ -184,11 +215,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             final validUsername = RegExp(
                               r'^[a-zA-Z][a-zA-Z0-9_]{2,31}$',
                             ).hasMatch(text);
+                            final validMobile = RegExp(r'^09\d{9}$')
+                                .hasMatch(text);
                             if (!validEmail &&
-                                (registering || !validUsername)) {
+                                (registering || (!validUsername && !validMobile))) {
                               return registering
                                   ? 'ایمیل معتبر وارد کن'
-                                  : 'ایمیل یا نام کاربری معتبر وارد کن';
+                                  : 'ایمیل، نام کاربری یا موبایل معتبر وارد کن';
                             }
                             return null;
                           },

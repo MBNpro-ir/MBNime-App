@@ -20,6 +20,7 @@ class SessionStore {
   final AnimeOnApi api;
   final MbnServerClient server;
   String? email;
+  int? userId;
   String? forcedLogoutMessage;
 
   bool get isLoggedIn => email != null && email!.isNotEmpty;
@@ -60,6 +61,7 @@ class SessionStore {
       }
       final me = await server.getJson('/api/me');
       final user = (me['user'] as Map?)?.cast<String, dynamic>() ?? {};
+      userId = (user['id'] as num?)?.toInt();
       final config = await server.getJson('/api/config');
       final key = config['animeon_api_key']?.toString() ?? '';
       if (key.isNotEmpty) api.apiKey = key;
@@ -125,6 +127,13 @@ class SessionStore {
       'password': password,
       'app': 'anime',
     });
+    await loginWithHandoff(data, fallbackIdentifier: email);
+  }
+
+  Future<void> loginWithHandoff(
+    Map<String, dynamic> data, {
+    required String fallbackIdentifier,
+  }) async {
     final token = data['token']?.toString() ?? '';
     if (token.isEmpty) {
       throw const MbnServerException('توکن ورود دریافت نشد.');
@@ -150,14 +159,15 @@ class SessionStore {
       if (key.isNotEmpty) api.apiKey = key;
     } catch (_) {}
     final user = (data['user'] as Map?)?.cast<String, dynamic>() ?? {};
+    userId = (user['id'] as num?)?.toInt();
     final accountEmail = user['email']?.toString() ?? '';
     final username = user['username']?.toString() ?? '';
-    this.email = accountEmail.isNotEmpty
+    email = accountEmail.isNotEmpty
         ? accountEmail
         : username.isNotEmpty
         ? username
-        : email.trim().toLowerCase();
-    await server.persistToken(this.email!);
+        : fallbackIdentifier.trim().toLowerCase();
+    await server.persistToken(email!);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_signedOutKey);
@@ -208,6 +218,7 @@ class SessionStore {
     }
     api.clearSession();
     email = null;
+    userId = null;
     if (failure != null) {
       final leftover = await server.readToken();
       if (leftover != null) {
