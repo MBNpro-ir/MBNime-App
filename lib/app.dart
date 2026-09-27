@@ -49,7 +49,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _accountTimer = Timer.periodic(
-      const Duration(seconds: 20),
+      const Duration(seconds: 6),
       (_) => _checkAccount(),
     );
     _syncTimer = Timer.periodic(
@@ -104,7 +104,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       }
     } on MbnServerException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
-        await _forceLogout('نشست شما پایان یافته است؛ دوباره وارد شوید.');
+        await _forceLogout(
+          error.message.isNotEmpty
+              ? error.message
+              : 'نشست شما پایان یافته است؛ دوباره وارد شوید.',
+        );
       }
     } catch (_) {
       // Connectivity errors keep the current session.

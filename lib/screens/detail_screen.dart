@@ -3235,7 +3235,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     final fitCover = prefs.getBool('player_fit_cover') ?? false;
     if (!mounted) return;
     setState(() {
-      _rate = rate.clamp(.5, 2.0);
+      _rate = rate.clamp(.5, 4.0);
       _volume = volume.clamp(0, 100);
       _fitCover = fitCover;
       if (_volume > 0) _lastVolume = _volume;
@@ -4367,7 +4367,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       case PlayerCommand.faster:
       case PlayerCommand.slower:
         final next = (_rate + (command == PlayerCommand.faster ? .1 : -.1))
-            .clamp(.5, 2.0);
+            .clamp(.5, 4.0);
         unawaited(_player.setRate(next));
         unawaited(_savePlayerPrefsWith(rate: next));
       case PlayerCommand.subtitles:
@@ -5680,14 +5680,14 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
             description: 'سرعت پخش تصویر و صدا.',
             valueLabel: '${rate.toStringAsFixed(2)}×',
             min: .5,
-            max: 2,
-            divisions: 30,
-            value: rate.clamp(.5, 2),
+            max: 4,
+            divisions: 70,
+            value: rate.clamp(.5, 4),
             onChanged: (next) => setState(() => rate = next),
             onMinus: () =>
-                setState(() => rate = (rate - .05).clamp(.5, 2).toDouble()),
+                setState(() => rate = (rate - .05).clamp(.5, 4).toDouble()),
             onPlus: () =>
-                setState(() => rate = (rate + .05).clamp(.5, 2).toDouble()),
+                setState(() => rate = (rate + .05).clamp(.5, 4).toDouble()),
           ),
           const SizedBox(height: 12),
           _TimingCard(

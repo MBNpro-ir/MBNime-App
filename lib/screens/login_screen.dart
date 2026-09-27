@@ -180,6 +180,37 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                         const SizedBox(height: 20),
                         if (registering) ...[
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AnimeColors.cyan.withValues(alpha: .12),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AnimeColors.cyan.withValues(alpha: .35),
+                              ),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline_rounded,
+                                  color: AnimeColors.cyan,
+                                  size: 22,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'وارد کردن شماره همراه کاملاً اختیاری است؛ می‌توانید بدون شماره و بدون دریافت پیامک، به عنوان کاربر مهمان ثبت‌نام کنید.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.6,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           TextFormField(
                             controller: _name,
                             decoration: const InputDecoration(
