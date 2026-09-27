@@ -1,5 +1,5 @@
+import 'services/cross_app_auth.dart';
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -203,17 +203,44 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   }
 
   Future<void> _beginHandoff() async {
-    final id = await AuthHandoff.create(
-      post: _session.server.postJson,
-      sourceApp: 'movie',
-      targetApp: 'anime',
-    );
-    final opened = await AppLinks.launchHandoff(siblingMovie, 'request:$id');
-    if (!opened) {
-      await AuthHandoff.clear(id);
-      throw StateError('برنامهٔ دیگر باز نشد.');
+    final token = await CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie');
+    if (token == null || token.isEmpty) {
+      appMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'حساب فعالی در برنامه MBNMovie یافت نشد. ابتدا در MBNMovie وارد شوید.',
+          ),
+        ),
+      );
+      return;
     }
-    exit(0);
+    try {
+      await _session.loginWithToken(token);
+      if (_session.userId != null) {
+        await MbnSync.instance.bindAccount(_session.userId!);
+      }
+      MbnSync.instance.configure(server: _session.server);
+      await MbnSync.instance.syncAll();
+      if (mounted) {
+        setState(() {});
+        final displayName = _session.email ?? '';
+        appMessengerKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Text(
+              displayName.isNotEmpty
+                  ? 'ورود با حساب MBNMovie ($displayName)'
+                  : 'ورود با حساب MBNMovie با موفقیت انجام شد.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      appMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text('ورود با حساب MBNMovie ناموفق بود؛ لطفاً دوباره تلاش کنید.'),
+        ),
+      );
+    }
   }
 
   Future<void> _checkHandoff() async {
@@ -283,7 +310,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       );
       if (status == null || status['state'] != 'approved') {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          appMessengerKey.currentState?.showSnackBar(
             const SnackBar(
               content: Text(
                 'حساب فعالی در برنامهٔ دیگر تأیید نشد؛ می‌توانی دستی وارد شوی.',
@@ -333,7 +360,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        appMessengerKey.currentState?.showSnackBar(
           const SnackBar(
             content: Text('ورود مشترک انجام نشد؛ دوباره تلاش کن.'),
           ),

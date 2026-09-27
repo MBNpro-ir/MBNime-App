@@ -97,10 +97,13 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       await widget.onUseOtherApp!();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
+        final message = e is MbnServerException && e.message.isNotEmpty
+            ? e.message
+            : 'ورود با حساب MBNMovie ناموفق بود؛ لطفاً دوباره تلاش کنید.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ورود مشترک آغاز نشد؛ دوباره تلاش کن.')),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {

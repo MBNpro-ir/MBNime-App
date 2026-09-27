@@ -1,3 +1,4 @@
+import 'cross_app_auth.dart';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -121,6 +122,7 @@ class MbnServerClient {
     try {
       if (token != null) {
         await _secureStorage.write(key: _tokenKey, value: token);
+        await CrossAppAuth.saveSharedToken(token: token!, email: email);
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_emailKey, email);
@@ -146,6 +148,7 @@ class MbnServerClient {
 
   Future<void> clearToken() async {
     token = null;
+    await CrossAppAuth.clearSharedToken();
     try {
       await _secureStorage.delete(key: _tokenKey);
       final prefs = await SharedPreferences.getInstance();

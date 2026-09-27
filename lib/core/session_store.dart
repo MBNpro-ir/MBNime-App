@@ -130,6 +130,36 @@ class SessionStore {
     await loginWithHandoff(data, fallbackIdentifier: email);
   }
 
+  Future<void> loginWithToken(String authToken) async {
+    final prevToken = server.token;
+    server.token = authToken;
+    try {
+      final userResp = await server.getJson('/api/me');
+      final user = (userResp['user'] as Map?)?.cast<String, dynamic>() ?? {};
+      userId = (user['id'] as num?)?.toInt();
+      final accountEmail = user['email']?.toString() ?? '';
+      final username = user['username']?.toString() ?? '';
+      email = accountEmail.isNotEmpty
+          ? accountEmail
+          : username.isNotEmpty
+          ? username
+          : 'کاربر';
+      await server.persistToken(email!);
+      try {
+        final config = await server.getJson('/api/config');
+        final key = config['animeon_api_key']?.toString() ?? '';
+        if (key.isNotEmpty) api.apiKey = key;
+      } catch (_) {}
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_signedOutKey);
+      } catch (_) {}
+    } catch (_) {
+      server.token = prevToken;
+      rethrow;
+    }
+  }
+
   Future<void> loginWithHandoff(
     Map<String, dynamic> data, {
     required String fallbackIdentifier,
