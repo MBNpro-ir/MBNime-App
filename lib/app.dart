@@ -20,6 +20,7 @@ import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
 import 'services/animeon_api.dart';
+import 'services/accessibility_service.dart';
 import 'screens/update_screen.dart';
 
 class MbnimeApp extends StatefulWidget {
@@ -380,96 +381,168 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: appNavigatorKey,
-      scaffoldMessengerKey: appMessengerKey,
-      debugShowCheckedModeBanner: false,
-      title: 'MBNime',
-      theme: isAndroidTv
-          ? AnimeTheme.dark.copyWith(
-              visualDensity: VisualDensity.standard,
-              focusColor: AnimeColors.cyan.withValues(alpha: .4),
-              hoverColor: AnimeColors.cyan.withValues(alpha: .15),
-            )
-          : AnimeTheme.dark,
-      locale: const Locale('fa', 'IR'),
-      // Actually localize framework-provided strings (back-button tooltips,
-      // selection menus, accessibility labels): a bare `locale` + forced
-      // RTL only affects app-authored text/layout, leaving Flutter's own
-      // controls in English without delegates + supportedLocales.
-      supportedLocales: const [Locale('fa', 'IR'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      builder: (context, child) => DesktopWindowFrame(
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: MandatoryUpdateGate(
-            child: ServerStatusGate(
-              child: TvNavigation(child: child!),
+    return ListenableBuilder(
+      listenable: AccessibilityService.instance,
+      builder: (context, _) {
+        final access = AccessibilityService.instance;
+        return MaterialApp(
+          navigatorKey: appNavigatorKey,
+          scaffoldMessengerKey: appMessengerKey,
+          debugShowCheckedModeBanner: false,
+          title: 'MBNime',
+          theme: isAndroidTv
+              ? AnimeTheme.dark.copyWith(
+                  visualDensity: VisualDensity.standard,
+                  focusColor: AnimeColors.cyan.withValues(alpha: .4),
+                  hoverColor: AnimeColors.cyan.withValues(alpha: .15),
+                )
+              : AnimeTheme.dark.copyWith(
+                  visualDensity: access.visualDensity,
+                ),
+          locale: const Locale('fa', 'IR'),
+          // Actually localize framework-provided strings (back-button tooltips,
+          // selection menus, accessibility labels): a bare `locale` + forced
+          // RTL only affects app-authored text/layout, leaving Flutter's own
+          // controls in English without delegates + supportedLocales.
+          supportedLocales: const [Locale('fa', 'IR'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          builder: (context, child) => DesktopWindowFrame(
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: MandatoryUpdateGate(
+                child: ServerStatusGate(
+                  child: TvNavigation(
+                    child: AccessibilityAppWrapper(child: child!),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-      home: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 650),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: .985, end: 1).animate(animation),
-            child: child,
-          ),
-        ),
-        child: _restoring
-            ? const SplashScreen(key: ValueKey('splash'))
-            : _session.isLoggedIn
-            ? MainShell(
-                key: const ValueKey('main'),
-                email: _session.email!,
-                server: _session.server,
-                api: _api,
-                onLogout: () async {
-                  try {
-                    await MbnSync.instance.flushPending();
-                  } catch (_) {}
-                  MbnSync.instance.clear();
-                  await _session.logout();
-                  _refresh();
-                },
-              )
-            : LoginScreen(
-                key: const ValueKey('login'),
-                onUseOtherApp: _siblingAvailable ? _beginHandoff : null,
-                onLogin: (email, password) async {
-                  await _session.login(email: email, password: password);
-                  MbnSync.instance.configure(server: _session.server);
-                  if (_session.userId != null) {
-                    await MbnSync.instance.bindAccount(_session.userId!);
-                  }
-                  await MbnSync.instance.syncAll();
-                  _refresh();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    final ctx = appNavigatorKey.currentContext;
-                    if (ctx != null) {
-                      MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
-                    }
-                  });
-                },
-                onRegister: (name, email, mobile, password) async {
-                  await _session.register(
-                    name: name,
-                    email: email,
-                    mobile: mobile,
-                    password: password,
-                  );
-                  _refresh();
-                },
+          home: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 650),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: .985, end: 1).animate(animation),
+                child: child,
               ),
-      ),
+            ),
+            child: _restoring
+                ? const SplashScreen(key: ValueKey('splash'))
+                : _session.isLoggedIn
+                ? MainShell(
+                    key: const ValueKey('main'),
+                    email: _session.email!,
+                    server: _session.server,
+                    api: _api,
+                    onLogout: () async {
+                      try {
+                        await MbnSync.instance.flushPending();
+                      } catch (_) {}
+                      MbnSync.instance.clear();
+                      await _session.logout();
+                      _refresh();
+                    },
+                  )
+                : LoginScreen(
+                    key: const ValueKey('login'),
+                    onUseOtherApp: _siblingAvailable ? _beginHandoff : null,
+                    onLogin: (email, password) async {
+                      await _session.login(email: email, password: password);
+                      MbnSync.instance.configure(server: _session.server);
+                      if (_session.userId != null) {
+                        await MbnSync.instance.bindAccount(_session.userId!);
+                      }
+                      await MbnSync.instance.syncAll();
+                      _refresh();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        final ctx = appNavigatorKey.currentContext;
+                        if (ctx != null) {
+                          MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
+                        }
+                      });
+                    },
+                    onRegister: (name, email, mobile, password) async {
+                      await _session.register(
+                        name: name,
+                        email: email,
+                        mobile: mobile,
+                        password: password,
+                      );
+                      _refresh();
+                    },
+                  ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AccessibilityAppWrapper extends StatelessWidget {
+  const AccessibilityAppWrapper({super.key, required this.child});
+  final Widget child;
+
+  static EdgeInsets _scaleInsets(EdgeInsets insets, double scale) {
+    if (scale <= 0) return insets;
+    return EdgeInsets.fromLTRB(
+      insets.left / scale,
+      insets.top / scale,
+      insets.right / scale,
+      insets.bottom / scale,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AccessibilityService.instance,
+      builder: (context, _) {
+        final access = AccessibilityService.instance;
+        final uiScale = access.uiScale;
+        final textScale = access.textScale;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final media = MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(textScale),
+              boldText: access.boldText,
+              disableAnimations: access.reduceMotion,
+            );
+
+            if ((uiScale - 1.0).abs() < 0.01) {
+              return MediaQuery(data: media, child: child);
+            }
+
+            final scaledWidth = constraints.maxWidth / uiScale;
+            final scaledHeight = constraints.maxHeight / uiScale;
+
+            return Transform.scale(
+              scale: uiScale,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: scaledWidth,
+                height: scaledHeight,
+                child: MediaQuery(
+                  data: media.copyWith(
+                    size: Size(scaledWidth, scaledHeight),
+                    padding: _scaleInsets(media.padding, uiScale),
+                    viewPadding: _scaleInsets(media.viewPadding, uiScale),
+                    viewInsets: _scaleInsets(media.viewInsets, uiScale),
+                  ),
+                  child: child,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

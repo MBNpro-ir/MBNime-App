@@ -688,13 +688,14 @@ class _TopBar extends StatelessWidget {
     required VoidCallback onPressed,
     required IconData icon,
     double iconSize = 24,
+    double buttonSize = 40,
   }) => SizedBox(
-    width: 40,
-    height: 40,
+    width: buttonSize,
+    height: buttonSize,
     child: IconButton(
       tooltip: tooltip,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      constraints: BoxConstraints(minWidth: buttonSize, minHeight: buttonSize),
       iconSize: iconSize,
       onPressed: onPressed,
       icon: Icon(icon),
@@ -702,21 +703,36 @@ class _TopBar extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-    child: SizedBox(
-      height: 54,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'منوی اصلی',
-                onPressed: Scaffold.of(context).openDrawer,
-                icon: const Icon(Icons.menu_rounded, size: 30),
-              ),
-              const Spacer(),
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 600;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 8 : 12,
+        vertical: isCompact ? 4 : 8,
+      ),
+      child: SizedBox(
+        height: isCompact ? 46 : 54,
+        child: Row(
+          children: [
+            // Drawer button
+            _actionButton(
+              tooltip: 'منوی اصلی',
+              onPressed: Scaffold.of(context).openDrawer,
+              icon: Icons.menu_rounded,
+              iconSize: isCompact ? 26 : 28,
+              buttonSize: isCompact ? 38 : 42,
+            ),
+            const Spacer(),
+            // Centered BrandMark with no stack collision
+            BrandMark(
+              size: isCompact ? 28 : 38,
+              showWordmark: true,
+            ),
+            const Spacer(),
+            // Wide-screen actions (favorites/history are on bottom nav for phone)
+            if (!isCompact) ...[
               _actionButton(
                 tooltip: 'علاقه‌مندی‌ها',
                 onPressed: favorites,
@@ -729,40 +745,35 @@ class _TopBar extends StatelessWidget {
                 icon: Icons.history_rounded,
               ),
               const SizedBox(width: 4),
-              _actionButton(
-                tooltip: 'جست‌وجو',
-                onPressed: search,
-                icon: Icons.search_rounded,
-                iconSize: 26,
-              ),
-              const SizedBox(width: 4),
-              _AnimatedSwitchButton(onPressed: switchApp),
             ],
-          ),
-          IgnorePointer(
-            child: Align(
-              alignment: MediaQuery.sizeOf(context).width < 600
-                  ? Alignment.centerRight
-                  : Alignment.center,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: MediaQuery.sizeOf(context).width < 600 ? 66 : 0,
-                ),
-                child: BrandMark(
-                  size: MediaQuery.sizeOf(context).width < 600 ? 34 : 42,
-                ),
-              ),
+            // Search button
+            _actionButton(
+              tooltip: 'جست‌وجو',
+              onPressed: search,
+              icon: Icons.search_rounded,
+              iconSize: isCompact ? 22 : 24,
+              buttonSize: isCompact ? 38 : 40,
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            // Switch App button
+            _AnimatedSwitchButton(
+              onPressed: switchApp,
+              size: isCompact ? 34 : 40,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _AnimatedSwitchButton extends StatefulWidget {
-  const _AnimatedSwitchButton({required this.onPressed});
+  const _AnimatedSwitchButton({
+    required this.onPressed,
+    this.size = 40,
+  });
   final VoidCallback onPressed;
+  final double size;
   @override
   State<_AnimatedSwitchButton> createState() => _AnimatedSwitchButtonState();
 }
@@ -788,13 +799,13 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
       builder: (context, child) {
         final pulse = Curves.easeInOut.transform(_controller.value);
         return Container(
-          width: 40,
-          height: 40,
+          width: widget.size,
+          height: widget.size,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFF557BFF), Color(0xFF43C9CA)],
             ),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(widget.size * 0.35),
             boxShadow: [
               BoxShadow(
                 color: const Color(
@@ -810,11 +821,11 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
       },
       child: InkWell(
         onTap: widget.onPressed,
-        borderRadius: BorderRadius.circular(14),
-        child: const Icon(
+        borderRadius: BorderRadius.circular(widget.size * 0.35),
+        child: Icon(
           Icons.movie_filter_rounded,
           color: Colors.white,
-          size: 22,
+          size: widget.size * 0.55,
         ),
       ),
     ),

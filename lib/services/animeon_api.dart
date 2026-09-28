@@ -441,11 +441,14 @@ class AnimeOnApi implements ContentApi {
     String endpoint, [
     Map<String, String> extra = const {},
   ]) async {
-    final effectiveKey =
-        apiKey.trim().isNotEmpty ? apiKey.trim() : defaultApiKey;
+    if (apiKey.trim().isEmpty) {
+      throw const AnimeOnApiException(
+        'کلید سرویس در دسترس نیست؛ دوباره وارد حساب شو.',
+      );
+    }
     final uri = Uri.parse('$_legacyOrigin/$endpoint').replace(
       queryParameters: {
-        'api_secret_key': effectiveKey,
+        'api_secret_key': apiKey.trim(),
         'version': _legacyVersion,
         'sp': 'true',
         'country': 'other',
