@@ -2640,6 +2640,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   Timer? _brightnessHoldTimer;
   Timer? _playbackErrorTimer;
   Timer? _windowResizeTimer;
+  Timer? _seekDebounceTimer;
+  bool _isSeeking = false;
   late AnimeEpisode _episode;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -4218,6 +4220,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       unawaited(windowManager.setFullScreen(false));
     }
     _hideTimer?.cancel();
+    _seekDebounceTimer?.cancel();
     _unlockButtonTimer?.cancel();
     _saveTimer?.cancel();
     _cursorTimer?.cancel();
@@ -4262,11 +4265,28 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     super.dispose();
   }
 
+  void _onSeekStateChanged(bool seeking) {
+    _seekDebounceTimer?.cancel();
+    if (seeking) {
+      _isSeeking = true;
+      _hideTimer?.cancel();
+      if (!_controlsVisible && mounted) {
+        setState(() => _controlsVisible = true);
+      }
+    } else {
+      _seekDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        _isSeeking = false;
+        _armHideTimer();
+      });
+    }
+  }
+
   void _armHideTimer() {
     _hideTimer?.cancel();
-    if (!_playing) return;
+    if (!_playing || _isSeeking) return;
     _hideTimer = Timer(playerControlsAutoHideDelay, () {
-      if (mounted && _playing) setState(() => _controlsVisible = false);
+      if (mounted && _playing && !_isSeeking) setState(() => _controlsVisible = false);
     });
   }
 
@@ -4324,6 +4344,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   void _seekBy(int seconds, {bool showControls = true}) {
+    _onSeekStateChanged(true);
     _player.seek(
       playerSeekTarget(_player.state.position, _player.state.duration, seconds),
     );
@@ -4333,6 +4354,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
           ? PlayerFeedbackKind.seekBack
           : PlayerFeedbackKind.seekForward,
     );
+    _onSeekStateChanged(false);
   }
 
   void _keyboardCommand(PlayerCommand command) {
@@ -4771,12 +4793,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
               final target = Duration(
                 milliseconds: (_duration.inMilliseconds * fraction).round(),
               );
+              _onSeekStateChanged(true);
               unawaited(_player.seek(target));
               _showFeedback(
                 target < _position
                     ? PlayerFeedbackKind.seekBack
                     : PlayerFeedbackKind.seekForward,
               );
+              _onSeekStateChanged(false);
             }
           },
           onFocus: _pokeCursor,
@@ -5021,7 +5045,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                         children: [
                                           GestureDetector(
                                             onDoubleTap: () {},
-                                            child: _SeekBar(player: _player),
+                                            child: _SeekBar(
+                                              player: _player,
+                                              onSeekStateChanged:
+                                                  _onSeekStateChanged,
+                                            ),
                                           ),
                                           Row(
                                             textDirection: TextDirection.ltr,
@@ -5164,8 +5192,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
 /// stream itself, so playback ticks rebuild only this small row instead
 /// of the whole player (this is what made every button feel laggy).
 class _SeekBar extends StatefulWidget {
-  const _SeekBar({required this.player});
+  const _SeekBar({required this.player, this.onSeekStateChanged});
   final Player player;
+  final ValueChanged<bool>? onSeekStateChanged;
 
   @override
   State<_SeekBar> createState() => _SeekBarState();
@@ -5185,6 +5214,7 @@ class _SeekBarState extends State<_SeekBar> {
         duration: duration,
         buffer: buffer,
         onSeek: (target) => widget.player.seek(target),
+        onSeekStateChanged: widget.onSeekStateChanged,
       );
     },
   );
@@ -5874,6 +5904,11 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
   void change(SubtitlePreferences next) {
     setState(() => value = next);
     widget.onChanged(next);
+    unawaited(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await next.save(prefs);
+      unawaited(MbnSync.instance.pushPreferencesThrottled());
+    }());
   }
 
   Widget colors(
@@ -6124,6 +6159,16 @@ class _SubtitleSettings extends StatefulWidget {
 
 class _SubtitleSettingsState extends State<_SubtitleSettings> {
   late SubtitlePreferences value = widget.initial;
+
+  void _update(SubtitlePreferences next) {
+    setState(() => value = next);
+    unawaited(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await next.save(prefs);
+      unawaited(MbnSync.instance.pushPreferencesThrottled());
+    }());
+  }
+
   @override
   Widget build(BuildContext context) => SafeArea(
     top: false,
@@ -6213,7 +6258,7 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
               ],
               onChanged: (font) {
                 if (font != null) {
-                  setState(() => value = value.copyWith(fontFamily: font));
+                  _update(value.copyWith(fontFamily: font));
                 }
               },
             ),
@@ -6222,39 +6267,35 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
               value: value.size,
               min: 18,
               max: 52,
-              onChanged: (v) => setState(() => value = value.copyWith(size: v)),
+              onChanged: (v) => _update(value.copyWith(size: v)),
             ),
             _SettingSlider(
               label: 'فاصله خطوط',
               value: value.lineHeight,
               min: 1,
               max: 2,
-              onChanged: (v) =>
-                  setState(() => value = value.copyWith(lineHeight: v)),
+              onChanged: (v) => _update(value.copyWith(lineHeight: v)),
             ),
             _SettingSlider(
               label: 'تیرگی پس‌زمینه',
               value: value.backgroundOpacity,
               min: 0,
               max: 1,
-              onChanged: (v) =>
-                  setState(() => value = value.copyWith(backgroundOpacity: v)),
+              onChanged: (v) => _update(value.copyWith(backgroundOpacity: v)),
             ),
             _SettingSlider(
               label: 'گردی گوشه‌ها',
               value: value.cornerRadius,
               min: 0,
               max: 24,
-              onChanged: (v) =>
-                  setState(() => value = value.copyWith(cornerRadius: v)),
+              onChanged: (v) => _update(value.copyWith(cornerRadius: v)),
             ),
             _SettingSlider(
               label: 'فاصله از پایین',
               value: value.bottomPadding,
               min: 0,
               max: 1000,
-              onChanged: (v) =>
-                  setState(() => value = value.copyWith(bottomPadding: v)),
+              onChanged: (v) => _update(value.copyWith(bottomPadding: v)),
             ),
             const Text('رنگ پس‌زمینه'),
             const SizedBox(height: 8),
@@ -6270,10 +6311,8 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
                       ]
                       .map(
                         (color) => InkWell(
-                          onTap: () => setState(
-                            () =>
-                                value = value.copyWith(backgroundColor: color),
-                          ),
+                          onTap: () =>
+                              _update(value.copyWith(backgroundColor: color)),
                           borderRadius: BorderRadius.circular(30),
                           child: CircleAvatar(
                             backgroundColor: color,
@@ -6309,9 +6348,8 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
                       ]
                       .map(
                         (color) => InkWell(
-                          onTap: () => setState(
-                            () => value = value.copyWith(color: color),
-                          ),
+                          onTap: () =>
+                              _update(value.copyWith(color: color)),
                           borderRadius: BorderRadius.circular(30),
                           child: CircleAvatar(
                             backgroundColor: color,
@@ -6330,22 +6368,21 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
               contentPadding: EdgeInsets.zero,
               title: const Text('متن ضخیم'),
               value: value.bold,
-              onChanged: (v) => setState(() => value = value.copyWith(bold: v)),
+              onChanged: (v) => _update(value.copyWith(bold: v)),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('سایه و حاشیه برای خوانایی'),
               value: value.shadow,
-              onChanged: (v) =>
-                  setState(() => value = value.copyWith(shadow: v)),
+              onChanged: (v) => _update(value.copyWith(shadow: v)),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => setState(
-                      () => value = SubtitlePreferences(
+                    onPressed: () => _update(
+                      SubtitlePreferences(
                         delay: value.delay,
                         timingScale: value.timingScale,
                       ),

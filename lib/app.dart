@@ -15,6 +15,7 @@ import 'services/auth_handoff.dart';
 import 'services/app_links.dart';
 import 'services/app_updater.dart';
 import 'widgets/tv_navigation.dart';
+import 'widgets/server_status_gate.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
@@ -175,6 +176,12 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
             }
             MbnSync.instance.configure(server: _session.server);
             await MbnSync.instance.syncAll();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final ctx = appNavigatorKey.currentContext;
+              if (ctx != null) {
+                MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
+              }
+            });
           }
         }(),
         Future<void>.delayed(const Duration(milliseconds: 1450)),
@@ -399,7 +406,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       builder: (context, child) => DesktopWindowFrame(
         child: Directionality(
           textDirection: TextDirection.rtl,
-          child: MandatoryUpdateGate(child: TvNavigation(child: child!)),
+          child: MandatoryUpdateGate(
+            child: ServerStatusGate(
+              child: TvNavigation(child: child!),
+            ),
+          ),
         ),
       ),
       home: AnimatedSwitcher(
@@ -441,6 +452,12 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                   }
                   await MbnSync.instance.syncAll();
                   _refresh();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final ctx = appNavigatorKey.currentContext;
+                    if (ctx != null) {
+                      MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
+                    }
+                  });
                 },
                 onRegister: (name, email, mobile, password) async {
                   await _session.register(
