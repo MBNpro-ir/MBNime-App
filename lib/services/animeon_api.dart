@@ -53,9 +53,11 @@ abstract interface class ContentApi {
 }
 
 class AnimeOnApi implements ContentApi {
+  static const defaultApiKey = '1661e8b60126d9f9';
+
   AnimeOnApi({
     http.Client? client,
-    this.apiKey = '',
+    this.apiKey = defaultApiKey,
   }) : _client = client ?? _directClient();
 
   /// Normal-anime traffic is pinned to DIRECT on every platform: it must
@@ -439,14 +441,11 @@ class AnimeOnApi implements ContentApi {
     String endpoint, [
     Map<String, String> extra = const {},
   ]) async {
-    if (apiKey.trim().isEmpty) {
-      throw const AnimeOnApiException(
-        'کلید سرویس در دسترس نیست؛ دوباره وارد حساب شو.',
-      );
-    }
+    final effectiveKey =
+        apiKey.trim().isNotEmpty ? apiKey.trim() : defaultApiKey;
     final uri = Uri.parse('$_legacyOrigin/$endpoint').replace(
       queryParameters: {
-        'api_secret_key': apiKey,
+        'api_secret_key': effectiveKey,
         'version': _legacyVersion,
         'sp': 'true',
         'country': 'other',

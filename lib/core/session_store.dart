@@ -15,6 +15,7 @@ class SessionStore {
 
   static const _emailKey = 'mbn_session_email_display';
   static const _signedOutKey = 'mbn_signed_out';
+  static const _apiKeyKey = 'mbn_animeon_api_key';
   static const _secureStorage = FlutterSecureStorage();
 
   final AnimeOnApi api;
@@ -39,6 +40,10 @@ class SessionStore {
     } catch (_) {
       prefs = null;
     }
+    final cachedKey = prefs?.getString(_apiKeyKey);
+    if (cachedKey != null && cachedKey.trim().isNotEmpty) {
+      api.apiKey = cachedKey.trim();
+    }
     if ((prefs?.getBool(_signedOutKey) ?? false)) {
       email = null;
       api.clearSession();
@@ -62,9 +67,15 @@ class SessionStore {
       final me = await server.getJson('/api/me');
       final user = (me['user'] as Map?)?.cast<String, dynamic>() ?? {};
       userId = (user['id'] as num?)?.toInt();
-      final config = await server.getJson('/api/config');
-      final key = config['animeon_api_key']?.toString() ?? '';
-      if (key.isNotEmpty) api.apiKey = key;
+      try {
+        final config = await server.getJson('/api/config');
+        final key = config['animeon_api_key']?.toString() ?? '';
+        if (key.isNotEmpty) {
+          api.apiKey = key;
+          final instance = prefs ?? await SharedPreferences.getInstance();
+          await instance.setString(_apiKeyKey, key);
+        }
+      } catch (_) {}
       if (user['has_animeon_link'] == true) {
         try {
           final session = await server.getJson('/api/auth/animeon-session');
@@ -134,6 +145,25 @@ class SessionStore {
     final prevToken = server.token;
     server.token = authToken;
     try {
+      // 1. Attempt token exchange for dedicated anime session
+      Map<String, dynamic>? exchangeData;
+      try {
+        exchangeData = await server.postJson('/api/auth/exchange', {
+          'target_app': 'anime',
+        });
+      } catch (_) {}
+
+      if (exchangeData != null && exchangeData['token'] != null) {
+        final newToken = exchangeData['token'].toString();
+        server.token = newToken;
+        await loginWithHandoff(
+          exchangeData,
+          fallbackIdentifier: email ?? 'کاربر',
+        );
+        return;
+      }
+
+      // Fallback if server is older:
       final userResp = await server.getJson('/api/me');
       final user = (userResp['user'] as Map?)?.cast<String, dynamic>() ?? {};
       userId = (user['id'] as num?)?.toInt();
@@ -148,7 +178,11 @@ class SessionStore {
       try {
         final config = await server.getJson('/api/config');
         final key = config['animeon_api_key']?.toString() ?? '';
-        if (key.isNotEmpty) api.apiKey = key;
+        if (key.isNotEmpty) {
+          api.apiKey = key;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_apiKeyKey, key);
+        }
       } catch (_) {}
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -183,11 +217,24 @@ class SessionStore {
     } else {
       api.clearSession();
     }
-    try {
-      final config = await server.getJson('/api/config');
-      final key = config['animeon_api_key']?.toString() ?? '';
-      if (key.isNotEmpty) api.apiKey = key;
-    } catch (_) {}
+    final apiKeyFromData = data['animeon_api_key']?.toString() ?? '';
+    if (apiKeyFromData.isNotEmpty) {
+      api.apiKey = apiKeyFromData;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_apiKeyKey, apiKeyFromData);
+      } catch (_) {}
+    } else {
+      try {
+        final config = await server.getJson('/api/config');
+        final key = config['animeon_api_key']?.toString() ?? '';
+        if (key.isNotEmpty) {
+          api.apiKey = key;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_apiKeyKey, key);
+        }
+      } catch (_) {}
+    }
     final user = (data['user'] as Map?)?.cast<String, dynamic>() ?? {};
     userId = (user['id'] as num?)?.toInt();
     final accountEmail = user['email']?.toString() ?? '';
