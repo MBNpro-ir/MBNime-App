@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'theme.dart';
+import '../services/accessibility_service.dart';
 
 /// True on desktop window builds (custom title bar, no bottom nav).
 bool get isDesktopWindow => Platform.isWindows;
@@ -46,6 +47,13 @@ double get bottomListGap => isLargeScreenDevice ? 28 : 110;
 /// its predictive-back transition can follow the system edge-swipe in real
 /// time; desktop keeps the custom slide/fade transition.
 PageRoute<void> slideUpRoute(Widget page, {int durationMs = 380}) {
+  if (AccessibilityService.instance.reduceMotion) {
+    return PageRouteBuilder<void>(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, _, _) => page,
+    );
+  }
   if (Platform.isAndroid) {
     return _MbnimeAndroidPageRoute(page: page, durationMs: durationMs);
   }
@@ -89,14 +97,15 @@ class _MbnimeAndroidPageRoute extends MaterialPageRoute<void> {
 /// Desktop-only large modal host: centered and only closable via in-page
 /// navigation (outside taps do nothing).
 Future<T?> showDesktopPopup<T>(BuildContext context, Widget child) {
+  final reduceMotion = AccessibilityService.instance.reduceMotion;
   final size = MediaQuery.sizeOf(context);
   return Navigator.of(context).push<T>(
     PageRouteBuilder<T>(
       opaque: false,
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: .72),
-      transitionDuration: const Duration(milliseconds: 260),
-      reverseTransitionDuration: const Duration(milliseconds: 220),
+      transitionDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
+      reverseTransitionDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 220),
       pageBuilder: (_, _, _) => Dialog(
         insetPadding: const EdgeInsets.all(12),
         backgroundColor: AnimeColors.background,

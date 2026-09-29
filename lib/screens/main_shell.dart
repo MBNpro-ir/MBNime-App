@@ -13,6 +13,7 @@ import '../core/search_direction.dart';
 import '../core/theme.dart';
 import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
+import '../services/accessibility_service.dart';
 import '../services/animeon_api.dart';
 import '../services/mbn_sync.dart';
 import '../services/mbn_server.dart';
@@ -783,7 +784,25 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
-  )..forward();
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!AccessibilityService.instance.reduceMotion) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = AccessibilityService.instance.reduceMotion;
+    if (reduce && _controller.isAnimating) {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
 
   @override
   void dispose() {
@@ -797,7 +816,8 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
     child: AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        final pulse = Curves.easeInOut.transform(_controller.value);
+        final reduce = AccessibilityService.instance.reduceMotion;
+        final pulse = reduce ? 0.0 : Curves.easeInOut.transform(_controller.value);
         return Container(
           width: widget.size,
           height: widget.size,
@@ -816,7 +836,7 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
               ),
             ],
           ),
-          child: Transform.scale(scale: 1 + .07 * pulse, child: child),
+          child: reduce ? child : Transform.scale(scale: 1 + .07 * pulse, child: child),
         );
       },
       child: InkWell(

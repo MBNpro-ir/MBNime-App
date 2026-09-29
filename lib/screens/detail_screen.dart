@@ -6500,79 +6500,84 @@ class _AnimeSubtitles extends StatelessWidget {
         if (line.trim().isNotEmpty) normalizePersianSubtitle(line.trim()),
     ].join('\n');
     if (text.isEmpty) return const SizedBox.shrink();
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final layout = SubtitleLayout.resolve(
-            viewport: constraints.biggest,
-            isPictureInPicture: isPictureInPicture,
-            preferredFontSize: prefs.size,
-            preferredBottomPadding: prefs.bottomPadding,
-            preferredCornerRadius: prefs.cornerRadius,
-          );
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              AnimatedPositioned(
-                duration: isDesktopWindow
-                    ? Duration.zero
-                    : const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                left: layout.horizontalInset,
-                right: layout.horizontalInset,
-                bottom: layout.bottomPadding,
-                child: Center(
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: layout.horizontalPadding,
-                      vertical: layout.verticalPadding,
-                    ),
-                    decoration: BoxDecoration(
-                      color: prefs.backgroundColor.withValues(
-                        alpha: prefs.backgroundOpacity,
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.noScaling,
+      ),
+      child: Positioned.fill(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final layout = SubtitleLayout.resolve(
+              viewport: constraints.biggest,
+              isPictureInPicture: isPictureInPicture,
+              preferredFontSize: prefs.size,
+              preferredBottomPadding: prefs.bottomPadding,
+              preferredCornerRadius: prefs.cornerRadius,
+            );
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                AnimatedPositioned(
+                  duration: isDesktopWindow
+                      ? Duration.zero
+                      : const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  left: layout.horizontalInset,
+                  right: layout.horizontalInset,
+                  bottom: layout.bottomPadding,
+                  child: Center(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: layout.horizontalPadding,
+                        vertical: layout.verticalPadding,
                       ),
-                      borderRadius: BorderRadius.circular(layout.cornerRadius),
-                    ),
-                    child: Text(
-                      text,
-                      maxLines: isPictureInPicture ? 3 : null,
-                      overflow: isPictureInPicture
-                          ? TextOverflow.ellipsis
-                          : null,
-                      textScaler: TextScaler.noScaling,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: prefs.fontFamily,
-                        fontSize: layout.fontSize,
-                        height: isPictureInPicture
-                            ? prefs.lineHeight.clamp(1.0, 1.35)
-                            : prefs.lineHeight,
-                        fontWeight: prefs.bold
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color: prefs.color,
-                        shadows: prefs.shadow
-                            ? const [
-                                Shadow(
-                                  color: Colors.black,
-                                  blurRadius: 5,
-                                  offset: Offset(2, 2),
-                                ),
-                                Shadow(
-                                  color: Colors.black,
-                                  blurRadius: 3,
-                                  offset: Offset(-1, -1),
-                                ),
-                              ]
+                      decoration: BoxDecoration(
+                        color: prefs.backgroundColor.withValues(
+                          alpha: prefs.backgroundOpacity,
+                        ),
+                        borderRadius: BorderRadius.circular(layout.cornerRadius),
+                      ),
+                      child: Text(
+                        text,
+                        maxLines: isPictureInPicture ? 3 : null,
+                        overflow: isPictureInPicture
+                            ? TextOverflow.ellipsis
                             : null,
+                        textScaler: TextScaler.noScaling,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: prefs.fontFamily,
+                          fontSize: layout.fontSize,
+                          height: isPictureInPicture
+                              ? prefs.lineHeight.clamp(1.0, 1.35)
+                              : prefs.lineHeight,
+                          fontWeight: prefs.bold
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: prefs.color,
+                          shadows: prefs.shadow
+                              ? const [
+                                  Shadow(
+                                    color: Colors.black,
+                                    blurRadius: 5,
+                                    offset: Offset(2, 2),
+                                  ),
+                                  Shadow(
+                                    color: Colors.black,
+                                    blurRadius: 3,
+                                    offset: Offset(-1, -1),
+                                  ),
+                                ]
+                              : null,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

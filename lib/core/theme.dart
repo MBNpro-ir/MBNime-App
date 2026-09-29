@@ -13,136 +13,234 @@ abstract final class AnimeColors {
 }
 
 abstract final class AnimeTheme {
-  static final dark = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    fontFamily: 'Vazirmatn',
-    scaffoldBackgroundColor: AnimeColors.background,
-    sliderTheme: SliderThemeData(
-      // Flutter 3.44 still defaults to the legacy M3 slider. Explicit opt-in
-      // follows Flutter's updated-material-3-slider migration guide.
-      // ignore: deprecated_member_use
-      year2023: false,
-      trackHeight: 10,
-      trackGap: 6,
-      thumbSize: const WidgetStatePropertyAll(Size(4, 36)),
-      activeTrackColor: AnimeColors.orange,
-      secondaryActiveTrackColor: AnimeColors.orange.withValues(alpha: .35),
-      inactiveTrackColor: Colors.white12,
-      showValueIndicator: ShowValueIndicator.onDrag,
-    ),
-    pageTransitionsTheme: const PageTransitionsTheme(
-      builders: {
-        // Android 14+ drives this transition directly from the edge-swipe
-        // progress. Releasing completes it; canceling smoothly restores the
-        // current page. Older Android versions use Flutter's fade fallback.
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(
-          fallbackColor: AnimeColors.background,
+  static ThemeData get dark => buildTheme();
+
+  static ThemeData buildTheme({
+    bool highContrast = false,
+    VisualDensity visualDensity = VisualDensity.standard,
+    bool reduceMotion = false,
+    bool boldText = false,
+    Color? focusColor,
+    Color? hoverColor,
+  }) {
+    final baseBg = highContrast ? Colors.black : AnimeColors.background;
+    final baseSurface = highContrast ? const Color(0xFF0C0E14) : AnimeColors.surface;
+    final baseSurfaceHigh = highContrast ? const Color(0xFF171B24) : AnimeColors.surfaceHigh;
+    final primaryColor = highContrast ? const Color(0xFFFF9447) : AnimeColors.orange;
+    final outlineColor = highContrast ? Colors.white70 : const Color(0xFF353A49);
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      fontFamily: 'Vazirmatn',
+      scaffoldBackgroundColor: baseBg,
+      visualDensity: visualDensity,
+      focusColor: focusColor,
+      hoverColor: hoverColor,
+      cardTheme: CardThemeData(
+        color: baseSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: highContrast
+              ? const BorderSide(color: Colors.white70, width: 1.5)
+              : BorderSide.none,
         ),
-        TargetPlatform.windows: _MbnimePageTransitionsBuilder(),
-        TargetPlatform.linux: _MbnimePageTransitionsBuilder(),
-        TargetPlatform.macOS: _MbnimePageTransitionsBuilder(),
-      },
-    ),
-    colorScheme: const ColorScheme.dark(
-      primary: AnimeColors.orange,
-      onPrimary: Color(0xFF241000),
-      secondary: AnimeColors.violet,
-      tertiary: AnimeColors.cyan,
-      surface: AnimeColors.surface,
-      onSurface: AnimeColors.text,
-      surfaceContainer: AnimeColors.surface,
-      surfaceContainerHigh: AnimeColors.surfaceHigh,
-      outline: Color(0xFF353A49),
-      error: AnimeColors.coral,
-    ),
-    textTheme: const TextTheme(
-      displaySmall: TextStyle(
-        fontSize: 32,
-        height: 1.25,
-        fontWeight: FontWeight.w700,
       ),
-      headlineMedium: TextStyle(
-        fontSize: 24,
-        height: 1.35,
-        fontWeight: FontWeight.w700,
+      dialogTheme: DialogThemeData(
+        backgroundColor: baseSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: highContrast
+              ? const BorderSide(color: Colors.white70, width: 1.5)
+              : BorderSide.none,
+        ),
       ),
-      titleLarge: TextStyle(
-        fontSize: 20,
-        height: 1.4,
-        fontWeight: FontWeight.w700,
+      dividerTheme: DividerThemeData(
+        color: highContrast ? Colors.white60 : Colors.white12,
+        thickness: highContrast ? 1.5 : 1.0,
       ),
-      titleMedium: TextStyle(
-        fontSize: 16,
-        height: 1.5,
-        fontWeight: FontWeight.w700,
+      sliderTheme: SliderThemeData(
+        // Flutter 3.44 still defaults to the legacy M3 slider. Explicit opt-in
+        // follows Flutter's updated-material-3-slider migration guide.
+        // ignore: deprecated_member_use
+        year2023: false,
+        trackHeight: 10,
+        trackGap: 6,
+        thumbSize: const WidgetStatePropertyAll(Size(4, 36)),
+        activeTrackColor: primaryColor,
+        secondaryActiveTrackColor: primaryColor.withValues(alpha: .35),
+        inactiveTrackColor: highContrast ? Colors.white30 : Colors.white12,
+        showValueIndicator: ShowValueIndicator.onDrag,
       ),
-      bodyLarge: TextStyle(fontSize: 15, height: 1.7),
-      bodyMedium: TextStyle(fontSize: 13, height: 1.65),
-      labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: AnimeColors.surfaceHigh.withValues(alpha: .88),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(22),
-        borderSide: BorderSide.none,
+      pageTransitionsTheme: reduceMotion
+          ? const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: _NoAnimationPageTransitionsBuilder(),
+                TargetPlatform.windows: _NoAnimationPageTransitionsBuilder(),
+                TargetPlatform.linux: _NoAnimationPageTransitionsBuilder(),
+                TargetPlatform.macOS: _NoAnimationPageTransitionsBuilder(),
+                TargetPlatform.iOS: _NoAnimationPageTransitionsBuilder(),
+              },
+            )
+          : const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: PredictiveBackPageTransitionsBuilder(
+                  fallbackColor: AnimeColors.background,
+                ),
+                TargetPlatform.windows: _MbnimePageTransitionsBuilder(),
+                TargetPlatform.linux: _MbnimePageTransitionsBuilder(),
+                TargetPlatform.macOS: _MbnimePageTransitionsBuilder(),
+              },
+            ),
+      colorScheme: ColorScheme.dark(
+        primary: primaryColor,
+        onPrimary: const Color(0xFF241000),
+        secondary: AnimeColors.violet,
+        tertiary: AnimeColors.cyan,
+        surface: baseSurface,
+        onSurface: highContrast ? Colors.white : AnimeColors.text,
+        surfaceContainer: baseSurface,
+        surfaceContainerHigh: baseSurfaceHigh,
+        outline: outlineColor,
+        error: AnimeColors.coral,
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(22),
-        borderSide: const BorderSide(color: Color(0xFF292E3B)),
+      textTheme: TextTheme(
+        displaySmall: TextStyle(
+          fontSize: 32,
+          height: 1.25,
+          fontWeight: boldText ? FontWeight.w900 : FontWeight.w700,
+          color: highContrast ? Colors.white : null,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: 24,
+          height: 1.35,
+          fontWeight: boldText ? FontWeight.w900 : FontWeight.w700,
+          color: highContrast ? Colors.white : null,
+        ),
+        titleLarge: TextStyle(
+          fontSize: 20,
+          height: 1.4,
+          fontWeight: boldText ? FontWeight.w800 : FontWeight.w700,
+          color: highContrast ? Colors.white : null,
+        ),
+        titleMedium: TextStyle(
+          fontSize: 16,
+          height: 1.5,
+          fontWeight: boldText ? FontWeight.w800 : FontWeight.w700,
+          color: highContrast ? Colors.white : null,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: 15,
+          height: 1.7,
+          fontWeight: boldText ? FontWeight.w600 : FontWeight.normal,
+          color: highContrast ? Colors.white : null,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 13,
+          height: 1.65,
+          fontWeight: boldText ? FontWeight.w600 : FontWeight.normal,
+          color: highContrast ? Colors.white.withValues(alpha: 0.92) : null,
+        ),
+        labelLarge: TextStyle(
+          fontSize: 14,
+          fontWeight: boldText ? FontWeight.w900 : FontWeight.w700,
+          color: highContrast ? Colors.white : null,
+        ),
       ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(22),
-        borderSide: const BorderSide(color: AnimeColors.orange, width: 1.4),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: baseSurfaceHigh.withValues(alpha: .88),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: highContrast
+              ? const BorderSide(color: Colors.white70, width: 1.5)
+              : BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(
+            color: highContrast ? Colors.white70 : const Color(0xFF292E3B),
+            width: highContrast ? 1.5 : 1.0,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(color: primaryColor, width: highContrast ? 2.0 : 1.4),
+        ),
+        hintStyle: TextStyle(
+          color: highContrast ? Colors.white60 : AnimeColors.muted,
+        ),
       ),
-      hintStyle: const TextStyle(color: AnimeColors.muted),
-    ),
-    navigationBarTheme: NavigationBarThemeData(
-      height: 76,
-      backgroundColor: AnimeColors.surface.withValues(alpha: .96),
-      indicatorColor: AnimeColors.orange.withValues(alpha: .18),
-      labelTextStyle: WidgetStateProperty.resolveWith(
-        (states) => TextStyle(
+      navigationBarTheme: NavigationBarThemeData(
+        height: 76,
+        backgroundColor: baseSurface.withValues(alpha: .96),
+        indicatorColor: primaryColor.withValues(alpha: .18),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontSize: 11,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w500,
+            color: states.contains(WidgetState.selected)
+                ? primaryColor
+                : (highContrast ? Colors.white70 : AnimeColors.muted),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          animationDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+          minimumSize: const Size(0, 54),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          side: highContrast ? const BorderSide(color: Colors.white70, width: 1.2) : BorderSide.none,
+          textStyle: TextStyle(
+            fontFamily: 'Vazirmatn',
+            fontWeight: boldText ? FontWeight.w900 : FontWeight.w700,
+          ),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          animationDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 160),
+          overlayColor: WidgetStateProperty.all(
+            primaryColor.withValues(alpha: .14),
+          ),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: baseSurfaceHigh,
+        selectedColor: primaryColor.withValues(alpha: .2),
+        side: BorderSide(
+          color: highContrast ? Colors.white70 : const Color(0xFF2A2F3C),
+          width: highContrast ? 1.5 : 1.0,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        labelStyle: TextStyle(
           fontFamily: 'Vazirmatn',
-          fontSize: 11,
-          fontWeight: states.contains(WidgetState.selected)
-              ? FontWeight.w700
-              : FontWeight.w500,
-          color: states.contains(WidgetState.selected)
-              ? AnimeColors.orange
-              : AnimeColors.muted,
+          fontWeight: boldText ? FontWeight.w700 : FontWeight.normal,
+          color: highContrast ? Colors.white : null,
         ),
       ),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        animationDuration: const Duration(milliseconds: 180),
-        minimumSize: const Size(0, 54),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        textStyle: const TextStyle(
-          fontFamily: 'Vazirmatn',
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    ),
-    iconButtonTheme: IconButtonThemeData(
-      style: ButtonStyle(
-        animationDuration: const Duration(milliseconds: 160),
-        overlayColor: WidgetStateProperty.all(
-          AnimeColors.orange.withValues(alpha: .14),
-        ),
-      ),
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: AnimeColors.surfaceHigh,
-      selectedColor: AnimeColors.orange.withValues(alpha: .2),
-      side: const BorderSide(color: Color(0xFF2A2F3C)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      labelStyle: const TextStyle(fontFamily: 'Vazirmatn'),
-    ),
-  );
+    );
+  }
+}
+
+class _NoAnimationPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _NoAnimationPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
+  }
 }
 
 class _MbnimePageTransitionsBuilder extends PageTransitionsBuilder {
