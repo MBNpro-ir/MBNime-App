@@ -63,4 +63,54 @@ void main() {
     expect(favorites.map((item) => item.id), contains('srv-1'));
     MbnSync.instance.clear();
   });
+
+  test('pullAndApplyPreferences restores cross-platform preferences with correct types', () async {
+    final serverState = {
+      'preferences': {
+        'payload': {
+          'windows': {
+            'player_volume': 90,
+            'player_rate': 1.5,
+            'sub_font': 'Vazirmatn',
+            'sub_size': 26,
+            'sub_color': 4294967295,
+            'access_text_scale': 1.1,
+            'access_reduce_motion': true,
+          },
+        },
+        'updated_at': 5000,
+      },
+    };
+    final server = MbnServerClient(
+      baseUrl: 'https://login.test',
+      client: MockClient((request) async {
+        http.Response json(Object body, [int status = 200]) =>
+            http.Response(
+              jsonEncode(body),
+              status,
+              headers: {'content-type': 'application/json'},
+            );
+        if (request.url.path == '/api/sync') {
+          return json(serverState);
+        }
+        return json({'error': 'x'}, 404);
+      }),
+    );
+    server.token = 'tok';
+    MbnSync.instance.configure(server: server);
+
+    final success = await MbnSync.instance.pullAndApplyPreferences(force: true);
+    expect(success, isTrue);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble('player_volume'), 90.0);
+    expect(prefs.getDouble('player_rate'), 1.5);
+    expect(prefs.getDouble('sub_size'), 26.0);
+    expect(prefs.getString('sub_font'), 'Vazirmatn');
+    expect(prefs.getInt('sub_color'), 4294967295);
+    expect(prefs.getBool('access_reduce_motion'), isTrue);
+
+    MbnSync.instance.clear();
+  });
 }
+
