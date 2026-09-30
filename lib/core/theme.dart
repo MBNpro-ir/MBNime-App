@@ -10,6 +10,9 @@ abstract final class AnimeColors {
   static const cyan = Color(0xFF3FD8D4);
   static const text = Color(0xFFF7F7FA);
   static const muted = Color(0xFFA5A9B6);
+  // Player accent is intentionally red (hentai / MBNime player identity),
+  // while the rest of the app keeps the orange brand.
+  static const playerAccent = Color(0xFFEF4444);
 }
 
 abstract final class AnimeTheme {

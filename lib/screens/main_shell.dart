@@ -336,6 +336,8 @@ class _MainShellState extends State<MainShell> {
             });
             unawaited(_store.saveHentaiFavorites(_hentaiFavorites.values));
           },
+          server: widget.server,
+          email: widget.email,
         ),
       );
     }
@@ -707,6 +709,10 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isCompact = width < 600;
+    // On narrow Android screens with large buttons there is no room for the
+    // wordmark next to the logo: show logo only to keep the title centered
+    // without overflow.
+    final hideWordmark = width < 380;
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -715,51 +721,57 @@ class _TopBar extends StatelessWidget {
       ),
       child: SizedBox(
         height: isCompact ? 46 : 54,
-        child: Row(
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            // Drawer button
-            _actionButton(
-              tooltip: 'منوی اصلی',
-              onPressed: Scaffold.of(context).openDrawer,
-              icon: Icons.menu_rounded,
-              iconSize: isCompact ? 26 : 28,
-              buttonSize: isCompact ? 38 : 42,
+            Row(
+              children: [
+                // Drawer button
+                _actionButton(
+                  tooltip: 'منوی اصلی',
+                  onPressed: Scaffold.of(context).openDrawer,
+                  icon: Icons.menu_rounded,
+                  iconSize: isCompact ? 26 : 28,
+                  buttonSize: isCompact ? 38 : 42,
+                ),
+                const Spacer(),
+                // Wide-screen actions (favorites/history are on bottom nav for phone)
+                if (!isCompact) ...[
+                  _actionButton(
+                    tooltip: 'علاقه‌مندی‌ها',
+                    onPressed: favorites,
+                    icon: Icons.favorite_rounded,
+                  ),
+                  const SizedBox(width: 4),
+                  _actionButton(
+                    tooltip: 'بازدیدشده‌ها',
+                    onPressed: history,
+                    icon: Icons.history_rounded,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // Search button
+                _actionButton(
+                  tooltip: 'جست‌وجو',
+                  onPressed: search,
+                  icon: Icons.search_rounded,
+                  iconSize: isCompact ? 22 : 24,
+                  buttonSize: isCompact ? 38 : 40,
+                ),
+                const SizedBox(width: 4),
+                // Switch App button
+                _AnimatedSwitchButton(
+                  onPressed: switchApp,
+                  size: isCompact ? 34 : 40,
+                ),
+              ],
             ),
-            const Spacer(),
-            // Centered BrandMark with no stack collision
-            BrandMark(
-              size: isCompact ? 28 : 38,
-              showWordmark: true,
-            ),
-            const Spacer(),
-            // Wide-screen actions (favorites/history are on bottom nav for phone)
-            if (!isCompact) ...[
-              _actionButton(
-                tooltip: 'علاقه‌مندی‌ها',
-                onPressed: favorites,
-                icon: Icons.favorite_rounded,
+            // Always centered title (never shifted by asymmetric actions).
+            IgnorePointer(
+              child: BrandMark(
+                size: isCompact ? 28 : 38,
+                showWordmark: !hideWordmark,
               ),
-              const SizedBox(width: 4),
-              _actionButton(
-                tooltip: 'بازدیدشده‌ها',
-                onPressed: history,
-                icon: Icons.history_rounded,
-              ),
-              const SizedBox(width: 4),
-            ],
-            // Search button
-            _actionButton(
-              tooltip: 'جست‌وجو',
-              onPressed: search,
-              icon: Icons.search_rounded,
-              iconSize: isCompact ? 22 : 24,
-              buttonSize: isCompact ? 38 : 40,
-            ),
-            const SizedBox(width: 4),
-            // Switch App button
-            _AnimatedSwitchButton(
-              onPressed: switchApp,
-              size: isCompact ? 34 : 40,
             ),
           ],
         ),

@@ -139,19 +139,36 @@ class _DesktopTitleBarState extends State<_DesktopTitleBar>
                         const SizedBox(width: 8),
                         Opacity(
                           opacity: _active ? 1 : 0.55,
-                          child: const Text(
-                            'MBNime',
+                          child: Text.rich(
+                            const TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'MBN',
+                                  style: TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    fontSize: 13,
+                                    height: 1.2,
+                                    letterSpacing: 0.3,
+                                    fontWeight: FontWeight.w600,
+                                    color: AnimeColors.text,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: 'ime',
+                                  style: TextStyle(
+                                    fontFamily: 'Vazirmatn',
+                                    fontSize: 8,
+                                    height: 1.2,
+                                    letterSpacing: 0.3,
+                                    fontWeight: FontWeight.w700,
+                                    color: AnimeColors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textDirection: TextDirection.ltr,
-                            style: TextStyle(
-                              fontFamily: 'Vazirmatn',
-                              fontSize: 13,
-                              height: 1.2,
-                              letterSpacing: 0.3,
-                              fontWeight: FontWeight.w600,
-                              color: AnimeColors.text,
-                            ),
                           ),
                         ),
                       ],

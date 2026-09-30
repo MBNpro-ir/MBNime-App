@@ -2605,6 +2605,41 @@ class _HentaiTermResultsPageState extends State<_HentaiTermResultsPage> {
   );
 }
 
+/// Red accent for the MBNime player only (buttons, sliders, sheets).
+/// Keeps the rest of the app orange while the player uses hentai-red.
+ThemeData _playerRedTheme(BuildContext context) {
+  final base = Theme.of(context);
+  const red = AnimeColors.playerAccent;
+  final scheme = base.colorScheme.copyWith(
+    primary: red,
+    onPrimary: Colors.white,
+    secondary: red,
+    onSecondaryContainer: Colors.white,
+    secondaryContainer: red.withValues(alpha: .22),
+  );
+  final slider = (base.sliderTheme).copyWith(
+    activeTrackColor: red,
+    secondaryActiveTrackColor: red.withValues(alpha: .35),
+    thumbColor: red,
+    overlayColor: red.withValues(alpha: .15),
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+    primaryColor: red,
+    sliderTheme: slider,
+    tabBarTheme: base.tabBarTheme.copyWith(
+      indicatorColor: red,
+      labelColor: red,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: red,
+        foregroundColor: Colors.white,
+      ),
+    ),
+  );
+}
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({
     super.key,
@@ -2687,7 +2722,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   List<String> _subtitles = const [];
   Tracks _tracks = const Tracks();
   Track _track = const Track();
-  SubtitlePreferences _subtitle = const SubtitlePreferences();
+  SubtitlePreferences _subtitle =
+      SubtitlePreferences.withPlatformDefaults();
   String? _error;
   Duration _positionAtLastError = Duration.zero;
   // Local loopback relay for +18 streams when the proxy route wins
@@ -4344,17 +4380,36 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   void _seekBy(int seconds, {bool showControls = true}) {
-    _onSeekStateChanged(true);
+    if (showControls) {
+      _onSeekStateChanged(true);
+      _player.seek(
+        playerSeekTarget(_player.state.position, _player.state.duration, seconds),
+      );
+      _showControls();
+      _showFeedback(
+        seconds < 0
+            ? PlayerFeedbackKind.seekBack
+            : PlayerFeedbackKind.seekForward,
+      );
+      _onSeekStateChanged(false);
+      return;
+    }
+    // Keyboard / double-tap seek: keep player chrome hidden, only show the
+    // center feedback square (no control buttons).
+    _hideTimer?.cancel();
+    _seekDebounceTimer?.cancel();
+    _isSeeking = false;
+    if (_controlsVisible && mounted) {
+      setState(() => _controlsVisible = false);
+    }
     _player.seek(
       playerSeekTarget(_player.state.position, _player.state.duration, seconds),
     );
-    if (showControls) _showControls();
     _showFeedback(
       seconds < 0
           ? PlayerFeedbackKind.seekBack
           : PlayerFeedbackKind.seekForward,
     );
-    _onSeekStateChanged(false);
   }
 
   void _keyboardCommand(PlayerCommand command) {
@@ -4439,19 +4494,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
-      builder: (context) => DefaultTabController(
-        length: 2,
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: (MediaQuery.sizeOf(context).height * .76).clamp(0.0, 560.0),
+      builder: (sheetContext) {
+        final body = DefaultTabController(
+          length: 2,
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: (MediaQuery.sizeOf(sheetContext).height * .76).clamp(0.0, 560.0),
             child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                   child: Row(
                     children: [
-                      const Icon(Icons.tune_rounded, color: AnimeColors.orange),
+                      Icon(
+                        Icons.tune_rounded,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       const SizedBox(width: 10),
                       Text(
                         'صدا و زیرنویس',
@@ -4496,7 +4555,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                           AudioSourceActions(
                             onSelected: (track) async {
                               await _player.setAudioTrack(track);
-                              if (context.mounted) Navigator.pop(context);
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
                             },
                           ),
                         ],
@@ -4511,11 +4572,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                 await _player.setSubtitleTrack(track);
                                 final native = _requiresNativeSubtitle(track);
                                 await _setNativeSubtitleVisibility(native);
-                                if (mounted && context.mounted) {
+                                if (mounted && sheetContext.mounted) {
                                   setState(
                                     () => _nativeSubtitleRendering = native,
                                   );
-                                  Navigator.pop(context);
+                                  Navigator.pop(sheetContext);
                                 }
                               },
                             ),
@@ -4551,7 +4612,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
             ),
           ),
         ),
-      ),
+        );
+        // Hentai sheets use the red player theme; normal sheets keep orange.
+        if (!widget.content.isHentai) return body;
+        return Theme(data: _playerRedTheme(context), child: body);
+      },
     );
     _showControls();
   }
@@ -4753,8 +4818,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       useSafeArea: true,
       backgroundColor: AnimeColors.surface,
       showDragHandle: true,
-      builder: (context) =>
-          _SubtitleTiming(initial: _subtitle, initialRate: _rate),
+      builder: (sheetContext) {
+        final body = _SubtitleTiming(initial: _subtitle, initialRate: _rate);
+        if (!widget.content.isHentai) return body;
+        return Theme(data: _playerRedTheme(context), child: body);
+      },
     );
     if (result != null) {
       setState(() => _subtitle = result.$1);
@@ -4779,7 +4847,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         }
       }
     },
-    child: Scaffold(
+    child: Theme(
+      // Only hentai playback uses the red player theme; normal anime keeps
+      // the default orange brand theme.
+      data: widget.content.isHentai ? _playerRedTheme(context) : Theme.of(context),
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: Listener(
         onPointerSignal: _handlePointerSignal,
@@ -4793,14 +4865,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
               final target = Duration(
                 milliseconds: (_duration.inMilliseconds * fraction).round(),
               );
-              _onSeekStateChanged(true);
+              // Digit-key seek (0-9): keep chrome hidden, only center feedback.
+              _hideTimer?.cancel();
+              _seekDebounceTimer?.cancel();
+              _isSeeking = false;
+              if (_controlsVisible && mounted) {
+                setState(() => _controlsVisible = false);
+              }
               unawaited(_player.seek(target));
               _showFeedback(
                 target < _position
                     ? PlayerFeedbackKind.seekBack
                     : PlayerFeedbackKind.seekForward,
               );
-              _onSeekStateChanged(false);
             }
           },
           onFocus: _pokeCursor,
@@ -5185,6 +5262,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         ),
       ),
     ),
+    ),
   );
 }
 
@@ -5266,10 +5344,14 @@ class _UnlockControl extends StatelessWidget {
       ],
     ),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-    child: const Row(
+    child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.lock_open_rounded, color: AnimeColors.orange, size: 25),
+        Icon(
+          Icons.lock_open_rounded,
+          color: Theme.of(context).colorScheme.primary,
+          size: 25,
+        ),
         SizedBox(width: 8),
         Text(
           'باز کردن قفل',
@@ -5299,7 +5381,9 @@ class _HeroControl extends StatelessWidget {
     tooltip: tooltip,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(primary ? 28 : 20),
-      color: primary ? AnimeColors.orange : Colors.black54,
+      color: primary
+          ? Theme.of(context).colorScheme.primary
+          : Colors.black54,
       border: Border.all(color: Colors.white24),
     ),
     padding: EdgeInsets.all(primary ? 18 : 13),
@@ -5389,7 +5473,13 @@ class _PlayerToolControl extends StatelessWidget {
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [Icon(icon, size: 21, color: AnimeColors.orange)],
+          children: [
+            Icon(
+              icon,
+              size: 21,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ],
         ),
         if (!compact || compactLabel != null) ...[
           const SizedBox(height: 2),
@@ -5581,13 +5671,15 @@ class _AudioTracks extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   selected: track == selected,
-                  selectedTileColor: AnimeColors.orange.withValues(alpha: .12),
+                  selectedTileColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: .12),
                   leading: Icon(
                     track == selected
                         ? Icons.check_circle_rounded
                         : Icons.graphic_eq_rounded,
                     color: track == selected
-                        ? AnimeColors.orange
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white60,
                   ),
                   title: Text(
@@ -5630,7 +5722,9 @@ class _SubtitleTracks extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   selected: track == selected,
-                  selectedTileColor: AnimeColors.orange.withValues(alpha: .12),
+                  selectedTileColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: .12),
                   leading: Icon(
                     track == selected
                         ? Icons.check_circle_rounded
@@ -5638,7 +5732,7 @@ class _SubtitleTracks extends StatelessWidget {
                         ? Icons.subtitles_off_rounded
                         : Icons.closed_caption_rounded,
                     color: track == selected
-                        ? AnimeColors.orange
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white60,
                   ),
                   title: Text(
@@ -5684,26 +5778,45 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
   late double rate = widget.initialRate;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    top: false,
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.sync_alt_rounded, color: AnimeColors.orange),
-              const SizedBox(width: 10),
-              Text('تنظیم سرعت', style: Theme.of(context).textTheme.titleLarge),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'برای زیرنویس‌های جدا از تصویر؛ زیرنویس چسبیده داخل خود ویدیو قابل تغییر نیست.',
-            style: TextStyle(color: Colors.white60, fontSize: 12),
-          ),
-          const SizedBox(height: 16),
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          isCompact ? 12 : 18,
+          0,
+          isCompact ? 12 : 18,
+          isCompact ? 12 : 18,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.sync_alt_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: isCompact ? 20 : 24,
+                ),
+                SizedBox(width: isCompact ? 8 : 10),
+                Text(
+                  'تنظیم سرعت',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontSize: isCompact ? 16 : 20,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: isCompact ? 6 : 8),
+            Text(
+              'برای زیرنویس‌های جدا از تصویر؛ زیرنویس چسبیده داخل خود ویدیو قابل تغییر نیست.',
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: isCompact ? 11 : 12,
+              ),
+            ),
+            SizedBox(height: isCompact ? 10 : 16),
           _TimingCard(
             icon: Icons.speed_rounded,
             title: 'سرعت ویدیو',
@@ -5719,7 +5832,7 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
             onPlus: () =>
                 setState(() => rate = (rate + .05).clamp(.5, 4).toDouble()),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isCompact ? 8 : 12),
           _TimingCard(
             icon: Icons.swap_horiz_rounded,
             title: 'جابه‌جایی زمان زیرنویس',
@@ -5743,7 +5856,7 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isCompact ? 8 : 12),
           _TimingCard(
             icon: Icons.compress_rounded,
             title: 'فاصلهٔ زمانی بین زیرنویس‌ها',
@@ -5767,7 +5880,7 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: isCompact ? 10 : 16),
           Row(
             children: [
               Expanded(
@@ -5794,7 +5907,8 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
         ],
       ),
     ),
-  );
+    );
+  }
 }
 
 class _TimingCard extends StatelessWidget {
@@ -5824,71 +5938,106 @@ class _TimingCard extends StatelessWidget {
   final VoidCallback onPlus;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: AnimeColors.surfaceHigh,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.white12),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: AnimeColors.orange),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                valueLabel,
-                textDirection: TextDirection.ltr,
-                style: const TextStyle(
-                  color: AnimeColors.orange,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            description,
-            style: const TextStyle(color: Colors.white60, fontSize: 11),
-          ),
-          Row(
-            children: [
-              _StepButton(icon: Icons.remove_rounded, onTap: onMinus),
-              Expanded(
-                child: Slider(
-                  value: value.clamp(min, max),
-                  min: min,
-                  max: max,
-                  divisions: divisions,
-                  onChanged: onChanged,
-                ),
-              ),
-              _StepButton(icon: Icons.add_rounded, onTap: onPlus),
-            ],
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AnimeColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(isCompact ? 16 : 20),
+        border: Border.all(color: Colors.white12),
       ),
-    ),
-  );
+      child: Padding(
+        padding: EdgeInsets.all(isCompact ? 10 : 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: isCompact ? 18 : 24,
+                ),
+                SizedBox(width: isCompact ? 6 : 9),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: isCompact ? 13 : 15,
+                    ),
+                  ),
+                ),
+                Text(
+                  valueLabel,
+                  textDirection: TextDirection.ltr,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: isCompact ? 12 : 14,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: isCompact ? 2 : 4),
+            Text(
+              description,
+              style: TextStyle(
+                color: Colors.white60,
+                fontSize: isCompact ? 11 : 11,
+              ),
+            ),
+            SizedBox(height: isCompact ? 2 : 4),
+            Row(
+              children: [
+                _StepButton(
+                  icon: Icons.remove_rounded,
+                  onTap: onMinus,
+                  compact: isCompact,
+                ),
+                Expanded(
+                  child: Slider(
+                    value: value.clamp(min, max),
+                    min: min,
+                    max: max,
+                    divisions: divisions,
+                    onChanged: onChanged,
+                  ),
+                ),
+                _StepButton(
+                  icon: Icons.add_rounded,
+                  onTap: onPlus,
+                  compact: isCompact,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StepButton extends StatelessWidget {
-  const _StepButton({required this.icon, required this.onTap});
+  const _StepButton({
+    required this.icon,
+    required this.onTap,
+    this.compact = false,
+  });
   final IconData icon;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) =>
-      IconButton.filledTonal(onPressed: onTap, icon: Icon(icon));
+  Widget build(BuildContext context) => IconButton.filledTonal(
+    onPressed: onTap,
+    icon: Icon(icon, size: compact ? 18 : 24),
+    style: IconButton.styleFrom(
+      minimumSize: Size(compact ? 36 : 48, compact ? 36 : 48),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: EdgeInsets.zero,
+    ),
+  );
 }
 
 class _TopSubtitleSettings extends StatefulWidget {

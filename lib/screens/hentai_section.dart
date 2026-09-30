@@ -12,6 +12,7 @@ import '../core/watch_progress.dart';
 import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
+import '../services/mbn_server.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
@@ -19,6 +20,10 @@ import '../widgets/content_art.dart';
 import '../widgets/hentai_image.dart';
 import '../widgets/pressable.dart';
 import 'detail_screen.dart' show askAndResumeLastWatch;
+import 'download_manager_screen.dart';
+import 'settings_screen.dart';
+import 'subscription_screen.dart';
+import 'update_screen.dart';
 
 typedef HentaiOpenContent =
     Future<void> Function(AnimeContent item, String tag);
@@ -34,6 +39,8 @@ class HentaiSectionPage extends StatefulWidget {
     required this.hentaiFavorites,
     required this.onOpenHentaiFavorites,
     required this.onToggleHentaiFavorite,
+    required this.server,
+    required this.email,
   });
   final HentaiIranApi api;
   final HentaiOpenContent onOpen;
@@ -43,6 +50,8 @@ class HentaiSectionPage extends StatefulWidget {
   final List<AnimeContent> hentaiFavorites;
   final VoidCallback onOpenHentaiFavorites;
   final void Function(AnimeContent item, bool selected) onToggleHentaiFavorite;
+  final MbnServerClient server;
+  final String email;
 
   @override
   State<HentaiSectionPage> createState() => _HentaiSectionPageState();
@@ -150,74 +159,85 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         historyCount: widget.hentaiHistory.length,
         onFavorites: widget.onOpenHentaiFavorites,
         favoritesCount: widget.hentaiFavorites.length,
+        onSearch: _openSearch,
+        server: widget.server,
+        email: widget.email,
       ),
       body: AmbientBackground(
         child: SafeArea(
           bottom: false,
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                child: SizedBox(
-                  height: 54,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Row(
+              Builder(
+                builder: (context) {
+                  final width = MediaQuery.sizeOf(context).width;
+                  // Narrow phones with large action buttons: logo only.
+                  final hideWordmark = width < 400;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                    child: SizedBox(
+                      height: 54,
+                      child: Stack(
+                        alignment: Alignment.center,
                         children: [
-                          Builder(
-                            builder: (context) => IconButton(
-                              tooltip: 'منوی هنتای',
-                              onPressed: () =>
-                                  Scaffold.of(context).openDrawer(),
-                              icon: const Icon(Icons.menu_rounded, size: 30),
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            tooltip: 'علاقه‌مندی‌های +۱۸',
-                            onPressed: widget.onOpenHentaiFavorites,
-                            icon: Badge(
-                              isLabelVisible: widget.hentaiFavorites.isNotEmpty,
-                              label: Text('${widget.hentaiFavorites.length}'),
-                              child: const Icon(
-                                Icons.favorite_rounded,
-                                size: 28,
+                          Row(
+                            children: [
+                              Builder(
+                                builder: (context) => IconButton(
+                                  tooltip: 'منوی هنتای',
+                                  onPressed: () =>
+                                      Scaffold.of(context).openDrawer(),
+                                  icon: const Icon(Icons.menu_rounded, size: 30),
+                                ),
                               ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'بازدیدشده‌های +۱۸',
-                            onPressed: widget.onOpenHentaiHistory,
-                            icon: Badge(
-                              isLabelVisible: widget.hentaiHistory.isNotEmpty,
-                              label: Text('${widget.hentaiHistory.length}'),
-                              child: const Icon(
-                                Icons.history_rounded,
-                                size: 28,
+                              const Spacer(),
+                              IconButton(
+                                tooltip: 'علاقه‌مندی‌های +۱۸',
+                                onPressed: widget.onOpenHentaiFavorites,
+                                icon: Badge(
+                                  isLabelVisible: widget.hentaiFavorites.isNotEmpty,
+                                  label: Text('${widget.hentaiFavorites.length}'),
+                                  child: const Icon(
+                                    Icons.favorite_rounded,
+                                    size: 28,
+                                  ),
+                                ),
                               ),
-                            ),
+                              IconButton(
+                                tooltip: 'بازدیدشده‌های +۱۸',
+                                onPressed: widget.onOpenHentaiHistory,
+                                icon: Badge(
+                                  isLabelVisible: widget.hentaiHistory.isNotEmpty,
+                                  label: Text('${widget.hentaiHistory.length}'),
+                                  child: const Icon(
+                                    Icons.history_rounded,
+                                    size: 28,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'جستجوی +۱۸',
+                                onPressed: _openSearch,
+                                icon: const Icon(Icons.search_rounded, size: 30),
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            tooltip: 'جستجوی +۱۸',
-                            onPressed: _openSearch,
-                            icon: const Icon(Icons.search_rounded, size: 30),
+                          IgnorePointer(
+                            child: BrandMark(
+                              size: 42,
+                              showWordmark: !hideWordmark,
+                              gradientColors: const [
+                                Color(0xFFEF4444),
+                                AnimeColors.coral,
+                              ],
+                              accent: const Color(0xFFEF4444),
+                            ),
                           ),
                         ],
                       ),
-                      const IgnorePointer(
-                        child: BrandMark(
-                          size: 42,
-                          gradientColors: [
-                            Color(0xFFEF4444),
-                            AnimeColors.coral,
-                          ],
-                          accent: Color(0xFFEF4444),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
               Expanded(
                 child: PageView(
@@ -389,6 +409,9 @@ class _HentaiSectionDrawer extends StatelessWidget {
     required this.historyCount,
     required this.onFavorites,
     required this.favoritesCount,
+    required this.onSearch,
+    required this.server,
+    required this.email,
   });
 
   final int selected;
@@ -398,6 +421,11 @@ class _HentaiSectionDrawer extends StatelessWidget {
   final int historyCount;
   final VoidCallback onFavorites;
   final int favoritesCount;
+  final VoidCallback onSearch;
+  final MbnServerClient server;
+  final String email;
+
+  static const _red = Color(0xFFEF4444);
 
   static const _navItems = <({IconData icon, String label})>[
     (icon: Icons.home_rounded, label: 'خانه'),
@@ -408,13 +436,44 @@ class _HentaiSectionDrawer extends StatelessWidget {
     (icon: Icons.article_rounded, label: 'وبلاگ'),
   ];
 
+  void _pushTool(BuildContext context, Widget page) {
+    Navigator.pop(context);
+    Future<void>.delayed(const Duration(milliseconds: 220), () {
+      if (context.mounted) {
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => page),
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) => Drawer(
+    width: MediaQuery.sizeOf(context).width.clamp(290, 360).toDouble(),
     backgroundColor: AnimeColors.surface,
     child: SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 20, 12, 24),
+        padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
         children: [
+          const Center(
+            child: BrandMark(
+              size: 82,
+              gradientColors: [Color(0xFFEF4444), AnimeColors.coral],
+              accent: Color(0xFFEF4444),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            email,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            style: const TextStyle(color: AnimeColors.muted),
+          ),
+          const SizedBox(height: 10),
+          _subscriptionBadge(context),
+          const SizedBox(height: 14),
+          // Red +18 banner (kept from old drawer).
           Container(
             padding: const EdgeInsets.all(18),
             decoration: const BoxDecoration(
@@ -443,7 +502,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Material(
             color: AnimeColors.orange.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(18),
@@ -472,106 +531,131 @@ class _HentaiSectionDrawer extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 18),
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
+          const SizedBox(height: 14),
+          _section('مرور محتوا', [
+            for (var i = 0; i < _navItems.length; i++)
+              _tile(
+                _navItems[i].icon,
+                _navItems[i].label,
+                () => select(i),
+                index: i,
+              ),
+            _tile(
+              Icons.manage_search_rounded,
+              'جستجوی +۱۸',
+              () {
+                Navigator.pop(context);
+                Future<void>.delayed(
+                  const Duration(milliseconds: 220),
+                  onSearch,
+                );
+              },
             ),
-            leading: const Icon(Icons.history_rounded),
-            title: const Text('بازدیدشده‌های +۱۸'),
-            trailing: historyCount > 0
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: .18),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$historyCount',
-                      style: const TextStyle(
-                        color: Color(0xFFEF4444),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  )
-                : null,
-            onTap: () async {
-              Navigator.pop(context);
-              await Future<void>.delayed(const Duration(milliseconds: 220));
-              onHistory();
-            },
-          ),
-          const SizedBox(height: 6),
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
+          ]),
+          _section('کتابخانهٔ من', [
+            _tileWithCount(
+              Icons.favorite_rounded,
+              'علاقه‌مندی‌های +۱۸',
+              favoritesCount,
+              () async {
+                Navigator.pop(context);
+                await Future<void>.delayed(
+                  const Duration(milliseconds: 220),
+                );
+                onFavorites();
+              },
             ),
-            leading: const Icon(Icons.favorite_rounded),
-            title: const Text('علاقه‌مندی‌های +۱۸'),
-            trailing: favoritesCount > 0
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: .18),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$favoritesCount',
-                      style: const TextStyle(
-                        color: Color(0xFFEF4444),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  )
-                : null,
-            onTap: () async {
-              Navigator.pop(context);
-              await Future<void>.delayed(const Duration(milliseconds: 220));
-              onFavorites();
-            },
-          ),
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 14, 8),
-            child: Text(
-              'منوی بخش',
-              style: const TextStyle(
-                color: AnimeColors.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+            _tileWithCount(
+              Icons.history_rounded,
+              'بازدیدشده‌های +۱۸',
+              historyCount,
+              () async {
+                Navigator.pop(context);
+                await Future<void>.delayed(
+                  const Duration(milliseconds: 220),
+                );
+                onHistory();
+              },
+            ),
+          ]),
+          // Support button with Telegram blue color #229ED9 (same as main).
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF229ED9).withValues(alpha: .24),
+                  const Color(0xFF229ED9).withValues(alpha: .08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: const Color(0xFF229ED9).withValues(alpha: .6),
+              ),
+            ),
+            child: ListTile(
+              leading: Container(
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF229ED9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.send_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'تماس با پشتیبانی',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: const Text(
+                '@mbnproo در تلگرام',
+                style: TextStyle(color: Color(0xFF229ED9), fontSize: 12),
+              ),
+              trailing: const Icon(
+                Icons.chevron_left_rounded,
+                color: Color(0xFF229ED9),
+              ),
+              onTap: () => launchUrl(
+                Uri.parse('https://t.me/mbnproo'),
+                mode: LaunchMode.externalApplication,
               ),
             ),
           ),
-          for (var i = 0; i < _navItems.length; i++) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: ListTile(
-                selected: i == selected,
-                selectedTileColor: const Color(
-                  0xFFEF4444,
-                ).withValues(alpha: .14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                leading: Icon(
-                  _navItems[i].icon,
-                  color: i == selected
-                      ? const Color(0xFFEF4444)
-                      : AnimeColors.muted,
-                ),
-                title: Text(_navItems[i].label),
-                onTap: () => select(i),
-              ),
+          _section('ابزارهای برنامه', [
+            _tile(
+              Icons.download_for_offline_rounded,
+              'مدیریت دانلودها',
+              () => _pushTool(context, const DownloadManagerScreen()),
+              tool: true,
             ),
-          ],
+            _tile(
+              Icons.tune_rounded,
+              'تنظیمات',
+              () => _pushTool(context, const SettingsScreen()),
+              tool: true,
+            ),
+            _tile(
+              Icons.system_update_alt_rounded,
+              'به‌روزرسانی برنامه',
+              () => _pushTool(context, const UpdateScreen()),
+              tool: true,
+            ),
+            _tile(
+              Icons.workspace_premium_rounded,
+              'مدیریت اشتراک',
+              () => _pushTool(
+                context,
+                SubscriptionScreen(
+                  loadProfile: () => server.getJson('/api/me'),
+                ),
+              ),
+              tool: true,
+            ),
+          ]),
           const Divider(height: 28),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 14),
@@ -582,6 +666,190 @@ class _HentaiSectionDrawer extends StatelessWidget {
           ),
         ],
       ),
+    ),
+  );
+
+  Widget _subscriptionBadge(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
+    future: server.getJson('/api/me'),
+    builder: (context, snapshot) {
+      final user = (snapshot.data?['user'] as Map?)?.cast<String, dynamic>();
+      final admin = user?['role'] == 'admin';
+      final seconds = (user?['subscription_expires_at'] as num?)?.toInt();
+      final expiry = seconds == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      final remaining = expiry?.difference(DateTime.now());
+      final hasActive = admin || (remaining != null && !remaining.isNegative);
+
+      String text;
+      if (admin) {
+        text = 'اشتراک: نامحدود (مدیر)';
+      } else if (seconds == null) {
+        text = snapshot.connectionState == ConnectionState.waiting
+            ? 'در حال بررسی اشتراک...'
+            : 'اشتراک: ثبت نشده';
+      } else if (remaining == null || remaining.isNegative) {
+        text = 'اشتراک به پایان رسیده';
+      } else if (remaining.inDays > 0) {
+        text = '${_toPersianDigits(remaining.inDays)} روز مانده از اشتراک';
+      } else {
+        final hours = remaining.inHours;
+        text = hours > 0
+            ? '${_toPersianDigits(hours)} ساعت مانده از اشتراک'
+            : 'کمتر از ۱ ساعت مانده از اشتراک';
+      }
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AnimeColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hasActive
+                ? _red.withValues(alpha: 0.3)
+                : Colors.redAccent.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  hasActive ? Icons.verified_rounded : Icons.schedule_rounded,
+                  size: 16,
+                  color: hasActive ? const Color(0xFF00E676) : Colors.redAccent,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: hasActive ? Colors.white70 : Colors.redAccent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 34,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE50914),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () => launchUrl(
+                  Uri.parse('https://t.me/mbnproo'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                icon: const Icon(Icons.autorenew_rounded, size: 16),
+                label: const Text(
+                  'تمدید اشتراک',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  static String _toPersianDigits(Object value) => '$value'.replaceAllMapped(
+    RegExp(r'\d'),
+    (match) => '۰۱۲۳۴۵۶۷۸۹'[int.parse(match.group(0)!)],
+  );
+
+  Widget _label(String label) => Padding(
+    padding: const EdgeInsetsDirectional.fromSTEB(14, 0, 14, 8),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: AnimeColors.muted,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  Widget _section(String title, List<Widget> children) => Container(
+    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.fromLTRB(6, 12, 6, 7),
+    decoration: BoxDecoration(
+      color: AnimeColors.surfaceHigh,
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: Colors.white12),
+    ),
+    child: Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [_label(title), ...children],
+      ),
+    ),
+  );
+
+  Widget _tile(
+    IconData icon,
+    String label,
+    VoidCallback tap, {
+    int? index,
+    bool tool = false,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: ListTile(
+      selected: index != null && index == selected,
+      selectedTileColor: _red.withValues(alpha: .14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      leading: Icon(
+        icon,
+        color: (index != null && index == selected) || tool
+            ? _red
+            : AnimeColors.muted,
+      ),
+      title: Text(label),
+      trailing: tool ? const Icon(Icons.chevron_left_rounded, size: 20) : null,
+      onTap: tap,
+    ),
+  );
+
+  Widget _tileWithCount(
+    IconData icon,
+    String label,
+    int count,
+    VoidCallback tap,
+  ) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      leading: Icon(icon, color: AnimeColors.muted),
+      title: Text(label),
+      trailing: count > 0
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: _red.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: _red,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            )
+          : null,
+      onTap: tap,
     ),
   );
 }
