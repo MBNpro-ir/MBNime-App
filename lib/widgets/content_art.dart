@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/anime_content.dart';
 import 'hentai_image.dart';
@@ -169,6 +170,7 @@ class _ContentArtState extends State<ContentArt> {
   }
 
   Future<void> _resolveArtwork() async {
+    if (kIsWeb && widget.content.isHentai) return;
     final generation = ++_generation;
     final candidates = _candidates;
     if (candidates.isEmpty) {
@@ -311,7 +313,14 @@ class _ContentArtState extends State<ContentArt> {
               ),
             ),
           ),
-          if (_provider case final provider?)
+          if (kIsWeb && widget.content.isHentai && _candidates.isNotEmpty)
+            Positioned.fill(child: Image.network(
+              _candidates.first,
+              webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => CustomPaint(painter: _PosterPainter(widget.content.id.hashCode)),
+            ))
+          else if (_provider case final provider?)
             // One short opacity animation per artwork switch: the image is
             // already decoded (probe), so the fade only composites an alpha
             // over the placeholder gradient behind — no decode/layout work

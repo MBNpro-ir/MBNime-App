@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'web_gateway.dart';
 import 'dart:convert';
-import 'dart:io';
+import '../core/app_platform.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -64,6 +66,7 @@ class AnimeOnApi implements ContentApi {
   /// never travel over the system proxy (or any proxy). The +18 section has
   /// its own routed client (see `HentaiRaceClient`).
   static http.Client _directClient() {
+    if (kIsWeb) return WebCatalogClient();
     final inner = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     inner.findProxy = (_) => 'DIRECT';
     return IOClient(inner);

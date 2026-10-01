@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'web_gateway.dart';
 import 'cross_app_auth.dart';
 import 'dart:convert';
 
@@ -6,9 +8,10 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MbnServerException implements Exception {
-  const MbnServerException(this.message, {this.statusCode});
+  const MbnServerException(this.message, {this.statusCode, this.details});
   final String message;
   final int? statusCode;
+  final Map<String, dynamic>? details;
   @override
   String toString() => message;
 }
@@ -20,7 +23,7 @@ class MbnServerException implements Exception {
 class MbnServerClient {
   MbnServerClient({http.Client? client, String? baseUrl})
     : _client = client ?? http.Client(),
-      baseUrl = baseUrl ?? defaultBaseUrl;
+      baseUrl = baseUrl ?? (kIsWeb ? Uri.base.origin : defaultBaseUrl);
 
   static const defaultBaseUrl = 'https://login.a.mbnpro.ir';
   static const _tokenKey = 'mbn_secure_token';
@@ -29,7 +32,9 @@ class MbnServerClient {
 
   final http.Client _client;
   final String baseUrl;
-  String? token;
+  String? _token;
+  String? get token => _token;
+  set token(String? value) { _token = value; WebGateway.token = value; }
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse(baseUrl).replace(path: path, queryParameters: query);
@@ -46,6 +51,7 @@ class MbnServerClient {
       throw MbnServerException(
         data['error']?.toString() ?? 'خطا (کد ${response.statusCode}).',
         statusCode: response.statusCode,
+        details: data,
       );
     }
     return data;
@@ -147,6 +153,11 @@ class MbnServerClient {
   }
 
   Future<void> clearToken() async {
+    final oldToken = token;
+    if (oldToken != null) {
+      _client.post(_uri('/api/auth/logout'), headers: {'Authorization': 'Bearer $oldToken'})
+        .timeout(const Duration(seconds: 5)).then((_) {}, onError: (Object _) {});
+    }
     token = null;
     await CrossAppAuth.clearSharedToken();
     try {

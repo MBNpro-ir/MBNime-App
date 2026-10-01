@@ -151,9 +151,9 @@ class SessionStore {
         exchangeData = await server.postJson('/api/auth/exchange', {
           'target_app': 'anime',
         });
-      } catch (_) {}
+      } on MbnServerException { rethrow; }
 
-      if (exchangeData != null && exchangeData['token'] != null) {
+      if (exchangeData['token'] != null) {
         final newToken = exchangeData['token'].toString();
         server.token = newToken;
         await loginWithHandoff(

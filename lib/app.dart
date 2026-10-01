@@ -1,5 +1,8 @@
 import 'services/cross_app_auth.dart';
 import 'dart:async';
+import 'services/session_watch.dart';
+import 'services/browser_features.dart';
+import 'widgets/session_devices_dialog.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -45,6 +48,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   bool _siblingAvailable = false;
   bool _checkingAccount = false;
   bool _terminating = false;
+  late final SessionWatch _sessionWatch = SessionWatch(_forceLogout);
 
   @override
   void initState() {
@@ -68,6 +72,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _sessionWatch.dispose();
     _accountTimer?.cancel();
     _syncTimer?.cancel();
     _handoffTimer?.cancel();
@@ -122,6 +127,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   Future<void> _forceLogout(String message) async {
     if (_terminating || !mounted) return;
     _terminating = true;
+    if (kIsWeb) BrowserFeatures.stop();
+    appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     MbnSync.instance.clear();
     try {
       await _session.logout();
@@ -210,6 +217,21 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<bool> _loginWithCapacity(Future<void> Function() action, String identifier) async {
+    try {
+      await action();
+      return true;
+    } on MbnServerException catch (error) {
+      if (error.details?['code'] != 'session_limit') rethrow;
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) rethrow;
+      final result = await showSessionDevicesDialog(ctx, error.details!, _session.server.postJson);
+      if (result == null) return false;
+      await _session.loginWithHandoff(result, fallbackIdentifier: identifier);
+      return true;
+    }
+  }
+
   Future<void> _beginHandoff() async {
     final token = await CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie');
     if (token == null || token.isEmpty) {
@@ -223,7 +245,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       return;
     }
     try {
-      await _session.loginWithToken(token);
+      if (!await _loginWithCapacity(() => _session.loginWithToken(token), 'کاربر')) return;
       if (_session.userId != null) {
         await MbnSync.instance.bindAccount(_session.userId!);
       }
@@ -353,6 +375,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
           ) ??
           false;
       if (!useIt) return;
+      if (!await _loginWithCapacity(() async {
       final data = await AuthHandoff.consume(
         post: _session.server.postJson,
         id: id,
@@ -360,6 +383,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       );
       if (data == null) return;
       await _session.loginWithHandoff(data, fallbackIdentifier: identifier);
+      }, identifier)) { return; }
       if (_session.userId != null) {
         await MbnSync.instance.bindAccount(_session.userId!);
       }
@@ -381,6 +405,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    _sessionWatch.track(_session.server.token, _session.server.baseUrl);
     return ListenableBuilder(
       listenable: AccessibilityService.instance,
       builder: (context, _) {
@@ -455,7 +480,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                     key: const ValueKey('login'),
                     onUseOtherApp: _siblingAvailable ? _beginHandoff : null,
                     onLogin: (email, password) async {
-                      await _session.login(email: email, password: password);
+                      if (!await _loginWithCapacity(
+                        () => _session.login(email: email, password: password), email)) { return; }
                       MbnSync.instance.configure(server: _session.server);
                       if (_session.userId != null) {
                         await MbnSync.instance.bindAccount(_session.userId!);

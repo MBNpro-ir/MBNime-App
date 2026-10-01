@@ -1,6 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import '../core/app_platform.dart';
 
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
@@ -21,6 +22,8 @@ class HentaiIranApi implements ContentApi {
   HentaiIranApi({http.Client? client}) : _client = client ?? _windowsClient();
 
   static http.Client _windowsClient() {
+    // Browser requests use the user's VPN. WordPress REST permits CORS.
+    if (kIsWeb) return http.Client();
     if (!Platform.isWindows) return http.Client();
     return HentaiRaceClient();
   }
@@ -50,7 +53,7 @@ class HentaiIranApi implements ContentApi {
 
   Map<String, String> get _headers => const {
     'Accept': 'application/json, text/html',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MBNime/1.0',
+    if (!kIsWeb) 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MBNime/1.0',
   };
 
   // ---------------------------------------------------------------- terms
@@ -261,6 +264,16 @@ class HentaiIranApi implements ContentApi {
     required String sort,
     int limit = 20,
   }) async {
+    if (kIsWeb) {
+      final uri = Uri.parse('$origin/wp-json/hanime/v1/anime').replace(
+        queryParameters: {'per_page': '$limit', 'orderby': sort == 'views' ? 'views' : sort, 'order': 'DESC'},
+      );
+      final response = await _get(uri);
+      if (response.statusCode != 200) throw const AnimeOnApiException('آرشیو هنتای ایران در دسترس نیست.');
+      final data = jsonDecode(response.body);
+      final rows = data is List ? data : (data is Map ? data['items'] ?? data['data'] ?? [] : []);
+      return (rows as List).whereType<Map<String, dynamic>>().map(contentFromRest).toList();
+    }
     final uri = Uri.parse('$origin/anime/').replace(
       queryParameters: {
         'sort': sort,
@@ -384,6 +397,13 @@ class HentaiIranApi implements ContentApi {
 
   @override
   Future<AnimeContent> details(AnimeContent summary) async {
+    if (kIsWeb) {
+      final numeric = int.tryParse(summary.id) ?? int.tryParse((await _restSingle(summary))?['id']?.toString() ?? '');
+      if (numeric == null) throw const AnimeOnApiException('شناسه این عنوان معتبر نیست.');
+      final response = await _get(Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'));
+      if (response.statusCode != 200) throw const AnimeOnApiException('جزئیات این عنوان قابل خواندن نیست.');
+      return contentFromRest(jsonDecode(response.body) as Map<String, dynamic>, summary: summary);
+    }
     // 1) Structured taxonomy terms from the REST single endpoint.
     Map<String, List<String>> restTerms = const {};
     String restDescription = '';
@@ -490,6 +510,46 @@ class HentaiIranApi implements ContentApi {
       related: page.related,
       downloads: downloads,
       relatedLinks: page.relatedLinks,
+    );
+  }
+
+  /// Public browser-safe catalogue endpoint, including direct episode files.
+  @visibleForTesting
+  static AnimeContent contentFromRest(Map<String, dynamic> row, {AnimeContent? summary}) {
+    List<Map<String, dynamic>> rows(String key) => (row[key] as List? ?? const []).whereType<Map<String, dynamic>>().toList();
+    List<String> names(String key) => rows(key).map((term) => _strip(term['name'])).where((name) => name.isNotEmpty).toList();
+    final id = '${row['id']}';
+    final title = _strip(row['title']);
+    final grouped = <String, List<AnimeEpisode>>{};
+    final seen = <String>{};
+    for (final file in rows('episodes')) {
+      final url = file['download_url']?.toString() ?? '';
+      final uri = Uri.tryParse(url);
+      if (uri == null || uri.scheme != 'https' || !seen.add(url)) continue;
+      final number = '${file['episode'] ?? 1}';
+      final quality = '${file['quality'] ?? ''}';
+      grouped.putIfAbsent(number, () => []).add(AnimeEpisode(
+        id: '$id-$number-$quality', name: 'قسمت $number • $quality', fileUrl: url, fileType: 'mp4',
+      ));
+    }
+    final studio = names('studios').join('، ');
+    final year = int.tryParse('${row['year']}') ?? summary?.year ?? 0;
+    final image = row['cover_url']?.toString() ?? summary?.imageUrl;
+    final related = rows('similar_anime').map((item) => contentFromRest(item)).toList();
+    return AnimeContent(
+      id: id, title: title, subtitle: [if (studio.isNotEmpty) studio, if (year > 0) '$year'].join(' • ').ifEmpty('هنتای ایران'),
+      description: _strip(row['synopsis_fa'] ?? row['synopsis'] ?? summary?.description),
+      year: year, rating: double.tryParse('${row['score']}') ?? 0,
+      kind: ContentKind.anime, colors: summary?.colors ?? _paletteFor(title),
+      genres: names('genres'), tags: names('tags'), isHentai: true,
+      imageUrl: image, backdropUrl: row['poster_url']?.toString() ?? image,
+      detailUrl: row['permalink']?.toString() ?? summary?.detailUrl,
+      studio: studio.isEmpty ? summary?.studio ?? '' : studio,
+      statusLabel: '${row['broadcast_status_fa'] ?? ''}', censorLabel: '${row['censorship_status_fa'] ?? ''}',
+      subtitleLabel: row['is_hardsub'] == true ? 'زیرنویس چسبیده' : summary?.subtitleLabel ?? '',
+      publishDateText: _safeDatePrefix('${row['published_at'] ?? ''}', 10), ageRating: '18+', related: related,
+      seasons: _buildSeasons(grouped),
+      downloads: grouped.values.expand((files) => files).map((file) => AnimeDownload(id: 'dl-${file.id}', label: file.name, url: file.fileUrl)).toList(),
     );
   }
 
@@ -742,7 +802,8 @@ class HentaiIranApi implements ContentApi {
     );
   }
 
-  List<AnimeSeason> _buildSeasons(Map<String, List<AnimeEpisode>> grouped) {
+  static List<AnimeSeason> _buildSeasons(Map<String, List<AnimeEpisode>> grouped) {
+    if (grouped.isEmpty) return const [];
     final episodes = grouped.entries.toList()
       ..sort((a, b) => _faToEn(a.key).compareTo(_faToEn(b.key)));
     return [

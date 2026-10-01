@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
+import '../core/app_platform.dart';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -638,7 +639,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
               () => _pushTool(context, const SettingsScreen()),
               tool: true,
             ),
-            _tile(
+            if (!kIsWeb) _tile(
               Icons.system_update_alt_rounded,
               'به‌روزرسانی برنامه',
               () => _pushTool(context, const UpdateScreen()),

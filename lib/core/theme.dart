@@ -224,8 +224,10 @@ abstract final class AnimeTheme {
         labelStyle: TextStyle(
           fontFamily: 'Vazirmatn',
           fontWeight: boldText ? FontWeight.w700 : FontWeight.normal,
-          color: highContrast ? Colors.white : null,
+          color: AnimeColors.text,
         ),
+        secondaryLabelStyle: const TextStyle(color: AnimeColors.text),
+        checkmarkColor: AnimeColors.text,
       ),
     );
   }

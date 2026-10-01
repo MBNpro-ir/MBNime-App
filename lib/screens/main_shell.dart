@@ -1,5 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
-import 'dart:io';
+import '../core/app_platform.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -81,6 +82,7 @@ class _MainShellState extends State<MainShell> {
 
   /// One-time promo for the new MBNMovie app (film & series).
   Future<void> _showMoviePromoOnce() async {
+    if (kIsWeb) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool('promo_mbnmovie_seen_v1') ?? false) return;
@@ -1048,7 +1050,7 @@ class _MenuDrawer extends StatelessWidget {
               tool: true,
             ),
             _tile(Icons.tune_rounded, 'تنظیمات', settings, tool: true),
-            _tile(
+            if (!kIsWeb) _tile(
               Icons.system_update_alt_rounded,
               'به‌روزرسانی برنامه',
               updates,

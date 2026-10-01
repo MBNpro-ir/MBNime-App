@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import '../services/web_gateway.dart';
+import '../core/app_platform.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -21,7 +22,7 @@ ImageProvider imageProviderForUrl(
   if (viaUnstableRoute && Platform.isWindows) {
     return HentaiHttpImage(url);
   }
-  return NetworkImage(url);
+  return NetworkImage(WebGateway.image(url));
 }
 
 /// `NetworkImage` equivalent that downloads bytes through

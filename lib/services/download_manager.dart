@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import '../core/app_platform.dart';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/foundation.dart';
@@ -19,7 +19,8 @@ class DownloadManager extends ChangeNotifier {
   DownloadManager._();
   static final instance = DownloadManager._();
   static const group = 'mbnime-media';
-  final downloader = FileDownloader();
+  FileDownloader? _downloader;
+  FileDownloader get downloader => _downloader ??= FileDownloader();
   final Map<String, TaskRecord> records = {};
   final Map<String, TaskProgressUpdate> progress = {};
   Future<void>? _initialization;
@@ -136,6 +137,7 @@ class DownloadManager extends ChangeNotifier {
         throw exception;
       });
   Future<void> _initialize() async {
+    if (kIsWeb) return;
     final prefs = await SharedPreferences.getInstance();
     wifiOnly = prefs.getBool('downloads_wifi') ?? false;
     concurrency = (prefs.getInt('downloads_concurrency') ?? 2).clamp(1, 4);
