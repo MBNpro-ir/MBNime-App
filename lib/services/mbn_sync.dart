@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/app_platform.dart' show Platform;
@@ -32,6 +33,8 @@ class MbnSync {
   Timer? _pendingProgressPush;
   Timer? _pendingPreferencesPush;
   bool _syncing = false;
+  bool _resettingProgress = false;
+  static const _pendingResetKey = 'mbn_progress_resets_v1';
 
   void configure({required MbnServerClient server}) => _server = server;
   void clear() {
@@ -58,7 +61,7 @@ class MbnSync {
         if (_isProgressKey(key) || _isPreferenceKey(key) ||
             key.startsWith(_tsPrefix) ||
             key.startsWith('mbn_sync_dirty_') ||
-            key.startsWith('mbn_sync_rev_')) {
+            key.startsWith('mbn_sync_rev_') || key == _pendingResetKey) {
           await prefs.remove(key);
         }
       }
@@ -139,6 +142,7 @@ class MbnSync {
     if (server?.token == null || _syncing) return;
     _syncing = true;
     try {
+      if (!await _flushEpisodeResets()) return;
       final remote = await server!.getJson('/api/sync', query: {'app': _app});
       final lib = LibraryStore();
       final lists = PlaylistStore();
@@ -188,6 +192,7 @@ class MbnSync {
   Future<void> _pushCategories(List<String> targets) async {
     final server = _server;
     if (server?.token == null) return;
+    if (targets.contains('progress') && !await _flushEpisodeResets()) return;
     final lib = LibraryStore();
     final lists = PlaylistStore();
     final data = <String, dynamic>{};
@@ -208,10 +213,51 @@ class MbnSync {
         await _setLocalTs(category, ts);
         if ((prefs.getInt('mbn_sync_rev_$category') ?? 0) ==
             revisions[category]) {
+          if (category == 'progress') await _restoreProgress(row?['payload']);
           await prefs.setBool('mbn_sync_dirty_$category', false);
         }
       }
     } catch (_) {}
+  }
+
+  /// Queue a scoped reset durably so an offline clear cannot be resurrected
+  /// by the next server pull. The server rejects older device snapshots.
+  Future<bool> resetEpisodeProgress(String contentId, Set<String> episodeIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getStringList(_pendingResetKey) ?? [];
+    pending.add(jsonEncode({'app': _app, 'content_id': contentId,
+      'episode_ids': episodeIds.toList()}));
+    await prefs.setStringList(_pendingResetKey, pending);
+    await _touchLocal('progress');
+    final synced = await _flushEpisodeResets();
+    if (synced) {
+      await _pushCategories(['progress']);
+    } else if (_server?.token != null) {
+      _scheduleProgressPush();
+    }
+    return synced;
+  }
+
+  Future<bool> _flushEpisodeResets() async {
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getStringList(_pendingResetKey) ?? []).isEmpty) return true;
+    if (_server?.token == null || _resettingProgress) return false;
+    _resettingProgress = true;
+    try {
+      while ((prefs.getStringList(_pendingResetKey) ?? []).isNotEmpty) {
+        final entry = prefs.getStringList(_pendingResetKey)!.first;
+        await _server!.postJson('/api/sync/progress/reset-episode',
+          Map<String, dynamic>.from(jsonDecode(entry) as Map));
+        final remaining = prefs.getStringList(_pendingResetKey) ?? [];
+        remaining.remove(entry);
+        await prefs.setStringList(_pendingResetKey, remaining);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _resettingProgress = false;
+    }
   }
 
   Future<void> pushFavorites() async {

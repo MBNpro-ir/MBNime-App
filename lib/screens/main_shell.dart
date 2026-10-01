@@ -1052,12 +1052,13 @@ class _MenuDrawer extends StatelessWidget {
             ),
           ]),
           _section('ابزارهای برنامه', [
-            _tile(
-              Icons.download_for_offline_rounded,
-              'مدیریت دانلودها',
-              downloads,
-              tool: true,
-            ),
+            if (!kIsWeb)
+              _tile(
+                Icons.download_for_offline_rounded,
+                'مدیریت دانلودها',
+                downloads,
+                tool: true,
+              ),
             _tile(Icons.tune_rounded, 'تنظیمات', settings, tool: true),
             if (!kIsWeb)
               _tile(
@@ -1251,7 +1252,14 @@ class _HomePageState extends State<_HomePage> {
   @override
   void initState() {
     super.initState();
+    WatchProgressStore.changes.addListener(_reloadContinueWatch);
     _reloadContinueWatch();
+  }
+
+  @override
+  void dispose() {
+    WatchProgressStore.changes.removeListener(_reloadContinueWatch);
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -1319,6 +1327,7 @@ class _HomePageState extends State<_HomePage> {
                 child: _SectionEntrance(
                   index: 1,
                   child: _ContinueWatchSection(
+                    api: widget.api,
                     last: last,
                     onPlayed: refreshContinueWatch,
                   ),
@@ -2663,7 +2672,12 @@ String _fmtContinuePosition(Duration value) {
 /// and a progress bar. Tapping asks the shared confirmation popup (title +
 /// minute) and resumes directly. Hidden when there is no resumable exit.
 class _ContinueWatchSection extends StatelessWidget {
-  const _ContinueWatchSection({required this.last, required this.onPlayed});
+  const _ContinueWatchSection({
+    required this.api,
+    required this.last,
+    required this.onPlayed,
+  });
+  final ContentApi api;
   final LastWatch last;
   final Future<void> Function() onPlayed;
 
@@ -2676,7 +2690,7 @@ class _ContinueWatchSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       child: Pressable(
         onTap: () async {
-          await askAndResumeLastWatch(context, last);
+          await askAndResumeLastWatch(context, last, api: api);
           await onPlayed();
         },
         child: DecoratedBox(

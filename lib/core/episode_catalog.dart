@@ -129,6 +129,27 @@ class EpisodeCatalog {
     return null;
   }
 
+  /// Recover the real variant, including its raw id and quality metadata.
+  /// Older last-watch records store a logical group id instead of a raw id.
+  EpisodeVariant? resumeVariant({
+    required String episodeId,
+    required String fileUrl,
+    String? preferredQuality,
+  }) {
+    for (final group in episodes) {
+      for (final variant in group.variants) {
+        if (variant.episode.fileUrl == fileUrl) return variant;
+      }
+    }
+    for (final group in episodes) {
+      if (group.id == episodeId) return group.variantFor(preferredQuality);
+      for (final variant in group.variants) {
+        if (variant.episode.id == episodeId) return variant;
+      }
+    }
+    return null;
+  }
+
   static EpisodeCatalog from(AnimeContent content) {
     if (content.seasons.isEmpty) {
       return const EpisodeCatalog(seasons: [], qualities: []);
@@ -201,9 +222,7 @@ class EpisodeCatalog {
         for (final variant in trailers)
           EpisodeGroup(
             id: 'logical:movie:trailer-${variant.episode.id}',
-            name: variant.episode.name.isEmpty
-                ? 'تیزر'
-                : variant.episode.name,
+            name: variant.episode.name.isEmpty ? 'تیزر' : variant.episode.name,
             variants: [variant],
           ),
       ];
@@ -294,9 +313,7 @@ String episodeDisplayName(String rawName) {
   final name = rawName.trim();
   if (name.isEmpty) return 'قسمت';
   if (isTrailerLabel(name)) return name;
-  final bare = RegExp(
-    r'^\*?\s*([0-9۰-۹٠-٩]+)\s*\*?\s*$',
-  ).firstMatch(name);
+  final bare = RegExp(r'^\*?\s*([0-9۰-۹٠-٩]+)\s*\*?\s*$').firstMatch(name);
   if (bare != null) return 'قسمت ${bare.group(1)}';
   return name;
 }
@@ -343,8 +360,9 @@ String formatFileSize(String raw) {
     r'^([\d.,]+)\s*(ترابایت|گیگابایت|مگابایت|کیلوبایت|بایت|گیگ|مگ|کیلو)',
   ).firstMatch(text);
   if (faUnit != null) {
-    final number =
-        double.tryParse(_trimSizeNumber(faUnit.group(1)!).replaceAll(',', ''));
+    final number = double.tryParse(
+      _trimSizeNumber(faUnit.group(1)!).replaceAll(',', ''),
+    );
     if (number == null || number <= 0) return raw.trim();
     final unit = faUnit.group(2)!;
     String fixed(int fractionDigits) =>
@@ -359,8 +377,9 @@ String formatFileSize(String raw) {
     if (unit.startsWith('کیلو')) return '${fixed(0)}KB';
     return '${fixed(0)}B';
   }
-  final withUnit =
-      RegExp(r'^([\d.,]+)\s*([kKmMgGtT])\s*[bB]$').firstMatch(text);
+  final withUnit = RegExp(
+    r'^([\d.,]+)\s*([kKmMgGtT])\s*[bB]$',
+  ).firstMatch(text);
   if (withUnit != null) {
     return '${_trimSizeNumber(withUnit.group(1)!)}'
         '${withUnit.group(2)!.toUpperCase()}B';
@@ -451,7 +470,9 @@ NormalDownloadPlan normalDownloadPlan(AnimeContent content) {
               !isTrailerLabel(variant.season.name),
         )
         .toList(growable: false);
-    if (mains.isEmpty) return const NormalDownloadPlan(isMovie: true, batches: []);
+    if (mains.isEmpty) {
+      return const NormalDownloadPlan(isMovie: true, batches: []);
+    }
     final qualities = _qualityList(mains);
     if (qualities.every(isUnknownQuality)) {
       final episodes = _distinctEpisodes(mains.map((item) => item.episode));
@@ -487,9 +508,7 @@ NormalDownloadPlan normalDownloadPlan(AnimeContent content) {
       ),
       batches: [
         for (final quality in effective)
-          for (final variant in mains.where(
-            (item) => item.quality == quality,
-          ))
+          for (final variant in mains.where((item) => item.quality == quality))
             QualityDownloadBatch(
               label: 'دانلود کیفیت ${qualityDisplayLabel(quality)}',
               season: AnimeSeason(

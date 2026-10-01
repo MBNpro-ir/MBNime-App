@@ -961,6 +961,7 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
             if (_lastWatch case final last?)
               SliverToBoxAdapter(
                 child: _HentaiContinueWatchSection(
+                  api: widget.api,
                   last: last,
                   onPlayed: refreshContinueWatch,
                 ),
@@ -1089,12 +1090,14 @@ String _fmtHentaiContinuePosition(Duration value) {
 /// can never appear here (and vice versa on the normal home).
 class _HentaiContinueWatchSection extends StatelessWidget {
   const _HentaiContinueWatchSection({
+    required this.api,
     required this.last,
     required this.onPlayed,
   });
   final LastWatch last;
   final Future<void> Function() onPlayed;
 
+  final ContentApi api;
   static const _red = Color(0xFFEF4444);
 
   @override
@@ -1106,7 +1109,7 @@ class _HentaiContinueWatchSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       child: Pressable(
         onTap: () async {
-          await askAndResumeLastWatch(context, last);
+          await askAndResumeLastWatch(context, last, api: api);
           await onPlayed();
         },
         child: DecoratedBox(
