@@ -27,7 +27,9 @@ import 'services/accessibility_service.dart';
 import 'screens/update_screen.dart';
 
 class MbnimeApp extends StatefulWidget {
-  const MbnimeApp({super.key});
+  const MbnimeApp({super.key, this.sharedTokenReader});
+
+  final Future<String?> Function()? sharedTokenReader;
 
   @override
   State<MbnimeApp> createState() => _MbnimeAppState();
@@ -47,6 +49,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   bool _handoffBusy = false;
   bool _siblingAvailable = false;
   bool _checkingAccount = false;
+  bool _sharedLoginBusy = false;
+  bool _loginBusy = false;
   bool _terminating = false;
   late final SessionWatch _sessionWatch = SessionWatch(_forceLogout);
 
@@ -54,10 +58,10 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _accountTimer = Timer.periodic(
-      const Duration(seconds: 6),
-      (_) => _checkAccount(),
-    );
+    _accountTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      unawaited(_checkAccount());
+      unawaited(_restoreSharedLogin());
+    });
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => unawaited(MbnSync.instance.syncAll()),
@@ -84,6 +88,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkAccount();
+      unawaited(_restoreSharedLogin());
       UpdatePresentation.checkNow();
       unawaited(MbnSync.instance.syncAll());
       unawaited(_checkSibling());
@@ -168,6 +173,9 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       await Future.wait([
         () async {
           await _session.restore();
+          if (_session.forcedLogoutMessage == null) {
+            await _restoreSharedLogin(startup: true);
+          }
           if (!_session.isLoggedIn &&
               _session.forcedLogoutMessage == null &&
               kDebugMode &&
@@ -208,6 +216,43 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _restoreSharedLogin({bool startup = false}) async {
+    if (_loginBusy ||
+        _sharedLoginBusy ||
+        (!startup && _restoring) ||
+        (!startup && _session.isLoggedIn) ||
+        _terminating ||
+        !mounted) {
+      return;
+    }
+    _sharedLoginBusy = true;
+    try {
+      final token = await (widget.sharedTokenReader?.call() ?? CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie'));
+      if (token == null) {
+        final current = _session.server.token;
+        if (startup && current != null) {
+          await CrossAppAuth.saveSharedToken(
+            token: current,
+            email: _session.email ?? "",
+          );
+        }
+        return;
+      }
+      if (!mounted || _terminating || (!startup && _session.isLoggedIn)) return;
+      await _session.loginWithToken(token);
+      if (_session.userId != null) {
+        await MbnSync.instance.bindAccount(_session.userId!);
+      }
+      MbnSync.instance.configure(server: _session.server);
+      if (mounted) setState(() {});
+      unawaited(MbnSync.instance.syncAll());
+    } catch (_) {
+      // An expired/revoked sibling token never creates a replacement session.
+    } finally {
+      _sharedLoginBusy = false;
+    }
+  }
+
   void _refresh() => setState(() {});
 
   Future<void> _checkSibling() async {
@@ -217,7 +262,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> _loginWithCapacity(Future<void> Function() action, String identifier) async {
+  Future<bool> _loginWithCapacity(
+    Future<void> Function() action,
+    String identifier,
+  ) async {
+    _loginBusy = true;
     try {
       await action();
       return true;
@@ -225,10 +274,16 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       if (error.details?['code'] != 'session_limit') rethrow;
       final ctx = appNavigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) rethrow;
-      final result = await showSessionDevicesDialog(ctx, error.details!, _session.server.postJson);
+      final result = await showSessionDevicesDialog(
+        ctx,
+        error.details!,
+        _session.server.postJson,
+      );
       if (result == null) return false;
       await _session.loginWithHandoff(result, fallbackIdentifier: identifier);
       return true;
+    } finally {
+      _loginBusy = false;
     }
   }
 
@@ -245,7 +300,12 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       return;
     }
     try {
-      if (!await _loginWithCapacity(() => _session.loginWithToken(token), 'کاربر')) return;
+      if (!await _loginWithCapacity(
+        () => _session.loginWithToken(token),
+        'کاربر',
+      )) {
+        return;
+      }
       if (_session.userId != null) {
         await MbnSync.instance.bindAccount(_session.userId!);
       }
@@ -267,7 +327,9 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     } catch (_) {
       appMessengerKey.currentState?.showSnackBar(
         const SnackBar(
-          content: Text('ورود با حساب MBNMovie ناموفق بود؛ لطفاً دوباره تلاش کنید.'),
+          content: Text(
+            'ورود با حساب MBNMovie ناموفق بود؛ لطفاً دوباره تلاش کنید.',
+          ),
         ),
       );
     }
@@ -376,14 +438,16 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
           false;
       if (!useIt) return;
       if (!await _loginWithCapacity(() async {
-      final data = await AuthHandoff.consume(
-        post: _session.server.postJson,
-        id: id,
-        targetApp: 'anime',
-      );
-      if (data == null) return;
-      await _session.loginWithHandoff(data, fallbackIdentifier: identifier);
-      }, identifier)) { return; }
+        final data = await AuthHandoff.consume(
+          post: _session.server.postJson,
+          id: id,
+          targetApp: 'anime',
+        );
+        if (data == null) return;
+        await _session.loginWithHandoff(data, fallbackIdentifier: identifier);
+      }, identifier)) {
+        return;
+      }
       if (_session.userId != null) {
         await MbnSync.instance.bindAccount(_session.userId!);
       }
@@ -417,11 +481,17 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
           title: 'MBNime',
           theme: AnimeTheme.buildTheme(
             highContrast: access.highContrast,
-            visualDensity: isAndroidTv ? VisualDensity.standard : access.visualDensity,
+            visualDensity: isAndroidTv
+                ? VisualDensity.standard
+                : access.visualDensity,
             reduceMotion: access.reduceMotion,
             boldText: access.boldText,
-            focusColor: isAndroidTv ? AnimeColors.cyan.withValues(alpha: .4) : null,
-            hoverColor: isAndroidTv ? AnimeColors.cyan.withValues(alpha: .15) : null,
+            focusColor: isAndroidTv
+                ? AnimeColors.cyan.withValues(alpha: .4)
+                : null,
+            hoverColor: isAndroidTv
+                ? AnimeColors.cyan.withValues(alpha: .15)
+                : null,
           ),
           locale: const Locale('fa', 'IR'),
           // Actually localize framework-provided strings (back-button tooltips,
@@ -447,7 +517,9 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
             ),
           ),
           home: AnimatedSwitcher(
-            duration: access.reduceMotion ? Duration.zero : const Duration(milliseconds: 650),
+            duration: access.reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 650),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) => access.reduceMotion
@@ -455,7 +527,10 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                 : FadeTransition(
                     opacity: animation,
                     child: ScaleTransition(
-                      scale: Tween<double>(begin: .985, end: 1).animate(animation),
+                      scale: Tween<double>(
+                        begin: .985,
+                        end: 1,
+                      ).animate(animation),
                       child: child,
                     ),
                   ),
@@ -481,7 +556,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                     onUseOtherApp: _siblingAvailable ? _beginHandoff : null,
                     onLogin: (email, password) async {
                       if (!await _loginWithCapacity(
-                        () => _session.login(email: email, password: password), email)) { return; }
+                        () => _session.login(email: email, password: password),
+                        email,
+                      )) {
+                        return;
+                      }
                       MbnSync.instance.configure(server: _session.server);
                       if (_session.userId != null) {
                         await MbnSync.instance.bindAccount(_session.userId!);
@@ -536,10 +615,7 @@ class AccessibilityAppWrapper extends StatelessWidget {
             rawMedia.size.width <= 0 ||
             rawMedia.size.height <= 0 ||
             (uiScale - 1.0).abs() < 0.005) {
-          return MediaQuery(
-            data: baseMedia,
-            child: child,
-          );
+          return MediaQuery(data: baseMedia, child: child);
         }
 
         final targetWidth = rawMedia.size.width / uiScale;
@@ -576,10 +652,7 @@ class AccessibilityAppWrapper extends StatelessWidget {
             child: SizedBox(
               width: targetWidth,
               height: targetHeight,
-              child: MediaQuery(
-                data: scaledMedia,
-                child: child,
-              ),
+              child: MediaQuery(data: scaledMedia, child: child),
             ),
           ),
         );

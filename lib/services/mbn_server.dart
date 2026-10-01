@@ -159,7 +159,7 @@ class MbnServerClient {
         .timeout(const Duration(seconds: 5)).then((_) {}, onError: (Object _) {});
     }
     token = null;
-    await CrossAppAuth.clearSharedToken();
+    await CrossAppAuth.clearSharedToken(token: oldToken);
     try {
       await _secureStorage.delete(key: _tokenKey);
       final prefs = await SharedPreferences.getInstance();
