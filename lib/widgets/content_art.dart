@@ -1,3 +1,4 @@
+import '../services/device_performance.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
@@ -71,10 +72,14 @@ class _ContentArtState extends State<ContentArt> {
     final locked = widget.imageUrl?.trim() ?? '';
     if (widget.lockToImageUrl && locked.isNotEmpty) return [locked];
     return <String?>[
-      widget.imageUrl,
-      widget.content.imageUrl,
-      widget.content.backdropUrl,
-    ].whereType<String>().where((url) => url.trim().isNotEmpty).toSet().toList();
+          widget.imageUrl,
+          widget.content.imageUrl,
+          widget.content.backdropUrl,
+        ]
+        .whereType<String>()
+        .where((url) => url.trim().isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   @override
@@ -99,10 +104,14 @@ class _ContentArtState extends State<ContentArt> {
     final locked = widget.imageUrl?.trim() ?? '';
     if (widget.lockToImageUrl && locked.isNotEmpty) return [locked];
     return <String?>[
-      widget.imageUrl,
-      widget.content.imageUrl,
-      widget.content.backdropUrl,
-    ].whereType<String>().where((url) => url.trim().isNotEmpty).toSet().toList();
+          widget.imageUrl,
+          widget.content.imageUrl,
+          widget.content.backdropUrl,
+        ]
+        .whereType<String>()
+        .where((url) => url.trim().isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   @override
@@ -132,9 +141,9 @@ class _ContentArtState extends State<ContentArt> {
   }
 
   String _probeKey(String url) {
-    final targetWidth = widget.orientation == ArtworkOrientation.portrait
-        ? 512
-        : 1280;
+    final targetWidth = DevicePerformance.artworkWidth(
+      widget.orientation == ArtworkOrientation.portrait,
+    );
     return '$targetWidth|$url';
   }
 
@@ -227,7 +236,9 @@ class _ContentArtState extends State<ContentArt> {
     ArtworkOrientation orientation,
     ImageConfiguration config,
   ) {
-    final targetWidth = orientation == ArtworkOrientation.portrait ? 512 : 1280;
+    final targetWidth = DevicePerformance.artworkWidth(
+      orientation == ArtworkOrientation.portrait,
+    );
     final cacheKey = '$targetWidth|$url';
     final cached = _probeCache.remove(cacheKey);
     if (cached != null) {
@@ -274,16 +285,14 @@ class _ContentArtState extends State<ContentArt> {
     late final ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
-        // NOTE: the decoded handle is intentionally NOT disposed here. The
-        // provider/completer stays in the framework ImageCache and the Image
-        // widget below reuses that exact cached artwork; disposing the
-        // shared handle would destroy the image the card is about to paint.
-        // Only dimensions + provider are retained.
+        // The stream listener owns this ImageInfo clone. Cache/provider
+        // references remain valid after releasing its decoded handle.
         if (!completer.isCompleted) {
           completer.complete(
             _ArtworkProbe(provider, info.image.width / info.image.height),
           );
         }
+        info.dispose();
         stream.removeListener(listener);
       },
       onError: (_, _) {
@@ -314,12 +323,16 @@ class _ContentArtState extends State<ContentArt> {
             ),
           ),
           if (kIsWeb && widget.content.isHentai && _candidates.isNotEmpty)
-            Positioned.fill(child: Image.network(
-              _candidates.first,
-              webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => CustomPaint(painter: _PosterPainter(widget.content.id.hashCode)),
-            ))
+            Positioned.fill(
+              child: Image.network(
+                _candidates.first,
+                webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => CustomPaint(
+                  painter: _PosterPainter(widget.content.id.hashCode),
+                ),
+              ),
+            )
           else if (_provider case final provider?)
             // One short opacity animation per artwork switch: the image is
             // already decoded (probe), so the fade only composites an alpha
@@ -328,7 +341,9 @@ class _ContentArtState extends State<ContentArt> {
             Positioned.fill(
               child: AnimatedOpacity(
                 opacity: _artVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 450),
+                duration: Duration(
+                  milliseconds: DevicePerformance.lightweight ? 120 : 450,
+                ),
                 curve: Curves.easeOutCubic,
                 child: Image(
                   image: provider,
@@ -345,7 +360,11 @@ class _ContentArtState extends State<ContentArt> {
                         if (wasSynchronouslyLoaded) return child;
                         return AnimatedOpacity(
                           opacity: frame == null ? 0 : 1,
-                          duration: const Duration(milliseconds: 400),
+                          duration: Duration(
+                            milliseconds: DevicePerformance.lightweight
+                                ? 120
+                                : 400,
+                          ),
                           curve: Curves.easeOutCubic,
                           child: child,
                         );
@@ -386,10 +405,11 @@ class _ContentArtState extends State<ContentArt> {
                   if (widget.content.censorLabel.isNotEmpty)
                     _CornerBadge(
                       label: widget.content.censorLabel,
-                      color: widget.content.censorLabel.contains('بدون') ||
-                              widget.content.censorLabel
-                                  .toUpperCase()
-                                  .contains('UNC')
+                      color:
+                          widget.content.censorLabel.contains('بدون') ||
+                              widget.content.censorLabel.toUpperCase().contains(
+                                'UNC',
+                              )
                           ? const Color(0xFFEA580C) // orange for uncensored
                           : const Color(0xFF16A34A), // green for censored
                     ),
@@ -516,9 +536,7 @@ class _CornerBadge extends StatelessWidget {
     decoration: BoxDecoration(
       color: color,
       borderRadius: BorderRadius.circular(6),
-      boxShadow: const [
-        BoxShadow(color: Colors.black54, blurRadius: 4),
-      ],
+      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4)],
     ),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),

@@ -27,10 +27,18 @@ abstract final class AnimeTheme {
     Color? hoverColor,
   }) {
     final baseBg = highContrast ? Colors.black : AnimeColors.background;
-    final baseSurface = highContrast ? const Color(0xFF0C0E14) : AnimeColors.surface;
-    final baseSurfaceHigh = highContrast ? const Color(0xFF171B24) : AnimeColors.surfaceHigh;
-    final primaryColor = highContrast ? const Color(0xFFFF9447) : AnimeColors.orange;
-    final outlineColor = highContrast ? Colors.white70 : const Color(0xFF353A49);
+    final baseSurface = highContrast
+        ? const Color(0xFF0C0E14)
+        : AnimeColors.surface;
+    final baseSurfaceHigh = highContrast
+        ? const Color(0xFF171B24)
+        : AnimeColors.surfaceHigh;
+    final primaryColor = highContrast
+        ? const Color(0xFFFF9447)
+        : AnimeColors.orange;
+    final outlineColor = highContrast
+        ? Colors.white70
+        : const Color(0xFF353A49);
 
     return ThemeData(
       useMaterial3: true,
@@ -74,7 +82,7 @@ abstract final class AnimeTheme {
         activeTrackColor: primaryColor,
         secondaryActiveTrackColor: primaryColor.withValues(alpha: .35),
         inactiveTrackColor: highContrast ? Colors.white30 : Colors.white12,
-        showValueIndicator: ShowValueIndicator.onDrag,
+        showValueIndicator: ShowValueIndicator.always,
       ),
       pageTransitionsTheme: reduceMotion
           ? const PageTransitionsTheme(
@@ -88,9 +96,7 @@ abstract final class AnimeTheme {
             )
           : const PageTransitionsTheme(
               builders: {
-                TargetPlatform.android: PredictiveBackPageTransitionsBuilder(
-                  fallbackColor: AnimeColors.background,
-                ),
+                TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
                 TargetPlatform.windows: _MbnimePageTransitionsBuilder(),
                 TargetPlatform.linux: _MbnimePageTransitionsBuilder(),
                 TargetPlatform.macOS: _MbnimePageTransitionsBuilder(),
@@ -154,7 +160,10 @@ abstract final class AnimeTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: baseSurfaceHigh.withValues(alpha: .88),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 17,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
           borderSide: highContrast
@@ -170,7 +179,10 @@ abstract final class AnimeTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(color: primaryColor, width: highContrast ? 2.0 : 1.4),
+          borderSide: BorderSide(
+            color: primaryColor,
+            width: highContrast ? 2.0 : 1.4,
+          ),
         ),
         hintStyle: TextStyle(
           color: highContrast ? Colors.white60 : AnimeColors.muted,
@@ -195,10 +207,16 @@ abstract final class AnimeTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          animationDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+          animationDuration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
           minimumSize: const Size(0, 54),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          side: highContrast ? const BorderSide(color: Colors.white70, width: 1.2) : BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          side: highContrast
+              ? const BorderSide(color: Colors.white70, width: 1.2)
+              : BorderSide.none,
           textStyle: TextStyle(
             fontFamily: 'Vazirmatn',
             fontWeight: boldText ? FontWeight.w900 : FontWeight.w700,
@@ -207,7 +225,9 @@ abstract final class AnimeTheme {
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
-          animationDuration: reduceMotion ? Duration.zero : const Duration(milliseconds: 160),
+          animationDuration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
           overlayColor: WidgetStateProperty.all(
             primaryColor.withValues(alpha: .14),
           ),

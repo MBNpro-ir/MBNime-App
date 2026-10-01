@@ -1,3 +1,4 @@
+import 'services/device_performance.dart';
 import 'services/cross_app_auth.dart';
 import 'dart:async';
 import 'services/session_watch.dart';
@@ -227,7 +228,9 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     }
     _sharedLoginBusy = true;
     try {
-      final token = await (widget.sharedTokenReader?.call() ?? CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie'));
+      final token =
+          await (widget.sharedTokenReader?.call() ??
+              CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie'));
       if (token == null) {
         final current = _session.server.token;
         if (startup && current != null) {
@@ -519,10 +522,13 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
           home: AnimatedSwitcher(
             duration: access.reduceMotion
                 ? Duration.zero
-                : const Duration(milliseconds: 650),
+                : Duration(
+                    milliseconds: DevicePerformance.lightweight ? 180 : 650,
+                  ),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) => access.reduceMotion
+            transitionBuilder: (child, animation) =>
+                access.reduceMotion || DevicePerformance.lightweight
                 ? child
                 : FadeTransition(
                     opacity: animation,

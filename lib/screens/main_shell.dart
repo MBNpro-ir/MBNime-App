@@ -1,3 +1,4 @@
+import '../services/device_performance.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../core/app_platform.dart';
@@ -75,7 +76,13 @@ class _MainShellState extends State<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showMoviePromoOnce();
       if (mounted) {
-        unawaited(AnnouncementService.checkAndShow(context, widget.server, app: 'anime'));
+        unawaited(
+          AnnouncementService.checkAndShow(
+            context,
+            widget.server,
+            app: 'anime',
+          ),
+        );
       }
     });
   }
@@ -783,10 +790,7 @@ class _TopBar extends StatelessWidget {
 }
 
 class _AnimatedSwitchButton extends StatefulWidget {
-  const _AnimatedSwitchButton({
-    required this.onPressed,
-    this.size = 40,
-  });
+  const _AnimatedSwitchButton({required this.onPressed, this.size = 40});
   final VoidCallback onPressed;
   final double size;
   @override
@@ -803,7 +807,8 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
   @override
   void initState() {
     super.initState();
-    if (!AccessibilityService.instance.reduceMotion) {
+    if (!AccessibilityService.instance.reduceMotion &&
+        !DevicePerformance.lightweight) {
       _controller.forward();
     }
   }
@@ -831,7 +836,9 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
       animation: _controller,
       builder: (context, child) {
         final reduce = AccessibilityService.instance.reduceMotion;
-        final pulse = reduce ? 0.0 : Curves.easeInOut.transform(_controller.value);
+        final pulse = reduce
+            ? 0.0
+            : Curves.easeInOut.transform(_controller.value);
         return Container(
           width: widget.size,
           height: widget.size,
@@ -850,7 +857,9 @@ class _AnimatedSwitchButtonState extends State<_AnimatedSwitchButton>
               ),
             ],
           ),
-          child: reduce ? child : Transform.scale(scale: 1 + .07 * pulse, child: child),
+          child: reduce
+              ? child
+              : Transform.scale(scale: 1 + .07 * pulse, child: child),
         );
       },
       child: InkWell(
@@ -1050,19 +1059,22 @@ class _MenuDrawer extends StatelessWidget {
               tool: true,
             ),
             _tile(Icons.tune_rounded, 'تنظیمات', settings, tool: true),
-            if (!kIsWeb) _tile(
-              Icons.system_update_alt_rounded,
-              'به‌روزرسانی برنامه',
-              updates,
-              tool: true,
-            ),
+            if (!kIsWeb)
+              _tile(
+                Icons.system_update_alt_rounded,
+                'به‌روزرسانی برنامه',
+                updates,
+                tool: true,
+              ),
           ]),
         ],
       ),
     ),
   );
 
-  Widget _subscriptionBadge(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
+  Widget _subscriptionBadge(
+    BuildContext context,
+  ) => FutureBuilder<Map<String, dynamic>>(
     future: server.getJson('/api/me'),
     builder: (context, snapshot) {
       final user = (snapshot.data?['user'] as Map?)?.cast<String, dynamic>();
@@ -1405,7 +1417,9 @@ class _SectionEntranceState extends State<_SectionEntrance>
   @override
   void initState() {
     super.initState();
-    if (isDesktopWindow) {
+    if (isDesktopWindow ||
+        DevicePerformance.lightweight ||
+        AccessibilityService.instance.reduceMotion) {
       _controller.value = 1;
       return;
     }
@@ -1444,7 +1458,16 @@ class _HomeLoadingSkeletonState extends State<_HomeLoadingSkeleton>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!DevicePerformance.lightweight &&
+        !AccessibilityService.instance.reduceMotion) {
+      _controller.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {
@@ -1578,11 +1601,16 @@ class _FeaturedState extends State<_Featured> {
 
   void _restartAutoPlay() {
     _autoPlayTimer?.cancel();
-    if (_count < 2 || isAndroidTv) return;
+    if (_count < 2 ||
+        isAndroidTv ||
+        DevicePerformance.lightweight ||
+        AccessibilityService.instance.reduceMotion) {
+      return;
+    }
     _autoPlayTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted ||
           !_controller.hasClients ||
-          !TickerMode.valuesOf(context).enabled ||
+          !TickerMode.of(context) ||
           ModalRoute.of(context)?.isCurrent == false ||
           WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;

@@ -1,3 +1,4 @@
+import '../services/device_performance.dart';
 import '../widgets/adaptive_player_header.dart';
 import 'dart:convert';
 import '../core/native_player_properties.dart';
@@ -530,7 +531,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ],
               flexibleSpace: FlexibleSpaceBar(
-                stretchModes: isDesktopWindow
+                stretchModes: isDesktopWindow || DevicePerformance.lightweight
                     ? const [StretchMode.zoomBackground]
                     : const [
                         StretchMode.zoomBackground,
@@ -544,8 +545,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         children: [
                           // The backdrop remains independent from the catalog's
                           // portrait Hero, but gets its own tag for cover preview.
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
+                          Pressable(
                             onTap: () => _showCover(
                               item,
                               requestedImageUrl: backdropUrl,
@@ -2734,8 +2734,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _webSubtitleVisible = true;
   Tracks _tracks = const Tracks();
   Track _track = const Track();
-  SubtitlePreferences _subtitle =
-      SubtitlePreferences.withPlatformDefaults();
+  SubtitlePreferences _subtitle = SubtitlePreferences.withPlatformDefaults();
   String? _error;
   Duration _positionAtLastError = Duration.zero;
   // Local loopback relay for +18 streams when the proxy route wins
@@ -2834,7 +2833,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _initializePictureInPicture() async {
-    final supported = kIsWeb ? BrowserFeatures.pipSupported : await _pip.initialize();
+    final supported = kIsWeb
+        ? BrowserFeatures.pipSupported
+        : await _pip.initialize();
     if (!mounted) return;
     setState(() {
       _pipSupported = supported;
@@ -2866,7 +2867,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   );
 
   Future<void> _enterPictureInPicture() async {
-    if (kIsWeb) { await BrowserFeatures.pip(); return; }
+    if (kIsWeb) {
+      await BrowserFeatures.pip();
+      return;
+    }
     _hideTimer?.cancel();
     setState(() => _controlsVisible = false);
     final entered = await _pip.enter(
@@ -2963,10 +2967,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     const headers = {'User-Agent': 'MBNime/1.0 Android'};
     if (kIsWeb) BrowserFeatures.clearAudio();
-    final routed = kIsWeb ? (widget.content.isHentai ? fileUrl : await WebGateway.media(fileUrl)) : await _resolvePlaybackUrl(fileUrl, generation: generation);
+    final routed = kIsWeb
+        ? (widget.content.isHentai ? fileUrl : await WebGateway.media(fileUrl))
+        : await _resolvePlaybackUrl(fileUrl, generation: generation);
     requireCurrent();
     try {
-      await _player.open(Media(routed, httpHeaders: kIsWeb ? null : headers), play: play);
+      await _player.open(
+        Media(routed, httpHeaders: kIsWeb ? null : headers),
+        play: play,
+      );
     } catch (_) {
       requireCurrent();
       if (!_shouldRoutePlayback) rethrow;
@@ -3143,7 +3152,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     watchQuiet(_player.stream.position, (value) {
       _position = value;
       if (kIsWeb && _webSubtitle != null && mounted) {
-        final lines = _webSubtitleVisible ? _webSubtitle!.at(value, delay: _subtitle.delay, scale: _subtitle.timingScale) : <String>[];
+        final lines = _webSubtitleVisible
+            ? _webSubtitle!.at(
+                value,
+                delay: _subtitle.delay,
+                scale: _subtitle.timingScale,
+              )
+            : <String>[];
         if (!listEquals(lines, _subtitles)) setState(() => _subtitles = lines);
       }
       if ((_playbackErrorTimer != null || _error != null) &&
@@ -3188,7 +3203,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       unawaited(_setNativeSubtitleVisibility(_nativeSubtitleRendering));
     });
     _subscriptions.add(_player.stream.error.listen(_handlePlaybackError));
-    watch(_player.stream.subtitle, (value) { if (_webSubtitle == null) _subtitles = value; });
+    watch(_player.stream.subtitle, (value) {
+      if (_webSubtitle == null) _subtitles = value;
+    });
     watchQuiet(_player.stream.videoParams, (value) {
       final aspect =
           value.aspect ??
@@ -3270,16 +3287,29 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _setNativeSubtitleVisibility(bool visible) async {
     final platform = _player.platform;
     if (platform is NativePlayer) {
-      await setNativePlayerProperty(platform, 'sub-visibility', visible ? 'yes' : 'no');
+      await setNativePlayerProperty(
+        platform,
+        'sub-visibility',
+        visible ? 'yes' : 'no',
+      );
     }
   }
 
   Future<void> _applySubtitleTiming(SubtitlePreferences prefs) async {
-    if (kIsWeb && _webSubtitle != null) BrowserFeatures.subtitle(_webSubtitle!.vtt(delay: prefs.delay, scale: prefs.timingScale));
+    if (kIsWeb && _webSubtitle != null) {
+      BrowserFeatures.subtitle(
+        _webSubtitle!.vtt(delay: prefs.delay, scale: prefs.timingScale),
+      );
+    }
     final platform = _player.platform;
     if (platform is NativePlayer) {
-      await setNativePlayerProperty(platform, 'sub-delay', prefs.delay.toStringAsFixed(2));
-      await setNativePlayerProperty(platform,
+      await setNativePlayerProperty(
+        platform,
+        'sub-delay',
+        prefs.delay.toStringAsFixed(2),
+      );
+      await setNativePlayerProperty(
+        platform,
         'sub-speed',
         prefs.timingScale.toStringAsFixed(3),
       );
@@ -4267,8 +4297,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     // Restore after the resized layout exists, including portrait/landscape
     // transitions and Safari browser chrome changes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_playerTornDown &&
-          ModalRoute.of(context)?.isCurrent == true && !_isInPip) {
+      if (mounted &&
+          !_playerTornDown &&
+          ModalRoute.of(context)?.isCurrent == true &&
+          !_isInPip) {
         _showControls();
       }
     });
@@ -4335,7 +4367,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!kIsWeb) {
       SystemChrome.setPreferredOrientations(
         isAndroidTv
-            ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+            ? [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
             : const [],
       );
     }
@@ -4364,10 +4399,20 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _armHideTimer() {
     _hideTimer?.cancel();
-    if (!_playing || _isSeeking || ModalRoute.of(context)?.isCurrent != true) return;
-    _hideTimer = Timer(kIsWeb ? const Duration(seconds: 8) : playerControlsAutoHideDelay, () {
-      if (mounted && _playing && !_isSeeking && ModalRoute.of(context)?.isCurrent == true) setState(() => _controlsVisible = false);
-    });
+    if (!_playing || _isSeeking || ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    _hideTimer = Timer(
+      kIsWeb ? const Duration(seconds: 8) : playerControlsAutoHideDelay,
+      () {
+        if (mounted &&
+            _playing &&
+            !_isSeeking &&
+            ModalRoute.of(context)?.isCurrent == true) {
+          setState(() => _controlsVisible = false);
+        }
+      },
+    );
   }
 
   void _showControls() {
@@ -4428,7 +4473,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (showControls) {
       _onSeekStateChanged(true);
       _player.seek(
-        playerSeekTarget(_player.state.position, _player.state.duration, seconds),
+        playerSeekTarget(
+          _player.state.position,
+          _player.state.duration,
+          seconds,
+        ),
       );
       _showControls();
       _showFeedback(
@@ -4494,7 +4543,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         unawaited(_savePlayerPrefsWith(rate: next));
       case PlayerCommand.subtitles:
         if (kIsWeb && _webSubtitle != null) {
-          setState(() { _webSubtitleVisible = !_webSubtitleVisible; if (!_webSubtitleVisible) _subtitles = []; });
+          setState(() {
+            _webSubtitleVisible = !_webSubtitleVisible;
+            if (!_webSubtitleVisible) _subtitles = [];
+          });
           break;
         }
         unawaited(
@@ -4551,123 +4603,143 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: SafeArea(
             top: false,
             child: SizedBox(
-              height: (MediaQuery.sizeOf(sheetContext).height * .76).clamp(0.0, 560.0),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'صدا و زیرنویس',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AnimeColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const TabBar(
-                      dividerColor: Colors.transparent,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      tabs: [
-                        Tab(icon: Icon(Icons.graphic_eq_rounded), text: 'صدا'),
-                        Tab(
-                          icon: Icon(Icons.closed_caption_rounded),
-                          text: 'زیرنویس',
+              height: (MediaQuery.sizeOf(sheetContext).height * .76).clamp(
+                0.0,
+                560.0,
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.tune_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'صدا و زیرنویس',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      Column(
-                        children: [
-                          Expanded(
-                            child: kIsWeb ? const Center(child: Padding(padding: EdgeInsets.all(16), child: Text('صدای اصلی ویدیو فعال است. برای صدای جداگانه، فایل یا لینک صدا را انتخاب کن.', textAlign: TextAlign.center))) : _AudioTracks(
-                              player: _player,
-                              tracks: _tracks.audio,
-                              selected: _track.audio,
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AnimeColors.surfaceHigh,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const TabBar(
+                        dividerColor: Colors.transparent,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        tabs: [
+                          Tab(
+                            icon: Icon(Icons.graphic_eq_rounded),
+                            text: 'صدا',
                           ),
-                          AudioSourceActions(
-                            onSelected: (track) async {
-                              if (kIsWeb) {
-                                final uri = track.id.startsWith('http') ? await WebGateway.externalAudio(track.id) : track.id;
-                                await BrowserFeatures.externalAudio(uri);
-                              } else {
-                                await _player.setAudioTrack(track);
-                              }
-                              if (sheetContext.mounted) {
-                                Navigator.pop(sheetContext);
-                              }
-                            },
+                          Tab(
+                            icon: Icon(Icons.closed_caption_rounded),
+                            text: 'زیرنویس',
                           ),
                         ],
                       ),
-                      Column(
-                        children: [
-                          Expanded(
-                            child: _SubtitleTracks(
-                              tracks: _tracks.subtitle,
-                              selected: _track.subtitle,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        Column(
+                          children: [
+                            Expanded(
+                              child: kIsWeb
+                                  ? const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: Text(
+                                          'صدای اصلی ویدیو فعال است. برای صدای جداگانه، فایل یا لینک صدا را انتخاب کن.',
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    )
+                                  : _AudioTracks(
+                                      player: _player,
+                                      tracks: _tracks.audio,
+                                      selected: _track.audio,
+                                    ),
+                            ),
+                            AudioSourceActions(
                               onSelected: (track) async {
-                                await _player.setSubtitleTrack(track);
-                                final native = _requiresNativeSubtitle(track);
-                                await _setNativeSubtitleVisibility(native);
-                                if (mounted && sheetContext.mounted) {
-                                  setState(
-                                    () => _nativeSubtitleRendering = native,
-                                  );
+                                if (kIsWeb) {
+                                  final uri = track.id.startsWith('http')
+                                      ? await WebGateway.externalAudio(track.id)
+                                      : track.id;
+                                  await BrowserFeatures.externalAudio(uri);
+                                } else {
+                                  await _player.setAudioTrack(track);
+                                }
+                                if (sheetContext.mounted) {
                                   Navigator.pop(sheetContext);
                                 }
                               },
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton.tonalIcon(
-                                    onPressed: _loadSubtitleFile,
-                                    icon: const Icon(Icons.folder_open_rounded),
-                                    label: const Text('فایل زیرنویس'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: FilledButton.tonalIcon(
-                                    onPressed: _loadSubtitleUrl,
-                                    icon: const Icon(Icons.link_rounded),
-                                    label: const Text('لینک زیرنویس'),
-                                  ),
-                                ),
-                              ],
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            Expanded(
+                              child: _SubtitleTracks(
+                                tracks: _tracks.subtitle,
+                                selected: _track.subtitle,
+                                onSelected: (track) async {
+                                  await _player.setSubtitleTrack(track);
+                                  final native = _requiresNativeSubtitle(track);
+                                  await _setNativeSubtitleVisibility(native);
+                                  if (mounted && sheetContext.mounted) {
+                                    setState(
+                                      () => _nativeSubtitleRendering = native,
+                                    );
+                                    Navigator.pop(sheetContext);
+                                  }
+                                },
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: FilledButton.tonalIcon(
+                                      onPressed: _loadSubtitleFile,
+                                      icon: const Icon(
+                                        Icons.folder_open_rounded,
+                                      ),
+                                      label: const Text('فایل زیرنویس'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: FilledButton.tonalIcon(
+                                      onPressed: _loadSubtitleUrl,
+                                      icon: const Icon(Icons.link_rounded),
+                                      label: const Text('لینک زیرنویس'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         );
         // Hentai sheets use the red player theme; normal sheets keep orange.
         if (!widget.content.isHentai) return body;
@@ -4746,8 +4818,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (kIsWeb) {
       _webSubtitle = WebSubtitleDocument.parse(await file.readAsString());
       _webSubtitleVisible = true;
-      BrowserFeatures.subtitle(_webSubtitle!.vtt(delay: _subtitle.delay, scale: _subtitle.timingScale));
-      if (mounted) { setState(() {}); Navigator.pop(context); }
+      BrowserFeatures.subtitle(
+        _webSubtitle!.vtt(delay: _subtitle.delay, scale: _subtitle.timingScale),
+      );
+      if (mounted) {
+        setState(() {});
+        Navigator.pop(context);
+      }
       return;
     }
     final track = SubtitleTrack.uri(
@@ -4804,14 +4881,28 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (kIsWeb) {
-      final response = await http.post(WebGateway.endpoint('/api/web/subtitle'),
-        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${WebGateway.token}'},
-        body: jsonEncode({'url': url}));
-      if (response.statusCode != 200) throw const FormatException('زیرنویس قابل دریافت نیست.');
-      _webSubtitle = WebSubtitleDocument.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
+      final response = await http.post(
+        WebGateway.endpoint('/api/web/subtitle'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${WebGateway.token}',
+        },
+        body: jsonEncode({'url': url}),
+      );
+      if (response.statusCode != 200) {
+        throw const FormatException('زیرنویس قابل دریافت نیست.');
+      }
+      _webSubtitle = WebSubtitleDocument.parse(
+        utf8.decode(response.bodyBytes, allowMalformed: true),
+      );
       _webSubtitleVisible = true;
-      BrowserFeatures.subtitle(_webSubtitle!.vtt(delay: _subtitle.delay, scale: _subtitle.timingScale));
-      if (mounted) { setState(() {}); Navigator.pop(context); }
+      BrowserFeatures.subtitle(
+        _webSubtitle!.vtt(delay: _subtitle.delay, scale: _subtitle.timingScale),
+      );
+      if (mounted) {
+        setState(() {});
+        Navigator.pop(context);
+      }
       return;
     }
     final track = SubtitleTrack.uri(
@@ -4927,159 +5018,174 @@ class _PlayerScreenState extends State<PlayerScreen>
     child: Theme(
       // Only hentai playback uses the red player theme; normal anime keeps
       // the default orange brand theme.
-      data: widget.content.isHentai ? _playerRedTheme(context) : Theme.of(context),
+      data: widget.content.isHentai
+          ? _playerRedTheme(context)
+          : Theme.of(context),
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: Listener(
-        onPointerSignal: _handlePointerSignal,
-        onPointerDown: kIsWeb ? (_) => _hideTimer?.cancel() : null,
-        onPointerUp: kIsWeb ? (_) => _armHideTimer() : null,
-        child: PlayerKeyboard(
-          isTelevision: isAndroidTv,
-          controlsVisible: _controlsVisible,
-          onRemoteNavigation: _showControls,
-          onCommand: _keyboardCommand,
-          onSeekFraction: (fraction) {
-            if (ModalRoute.of(context)?.isCurrent == true) {
-              final target = Duration(
-                milliseconds: (_duration.inMilliseconds * fraction).round(),
-              );
-              // Digit-key seek (0-9): keep chrome hidden, only center feedback.
-              _hideTimer?.cancel();
-              _seekDebounceTimer?.cancel();
-              _isSeeking = false;
-              if (_controlsVisible && mounted) {
-                setState(() => _controlsVisible = false);
-              }
-              unawaited(_player.seek(target));
-              _showFeedback(
-                target < _position
-                    ? PlayerFeedbackKind.seekBack
-                    : PlayerFeedbackKind.seekForward,
-              );
-            }
-          },
-          onFocus: _pokeCursor,
-          child: MouseRegion(
-            cursor: _cursorHidden
-                ? SystemMouseCursors.none
-                : SystemMouseCursors.basic,
-            onHover: (_) {
-              _pokeCursor();
-              if (!kIsWeb && !_touchLocked && !_controlsVisible) {
-                _showControls();
-              } else if (kIsWeb) {
-                _armHideTimer();
+        backgroundColor: Colors.black,
+        body: Listener(
+          onPointerSignal: _handlePointerSignal,
+          onPointerDown: kIsWeb ? (_) => _hideTimer?.cancel() : null,
+          onPointerUp: kIsWeb ? (_) => _armHideTimer() : null,
+          child: PlayerKeyboard(
+            isTelevision: isAndroidTv,
+            controlsVisible: _controlsVisible,
+            onRemoteNavigation: _showControls,
+            onCommand: _keyboardCommand,
+            onSeekFraction: (fraction) {
+              if (ModalRoute.of(context)?.isCurrent == true) {
+                final target = Duration(
+                  milliseconds: (_duration.inMilliseconds * fraction).round(),
+                );
+                // Digit-key seek (0-9): keep chrome hidden, only center feedback.
+                _hideTimer?.cancel();
+                _seekDebounceTimer?.cancel();
+                _isSeeking = false;
+                if (_controlsVisible && mounted) {
+                  setState(() => _controlsVisible = false);
+                }
+                unawaited(_player.seek(target));
+                _showFeedback(
+                  target < _position
+                      ? PlayerFeedbackKind.seekBack
+                      : PlayerFeedbackKind.seekForward,
+                );
               }
             },
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
+            onFocus: _pokeCursor,
+            child: MouseRegion(
+              cursor: _cursorHidden
+                  ? SystemMouseCursors.none
+                  : SystemMouseCursors.basic,
+              onHover: (_) {
                 _pokeCursor();
-                if (_touchLocked) {
-                  _showUnlockButton();
-                  return;
+                if (!kIsWeb && !_touchLocked && !_controlsVisible) {
+                  _showControls();
+                } else if (kIsWeb) {
+                  _armHideTimer();
                 }
-                _hideTimer?.cancel();
-                _controlsVisible
-                    ? setState(() => _controlsVisible = false)
-                    : _showControls();
               },
-              onVerticalDragStart: (details) => _startVerticalGesture(
-                details,
-                MediaQuery.sizeOf(context).width,
-              ),
-              onVerticalDragUpdate: (details) => _updateVerticalGesture(
-                details,
-                MediaQuery.sizeOf(context).height,
-              ),
-              onVerticalDragEnd: _endVerticalGesture,
-              onDoubleTapDown: (details) =>
-                  _doubleTapPosition = details.localPosition,
-              onDoubleTap: _touchLocked
-                  ? null
-                  : () {
-                      _pokeCursor();
-                      if (isDesktopWindow) {
-                        _toggleFullscreen();
-                      } else if (_doubleTapPosition != null) {
-                        final forward =
-                            _doubleTapPosition!.dx >=
-                            MediaQuery.sizeOf(context).width / 2;
-                        _seekBy(forward ? 10 : -10, showControls: false);
-                      }
-                    },
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  RepaintBoundary(
-                    child: Video(
-                      controller: _video,
-                      fit: _fitCover ? BoxFit.cover : BoxFit.contain,
-                      controls: (_) => const SizedBox.shrink(),
-                      // Native subtitles are hidden; [_AnimeSubtitles] renders them
-                      // in one uniform rounded box instead (no stacked backgrounds).
-                      subtitleViewConfiguration:
-                          const SubtitleViewConfiguration(visible: false),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  _pokeCursor();
+                  if (_touchLocked) {
+                    _showUnlockButton();
+                    return;
+                  }
+                  _hideTimer?.cancel();
+                  _controlsVisible
+                      ? setState(() => _controlsVisible = false)
+                      : _showControls();
+                },
+                onVerticalDragStart: (details) => _startVerticalGesture(
+                  details,
+                  MediaQuery.sizeOf(context).width,
+                ),
+                onVerticalDragUpdate: (details) => _updateVerticalGesture(
+                  details,
+                  MediaQuery.sizeOf(context).height,
+                ),
+                onVerticalDragEnd: _endVerticalGesture,
+                onDoubleTapDown: (details) =>
+                    _doubleTapPosition = details.localPosition,
+                onDoubleTap: _touchLocked
+                    ? null
+                    : () {
+                        _pokeCursor();
+                        if (isDesktopWindow) {
+                          _toggleFullscreen();
+                        } else if (_doubleTapPosition != null) {
+                          final forward =
+                              _doubleTapPosition!.dx >=
+                              MediaQuery.sizeOf(context).width / 2;
+                          _seekBy(forward ? 10 : -10, showControls: false);
+                        }
+                      },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    RepaintBoundary(
+                      child: Video(
+                        controller: _video,
+                        fit: _fitCover ? BoxFit.cover : BoxFit.contain,
+                        controls: (_) => const SizedBox.shrink(),
+                        // Native subtitles are hidden; [_AnimeSubtitles] renders them
+                        // in one uniform rounded box instead (no stacked backgrounds).
+                        subtitleViewConfiguration:
+                            const SubtitleViewConfiguration(visible: false),
+                      ),
                     ),
-                  ),
-                  // Keep Flutter hit testing above the HTML platform view even
-                  // when every visible control is hidden or the viewport rotates.
-                  // Otherwise HtmlElementView can win the gesture arena instead
-                  // of the player's tap/double-tap/drag recognizers.
-                  if (kIsWeb)
-                    const Positioned.fill(
-                      child: ColoredBox(color: Colors.transparent),
-                    ),
-                  if (!_windowResizing && !_nativeSubtitleRendering)
-                    _AnimeSubtitles(
-                      lines: _subtitles,
-                      prefs: _subtitle,
-                      isPictureInPicture: _isInPip,
-                    ),
-                  if (kIsWeb)
-                    ValueListenableBuilder<bool>(
-                      valueListenable: WebGateway.preparingVideo,
-                      builder: (_, preparing, _) => preparing
-                          ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                              CircularProgressIndicator(), SizedBox(height: 16),
-                              Text('در حال آماده‌سازی پخش…', style: TextStyle(color: Colors.white)),
-                            ]))
-                          : const SizedBox.shrink(),
-                    ),
-                  if (!_windowResizing && _buffering && !_touchLocked && !WebGateway.preparingVideo.value)
-                    const Center(child: CircularProgressIndicator()),
-                  if (!_windowResizing && _error != null && !_touchLocked)
-                    _PlayerError(onBack: () => unawaited(_exitPlayer())),
-                  if (!_windowResizing)
-                    AnimatedOpacity(
-                      opacity: _controlsVisible && !_touchLocked && !_isInPip
-                          ? 1
-                          : 0,
-                      duration: const Duration(milliseconds: 240),
-                      child: IgnorePointer(
-                        ignoring: !_controlsVisible || _touchLocked || _isInPip,
-                        child: DecoratedBox(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0xCC000000),
-                                Colors.transparent,
-                                Color(0xD9000000),
-                              ],
-                              stops: [0, .46, 1],
+                    // Keep Flutter hit testing above the HTML platform view even
+                    // when every visible control is hidden or the viewport rotates.
+                    // Otherwise HtmlElementView can win the gesture arena instead
+                    // of the player's tap/double-tap/drag recognizers.
+                    if (kIsWeb)
+                      const Positioned.fill(
+                        child: ColoredBox(color: Colors.transparent),
+                      ),
+                    if (!_windowResizing && !_nativeSubtitleRendering)
+                      _AnimeSubtitles(
+                        lines: _subtitles,
+                        prefs: _subtitle,
+                        isPictureInPicture: _isInPip,
+                      ),
+                    if (kIsWeb)
+                      ValueListenableBuilder<bool>(
+                        valueListenable: WebGateway.preparingVideo,
+                        builder: (_, preparing, _) => preparing
+                            ? const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'در حال آماده‌سازی پخش…',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    if (!_windowResizing &&
+                        _buffering &&
+                        !_touchLocked &&
+                        !WebGateway.preparingVideo.value)
+                      const Center(child: CircularProgressIndicator()),
+                    if (!_windowResizing && _error != null && !_touchLocked)
+                      _PlayerError(onBack: () => unawaited(_exitPlayer())),
+                    if (!_windowResizing)
+                      AnimatedOpacity(
+                        opacity: _controlsVisible && !_touchLocked && !_isInPip
+                            ? 1
+                            : 0,
+                        duration: const Duration(milliseconds: 240),
+                        child: IgnorePointer(
+                          ignoring:
+                              !_controlsVisible || _touchLocked || _isInPip,
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Color(0xCC000000),
+                                  Colors.transparent,
+                                  Color(0xD9000000),
+                                ],
+                                stops: [0, .46, 1],
+                              ),
                             ),
-                          ),
-                          child: SafeArea(
-                            child: Stack(
-                              children: [
-                                Positioned(
-                                  top: 6,
-                                  right: 12,
-                                  left: 12,
-                                  child: LayoutBuilder(
+                            child: SafeArea(
+                              child: Stack(
+                                children: [
+                                  Positioned(
+                                    top: 6,
+                                    right: 12,
+                                    left: 12,
+                                    child: LayoutBuilder(
                                       builder: (context, constraints) {
                                         final children = <Widget>[
                                           _RoundControl(
@@ -5236,196 +5342,198 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     ),
                                   ),
                                   Center(
-                                  child: Row(
-                                    textDirection: TextDirection.ltr,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _HeroControl(
-                                        icon: Icons.replay_10_rounded,
-                                        tooltip: '۱۰ ثانیه عقب (←)',
-                                        onTap: () => _seekBy(-10),
-                                        size: 32,
-                                      ),
-                                      const SizedBox(width: 16),
-                                      _HeroControl(
-                                        icon: _playing
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        tooltip: _playing
-                                            ? 'توقف (Space)'
-                                            : 'پخش (Space)',
-                                        onTap: _toggle,
-                                        size: 52,
-                                        primary: true,
-                                      ),
-                                      const SizedBox(width: 16),
-                                      _HeroControl(
-                                        icon: Icons.forward_10_rounded,
-                                        tooltip: '۱۰ ثانیه جلو (→)',
-                                        onTap: () => _seekBy(10),
-                                        size: 32,
-                                      ),
-                                    ],
+                                    child: Row(
+                                      textDirection: TextDirection.ltr,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _HeroControl(
+                                          icon: Icons.replay_10_rounded,
+                                          tooltip: '۱۰ ثانیه عقب (←)',
+                                          onTap: () => _seekBy(-10),
+                                          size: 32,
+                                        ),
+                                        const SizedBox(width: 16),
+                                        _HeroControl(
+                                          icon: _playing
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          tooltip: _playing
+                                              ? 'توقف (Space)'
+                                              : 'پخش (Space)',
+                                          onTap: _toggle,
+                                          size: 52,
+                                          primary: true,
+                                        ),
+                                        const SizedBox(width: 16),
+                                        _HeroControl(
+                                          icon: Icons.forward_10_rounded,
+                                          tooltip: '۱۰ ثانیه جلو (→)',
+                                          onTap: () => _seekBy(10),
+                                          size: 32,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Positioned(
-                                  right: 18,
-                                  left: 18,
-                                  bottom: 10,
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final compact =
-                                          shouldCompactPlayerControls(
-                                            isDesktop: isDesktopWindow,
-                                            width: constraints.maxWidth,
-                                          );
-                                      final volumeWidth = compact
-                                          ? 150.0
-                                          : 210.0;
-                                      return Column(
-                                        children: [
-                                          GestureDetector(
-                                            onDoubleTap: () {},
-                                            child: _SeekBar(
-                                              player: _player,
-                                              onSeekStateChanged:
-                                                  _onSeekStateChanged,
-                                            ),
-                                          ),
-                                          Row(
-                                            textDirection: TextDirection.ltr,
-                                            children: [
-                                              _BareControl(
-                                                onTap: _toggleMute,
-                                                tooltip: 'قطع و وصل صدا',
-                                                icon: Icon(
-                                                  _volume == 0
-                                                      ? Icons.volume_off_rounded
-                                                      : Icons.volume_up_rounded,
-                                                  size: 30,
-                                                ),
+                                  Positioned(
+                                    right: 18,
+                                    left: 18,
+                                    bottom: 10,
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final compact =
+                                            shouldCompactPlayerControls(
+                                              isDesktop: isDesktopWindow,
+                                              width: constraints.maxWidth,
+                                            );
+                                        final volumeWidth = compact
+                                            ? 150.0
+                                            : 210.0;
+                                        return Column(
+                                          children: [
+                                            GestureDetector(
+                                              onDoubleTap: () {},
+                                              child: _SeekBar(
+                                                player: _player,
+                                                onSeekStateChanged:
+                                                    _onSeekStateChanged,
                                               ),
-                                              if (isDesktopWindow)
-                                                SizedBox(
-                                                  key: const Key(
-                                                    'player-volume-slider',
+                                            ),
+                                            Row(
+                                              textDirection: TextDirection.ltr,
+                                              children: [
+                                                _BareControl(
+                                                  onTap: _toggleMute,
+                                                  tooltip: 'قطع و وصل صدا',
+                                                  icon: Icon(
+                                                    _volume == 0
+                                                        ? Icons
+                                                              .volume_off_rounded
+                                                        : Icons
+                                                              .volume_up_rounded,
+                                                    size: 30,
                                                   ),
-                                                  width: volumeWidth,
-                                                  child: Directionality(
-                                                    textDirection:
-                                                        TextDirection.ltr,
-                                                    child: GestureDetector(
-                                                      onDoubleTap: () {},
-                                                      child: Slider(
-                                                        value: _volume.clamp(
-                                                          0,
-                                                          100,
+                                                ),
+                                                if (isDesktopWindow)
+                                                  SizedBox(
+                                                    key: const Key(
+                                                      'player-volume-slider',
+                                                    ),
+                                                    width: volumeWidth,
+                                                    child: Directionality(
+                                                      textDirection:
+                                                          TextDirection.ltr,
+                                                      child: GestureDetector(
+                                                        onDoubleTap: () {},
+                                                        child: Slider(
+                                                          value: _volume.clamp(
+                                                            0,
+                                                            100,
+                                                          ),
+                                                          max: 100,
+                                                          onChanged: _setVolume,
                                                         ),
-                                                        max: 100,
-                                                        onChanged: _setVolume,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                Expanded(
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: FittedBox(
+                                                      key: const Key(
+                                                        'player-tool-controls',
+                                                      ),
+                                                      fit: BoxFit.scaleDown,
+                                                      alignment:
+                                                          Alignment.centerRight,
+                                                      child: Row(
+                                                        textDirection:
+                                                            TextDirection.ltr,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children:
+                                                            _playerToolControls(
+                                                              compact: compact,
+                                                            ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              Expanded(
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child: FittedBox(
-                                                    key: const Key(
-                                                      'player-tool-controls',
-                                                    ),
-                                                    fit: BoxFit.scaleDown,
-                                                    alignment:
-                                                        Alignment.centerRight,
-                                                    child: Row(
-                                                      textDirection:
-                                                          TextDirection.ltr,
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children:
-                                                          _playerToolControls(
-                                                            compact: compact,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      );
-                                    },
+                                              ],
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (!_windowResizing)
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: _feedback == null
-                          ? const SizedBox(key: ValueKey('no-feedback'))
-                          : PlayerFeedbackOverlay(
-                              key: ValueKey(_feedback),
-                              kind: _feedback!,
-                              value: _feedbackValue,
-                            ),
-                    ),
-                  if (!_windowResizing &&
-                      _nextEpisodeVisible &&
-                      !_touchLocked &&
-                      !_isInPip)
-                    Positioned(
-                      right: 18,
-                      bottom: nextEpisodeOverlayBottom(_controlsVisible),
-                      child: GestureDetector(
-                        onDoubleTap: () {},
-                        child: FilledButton.icon(
-                          key: const Key('next-episode-overlay'),
-                          onPressed: _playNextEpisode,
-                          icon: const Icon(Icons.skip_next_rounded),
-                          label: Text('قسمت بعدی: ${_nextEpisode!.name}'),
-                        ),
-                      ),
-                    ),
-                  if (!_windowResizing && _touchLocked)
-                    // Small unlock button pinned top-left. Positioned (not Align)
-                    // so it always sizes to its child instead of the full screen.
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      child: SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: AnimatedSlide(
-                            offset: _unlockButtonVisible
-                                ? Offset.zero
-                                : const Offset(-.45, 0),
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOutCubic,
-                            child: AnimatedOpacity(
-                              opacity: _unlockButtonVisible ? 1 : 0,
-                              duration: const Duration(milliseconds: 180),
-                              child: IgnorePointer(
-                                ignoring: !_unlockButtonVisible,
-                                child: _UnlockControl(onTap: _unlockTouch),
+                                ],
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                    if (!_windowResizing)
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        child: _feedback == null
+                            ? const SizedBox(key: ValueKey('no-feedback'))
+                            : PlayerFeedbackOverlay(
+                                key: ValueKey(_feedback),
+                                kind: _feedback!,
+                                value: _feedbackValue,
+                              ),
+                      ),
+                    if (!_windowResizing &&
+                        _nextEpisodeVisible &&
+                        !_touchLocked &&
+                        !_isInPip)
+                      Positioned(
+                        right: 18,
+                        bottom: nextEpisodeOverlayBottom(_controlsVisible),
+                        child: GestureDetector(
+                          onDoubleTap: () {},
+                          child: FilledButton.icon(
+                            key: const Key('next-episode-overlay'),
+                            onPressed: _playNextEpisode,
+                            icon: const Icon(Icons.skip_next_rounded),
+                            label: Text('قسمت بعدی: ${_nextEpisode!.name}'),
+                          ),
+                        ),
+                      ),
+                    if (!_windowResizing && _touchLocked)
+                      // Small unlock button pinned top-left. Positioned (not Align)
+                      // so it always sizes to its child instead of the full screen.
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: AnimatedSlide(
+                              offset: _unlockButtonVisible
+                                  ? Offset.zero
+                                  : const Offset(-.45, 0),
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              child: AnimatedOpacity(
+                                opacity: _unlockButtonVisible ? 1 : 0,
+                                duration: const Duration(milliseconds: 180),
+                                child: IgnorePointer(
+                                  ignoring: !_unlockButtonVisible,
+                                  child: _UnlockControl(onTap: _unlockTouch),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
     ),
   );
 }
@@ -5545,9 +5653,7 @@ class _HeroControl extends StatelessWidget {
     tooltip: tooltip,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(primary ? 28 : 20),
-      color: primary
-          ? Theme.of(context).colorScheme.primary
-          : Colors.black54,
+      color: primary ? Theme.of(context).colorScheme.primary : Colors.black54,
       border: Border.all(color: Colors.white24),
     ),
     padding: EdgeInsets.all(primary ? 18 : 13),
@@ -5638,11 +5744,7 @@ class _PlayerToolControl extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 21,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(icon, size: 21, color: Theme.of(context).colorScheme.primary),
           ],
         ),
         if (!compact || compactLabel != null) ...[
@@ -5982,96 +6084,100 @@ class _SubtitleTimingState extends State<_SubtitleTiming> {
               ),
             ),
             SizedBox(height: isCompact ? 10 : 16),
-          _TimingCard(
-            icon: Icons.speed_rounded,
-            title: 'سرعت ویدیو',
-            description: 'سرعت پخش تصویر و صدا.',
-            valueLabel: '${rate.toStringAsFixed(2)}×',
-            min: .5,
-            max: 4,
-            divisions: 70,
-            value: rate.clamp(.5, 4),
-            onChanged: (next) => setState(() => rate = next),
-            onMinus: () =>
-                setState(() => rate = (rate - .05).clamp(.5, 4).toDouble()),
-            onPlus: () =>
-                setState(() => rate = (rate + .05).clamp(.5, 4).toDouble()),
-          ),
-          SizedBox(height: isCompact ? 8 : 12),
-          _TimingCard(
-            icon: Icons.swap_horiz_rounded,
-            title: 'جابه‌جایی زمان زیرنویس',
-            description: 'همهٔ جمله‌ها را با هم جلو یا عقب می‌برد.',
-            valueLabel:
-                '${value.delay >= 0 ? '+' : ''}${value.delay.toStringAsFixed(1)} ثانیه',
-            min: -30,
-            max: 30,
-            divisions: 600,
-            value: value.delay,
-            onChanged: (next) =>
-                setState(() => value = value.copyWith(delay: next)),
-            onMinus: () => setState(
-              () => value = value.copyWith(
-                delay: (value.delay - .1).clamp(-30, 30).toDouble(),
-              ),
+            _TimingCard(
+              icon: Icons.speed_rounded,
+              title: 'سرعت ویدیو',
+              description: 'سرعت پخش تصویر و صدا.',
+              valueLabel: '${rate.toStringAsFixed(2)}×',
+              min: .5,
+              max: 4,
+              divisions: 70,
+              value: rate.clamp(.5, 4),
+              onChanged: (next) => setState(() => rate = next),
+              onMinus: () =>
+                  setState(() => rate = (rate - .05).clamp(.5, 4).toDouble()),
+              onPlus: () =>
+                  setState(() => rate = (rate + .05).clamp(.5, 4).toDouble()),
             ),
-            onPlus: () => setState(
-              () => value = value.copyWith(
-                delay: (value.delay + .1).clamp(-30, 30).toDouble(),
-              ),
-            ),
-          ),
-          SizedBox(height: isCompact ? 8 : 12),
-          _TimingCard(
-            icon: Icons.compress_rounded,
-            title: 'فاصلهٔ زمانی بین زیرنویس‌ها',
-            description:
-                'سرعت تایم‌کدها را تغییر می‌دهد؛ برای زیرنویسی که کم‌کم از فیلم عقب می‌افتد.',
-            valueLabel: '${value.timingScale.toStringAsFixed(2)}×',
-            min: .5,
-            max: 2,
-            divisions: 150,
-            value: value.timingScale,
-            onChanged: (next) =>
-                setState(() => value = value.copyWith(timingScale: next)),
-            onMinus: () => setState(
-              () => value = value.copyWith(
-                timingScale: (value.timingScale - .01).clamp(.5, 2).toDouble(),
-              ),
-            ),
-            onPlus: () => setState(
-              () => value = value.copyWith(
-                timingScale: (value.timingScale + .01).clamp(.5, 2).toDouble(),
-              ),
-            ),
-          ),
-          SizedBox(height: isCompact ? 10 : 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => setState(() {
-                    rate = 1;
-                    value = value.copyWith(delay: 0, timingScale: 1);
-                  }),
-                  icon: const Icon(Icons.restart_alt_rounded),
-                  label: const Text('بازنشانی'),
+            SizedBox(height: isCompact ? 8 : 12),
+            _TimingCard(
+              icon: Icons.swap_horiz_rounded,
+              title: 'جابه‌جایی زمان زیرنویس',
+              description: 'همهٔ جمله‌ها را با هم جلو یا عقب می‌برد.',
+              valueLabel:
+                  '${value.delay >= 0 ? '+' : ''}${value.delay.toStringAsFixed(1)} ثانیه',
+              min: -30,
+              max: 30,
+              divisions: 600,
+              value: value.delay,
+              onChanged: (next) =>
+                  setState(() => value = value.copyWith(delay: next)),
+              onMinus: () => setState(
+                () => value = value.copyWith(
+                  delay: (value.delay - .1).clamp(-30, 30).toDouble(),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.pop(context, (value, rate)),
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('اعمال سرعت'),
+              onPlus: () => setState(
+                () => value = value.copyWith(
+                  delay: (value.delay + .1).clamp(-30, 30).toDouble(),
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+            SizedBox(height: isCompact ? 8 : 12),
+            _TimingCard(
+              icon: Icons.compress_rounded,
+              title: 'فاصلهٔ زمانی بین زیرنویس‌ها',
+              description:
+                  'سرعت تایم‌کدها را تغییر می‌دهد؛ برای زیرنویسی که کم‌کم از فیلم عقب می‌افتد.',
+              valueLabel: '${value.timingScale.toStringAsFixed(2)}×',
+              min: .5,
+              max: 2,
+              divisions: 150,
+              value: value.timingScale,
+              onChanged: (next) =>
+                  setState(() => value = value.copyWith(timingScale: next)),
+              onMinus: () => setState(
+                () => value = value.copyWith(
+                  timingScale: (value.timingScale - .01)
+                      .clamp(.5, 2)
+                      .toDouble(),
+                ),
+              ),
+              onPlus: () => setState(
+                () => value = value.copyWith(
+                  timingScale: (value.timingScale + .01)
+                      .clamp(.5, 2)
+                      .toDouble(),
+                ),
+              ),
+            ),
+            SizedBox(height: isCompact ? 10 : 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() {
+                      rate = 1;
+                      value = value.copyWith(delay: 0, timingScale: 1);
+                    }),
+                    icon: const Icon(Icons.restart_alt_rounded),
+                    label: const Text('بازنشانی'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, (value, rate)),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('اعمال سرعت'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -6267,7 +6373,7 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
         children: [
           Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: value.fontFamily,
+              value: value.fontFamily,
               isDense: true,
               decoration: const InputDecoration(
                 labelText: 'فونت فارسی',
@@ -6296,7 +6402,7 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
           SizedBox(
             width: 98,
             child: DropdownButtonFormField<double>(
-              initialValue: value.size.clamp(10, 52).roundToDouble(),
+              value: value.size.clamp(10, 52).roundToDouble(),
               isDense: true,
               decoration: const InputDecoration(
                 labelText: 'اندازه',
@@ -6548,7 +6654,7 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-              initialValue: value.fontFamily,
+              value: value.fontFamily,
               decoration: const InputDecoration(labelText: 'فونت فارسی'),
               items: const [
                 DropdownMenuItem(value: 'Vazirmatn', child: Text('وزیرمتن')),
@@ -6662,8 +6768,7 @@ class _SubtitleSettingsState extends State<_SubtitleSettings> {
                       ]
                       .map(
                         (color) => InkWell(
-                          onTap: () =>
-                              _update(value.copyWith(color: color)),
+                          onTap: () => _update(value.copyWith(color: color)),
                           borderRadius: BorderRadius.circular(30),
                           child: CircleAvatar(
                             backgroundColor: color,
@@ -6815,9 +6920,7 @@ class _AnimeSubtitles extends StatelessWidget {
     ].join('\n');
     if (text.isEmpty) return const SizedBox.shrink();
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        textScaler: TextScaler.noScaling,
-      ),
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
       child: Positioned.fill(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -6849,7 +6952,9 @@ class _AnimeSubtitles extends StatelessWidget {
                         color: prefs.backgroundColor.withValues(
                           alpha: prefs.backgroundOpacity,
                         ),
-                        borderRadius: BorderRadius.circular(layout.cornerRadius),
+                        borderRadius: BorderRadius.circular(
+                          layout.cornerRadius,
+                        ),
                       ),
                       child: Text(
                         text,

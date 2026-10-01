@@ -1,3 +1,4 @@
+import '../services/device_performance.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/app_platform.dart';
@@ -188,7 +189,10 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
                                   tooltip: 'منوی هنتای',
                                   onPressed: () =>
                                       Scaffold.of(context).openDrawer(),
-                                  icon: const Icon(Icons.menu_rounded, size: 30),
+                                  icon: const Icon(
+                                    Icons.menu_rounded,
+                                    size: 30,
+                                  ),
                                 ),
                               ),
                               const Spacer(),
@@ -196,8 +200,11 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
                                 tooltip: 'علاقه‌مندی‌های +۱۸',
                                 onPressed: widget.onOpenHentaiFavorites,
                                 icon: Badge(
-                                  isLabelVisible: widget.hentaiFavorites.isNotEmpty,
-                                  label: Text('${widget.hentaiFavorites.length}'),
+                                  isLabelVisible:
+                                      widget.hentaiFavorites.isNotEmpty,
+                                  label: Text(
+                                    '${widget.hentaiFavorites.length}',
+                                  ),
                                   child: const Icon(
                                     Icons.favorite_rounded,
                                     size: 28,
@@ -208,7 +215,8 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
                                 tooltip: 'بازدیدشده‌های +۱۸',
                                 onPressed: widget.onOpenHentaiHistory,
                                 icon: Badge(
-                                  isLabelVisible: widget.hentaiHistory.isNotEmpty,
+                                  isLabelVisible:
+                                      widget.hentaiHistory.isNotEmpty,
                                   label: Text('${widget.hentaiHistory.length}'),
                                   child: const Icon(
                                     Icons.history_rounded,
@@ -219,7 +227,10 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
                               IconButton(
                                 tooltip: 'جستجوی +۱۸',
                                 onPressed: _openSearch,
-                                icon: const Icon(Icons.search_rounded, size: 30),
+                                icon: const Icon(
+                                  Icons.search_rounded,
+                                  size: 30,
+                                ),
                               ),
                             ],
                           ),
@@ -441,10 +452,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
     Navigator.pop(context);
     Future<void>.delayed(const Duration(milliseconds: 220), () {
       if (context.mounted) {
-        Navigator.push<void>(
-          context,
-          MaterialPageRoute(builder: (_) => page),
-        );
+        Navigator.push<void>(context, MaterialPageRoute(builder: (_) => page));
       }
     });
   }
@@ -541,17 +549,10 @@ class _HentaiSectionDrawer extends StatelessWidget {
                 () => select(i),
                 index: i,
               ),
-            _tile(
-              Icons.manage_search_rounded,
-              'جستجوی +۱۸',
-              () {
-                Navigator.pop(context);
-                Future<void>.delayed(
-                  const Duration(milliseconds: 220),
-                  onSearch,
-                );
-              },
-            ),
+            _tile(Icons.manage_search_rounded, 'جستجوی +۱۸', () {
+              Navigator.pop(context);
+              Future<void>.delayed(const Duration(milliseconds: 220), onSearch);
+            }),
           ]),
           _section('کتابخانهٔ من', [
             _tileWithCount(
@@ -560,9 +561,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
               favoritesCount,
               () async {
                 Navigator.pop(context);
-                await Future<void>.delayed(
-                  const Duration(milliseconds: 220),
-                );
+                await Future<void>.delayed(const Duration(milliseconds: 220));
                 onFavorites();
               },
             ),
@@ -572,9 +571,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
               historyCount,
               () async {
                 Navigator.pop(context);
-                await Future<void>.delayed(
-                  const Duration(milliseconds: 220),
-                );
+                await Future<void>.delayed(const Duration(milliseconds: 220));
                 onHistory();
               },
             ),
@@ -639,12 +636,13 @@ class _HentaiSectionDrawer extends StatelessWidget {
               () => _pushTool(context, const SettingsScreen()),
               tool: true,
             ),
-            if (!kIsWeb) _tile(
-              Icons.system_update_alt_rounded,
-              'به‌روزرسانی برنامه',
-              () => _pushTool(context, const UpdateScreen()),
-              tool: true,
-            ),
+            if (!kIsWeb)
+              _tile(
+                Icons.system_update_alt_rounded,
+                'به‌روزرسانی برنامه',
+                () => _pushTool(context, const UpdateScreen()),
+                tool: true,
+              ),
             _tile(
               Icons.workspace_premium_rounded,
               'مدیریت اشتراک',
@@ -670,7 +668,9 @@ class _HentaiSectionDrawer extends StatelessWidget {
     ),
   );
 
-  Widget _subscriptionBadge(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
+  Widget _subscriptionBadge(
+    BuildContext context,
+  ) => FutureBuilder<Map<String, dynamic>>(
     future: server.getJson('/api/me'),
     builder: (context, snapshot) {
       final user = (snapshot.data?['user'] as Map?)?.cast<String, dynamic>();
@@ -2466,7 +2466,7 @@ class _HentaiFeaturedState extends State<_HentaiFeatured> {
 
   void _restart() {
     _timer?.cancel();
-    if (_count < 2 || isAndroidTv) return;
+    if (_count < 2 || isAndroidTv || DevicePerformance.lightweight) return;
     _timer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted || !_controller.hasClients) return;
       _go((_page + 1) % _count, restart: false);

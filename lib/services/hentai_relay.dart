@@ -18,7 +18,8 @@ import 'hentai_network.dart';
 /// When the direct route wins, no relay is needed and mpv opens the original
 /// URL. One instance lives per player screen and is closed on dispose.
 class HentaiMediaRelay {
-  HentaiMediaRelay({this._upstreamClient});
+  HentaiMediaRelay({http.Client? upstreamClient})
+    : _upstreamClient = upstreamClient;
 
   final http.Client? _upstreamClient;
   HttpServer? _server;
