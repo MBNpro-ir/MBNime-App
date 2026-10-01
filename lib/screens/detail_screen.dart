@@ -2669,7 +2669,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WindowListener, WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _video;
   late final EpisodeCatalog _episodeCatalog;
@@ -2744,6 +2745,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) WidgetsBinding.instance.addObserver(this);
     _episode = widget.episode;
     _episodeCatalog = EpisodeCatalog.from(widget.content);
     if (isDesktopWindow) windowManager.addListener(this);
@@ -3411,7 +3413,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
     if (selected != null && selected.episode.fileUrl != _episode.fileUrl) {
       await _switchQuality(selected);
     }
-    _armHideTimer();
+    _showControls();
   }
 
   Future<void> _switchQuality(EpisodeVariant target) async {
@@ -4257,7 +4259,22 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   @override
+  void didChangeMetrics() {
+    if (!kIsWeb) return;
+    _hideTimer?.cancel();
+    // Restore after the resized layout exists, including portrait/landscape
+    // transitions and Safari browser chrome changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_playerTornDown &&
+          ModalRoute.of(context)?.isCurrent == true && !_isInPip) {
+        _showControls();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    if (kIsWeb) WidgetsBinding.instance.removeObserver(this);
     // Invalidate every in-flight media operation first so late probe/relay
     // continuations abort before creating resources or touching the player.
     _mediaGeneration++;
@@ -4350,6 +4367,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
   }
 
   void _showControls() {
+    if (!mounted || _playerTornDown) return;
     if (_touchLocked) {
       _showUnlockButton();
       return;
@@ -4493,6 +4511,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
       case PlayerCommand.end:
         unawaited(_player.seek(_duration));
       case PlayerCommand.help:
+        _hideTimer?.cancel();
         unawaited(
           showDialog<void>(
             context: context,
@@ -4508,12 +4527,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                 ),
               ],
             ),
-          ),
+          ).whenComplete(_showControls),
         );
     }
   }
 
   Future<void> _showTrackPicker() async {
+    _hideTimer?.cancel();
     await showModalBottomSheet<void>(
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
@@ -4851,16 +4871,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         ),
       ),
     );
+    if (!mounted || _playerTornDown) return;
     if (result != null) {
       setState(() => _subtitle = result);
       final prefs = await SharedPreferences.getInstance();
       await result.save(prefs);
       await _applySubtitleTiming(result);
     }
-    _armHideTimer();
+    _showControls();
   }
 
   Future<void> _showSpeedSettings() async {
+    _hideTimer?.cancel();
     final result = await showModalBottomSheet<(SubtitlePreferences, double)>(
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
@@ -4874,6 +4896,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
         return Theme(data: _playerRedTheme(context), child: body);
       },
     );
+    if (!mounted || _playerTornDown) return;
     if (result != null) {
       setState(() => _subtitle = result.$1);
       await _player.setRate(result.$2);
@@ -4996,6 +5019,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                           const SubtitleViewConfiguration(visible: false),
                     ),
                   ),
+                  // Keep Flutter hit testing above the HTML platform view even
+                  // when every visible control is hidden or the viewport rotates.
+                  // Otherwise HtmlElementView can win the gesture arena instead
+                  // of the player's tap/double-tap/drag recognizers.
+                  if (kIsWeb)
+                    const Positioned.fill(
+                      child: ColoredBox(color: Colors.transparent),
+                    ),
                   if (!_windowResizing && !_nativeSubtitleRendering)
                     _AnimeSubtitles(
                       lines: _subtitles,
@@ -5195,7 +5226,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WindowListener {
                                           ],
                                           onMenuOpened: () =>
                                               _hideTimer?.cancel(),
-                                          onMenuClosed: _armHideTimer,
+                                          onMenuClosed: _showControls,
                                         );
                                       },
                                     ),
