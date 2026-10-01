@@ -2749,10 +2749,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     _episode = widget.episode;
     _episodeCatalog = EpisodeCatalog.from(widget.content);
     if (isDesktopWindow) windowManager.addListener(this);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    if (!kIsWeb) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _pip.addListener(_handlePipModeChanged);
     _player = Player(
@@ -4330,11 +4332,13 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
       }),
     );
-    SystemChrome.setPreferredOrientations(
-      isAndroidTv
-          ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : const [],
-    );
+    if (!kIsWeb) {
+      SystemChrome.setPreferredOrientations(
+        isAndroidTv
+            ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+            : const [],
+      );
+    }
     SystemChrome.setEnabledSystemUIMode(
       isAndroidTv ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
     );
