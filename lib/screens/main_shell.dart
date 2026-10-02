@@ -505,7 +505,7 @@ class _MainShellState extends State<MainShell> {
                 favorites: _openFavorites,
                 switchApp: () => AppLinks.openSibling(context, siblingMovie),
               ),
-              if (isAndroidTv || isDesktopWeb)
+              if (isAndroidTv)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
