@@ -30,13 +30,11 @@ bool isTrailerLabel(String value) =>
 /// پسوند سرور حفظ می‌ماند («بدون برچسب کیفیت · سرور 2» ← «سرور 2»).
 String qualityDisplayLabel(String quality) {
   if (quality == unknownQualityLabel) return 'پخش';
-  final server = RegExp(r'·\s*(سرور\s*.+)').firstMatch(quality);
-  if (server != null && quality.startsWith(unknownQualityLabel)) {
-    return server.group(1)!.trim();
-  }
-  final dotServer = RegExp(r'•\s*(سرور\s*.+)').firstMatch(quality);
-  if (dotServer != null && quality.startsWith(unknownQualityLabel)) {
-    return dotServer.group(1)!.trim();
+  if (isUnknownQuality(quality)) {
+    return quality
+        .substring(unknownQualityLabel.length)
+        .replaceFirst(RegExp(r'^\s*[·•]\s*'), '')
+        .trim();
   }
   return quality;
 }
@@ -254,13 +252,21 @@ class EpisodeCatalog {
     final allVariants = <EpisodeVariant>[];
     for (final entry in seasonBuckets.entries) {
       final episodeBuckets = <String, List<(int, EpisodeVariant)>>{};
+      final sourceKinds = entry.value
+          .map((item) => _sourceDescription(item.$2.name))
+          .toSet();
+      final showSource = sourceKinds.length > 1;
       for (final (_, season) in entry.value) {
         for (final (episodeIndex, episode) in season.episodes.indexed) {
           final key = _episodeKey(episode.name, episodeIndex);
           final variant = EpisodeVariant(
             season: season,
             episode: episode,
-            quality: episodeQuality(season.name, episode.name),
+            quality: [
+              episodeQuality(season.name, episode.name),
+              if (showSource && _sourceDescription(season.name).isNotEmpty)
+                _sourceDescription(season.name),
+            ].join(' · '),
           );
           episodeBuckets.putIfAbsent(key, () => []).add((
             episodeIndex,
@@ -343,7 +349,9 @@ String episodeQuality(String seasonName, String episodeName) {
 
 String recommendedEpisodeQuality(Iterable<String> qualities) {
   final values = qualities.toList(growable: false);
-  if (values.contains('720p')) return '720p';
+  for (final quality in values) {
+    if (episodeQuality(quality, '') == '720p') return quality;
+  }
   return values.isEmpty ? unknownQualityLabel : values.first;
 }
 
@@ -587,7 +595,7 @@ List<EpisodeVariant> _uniqueVariants(Iterable<EpisodeVariant> input) {
           : EpisodeVariant(
               season: variant.season,
               episode: variant.episode,
-              quality: '${variant.quality} · سرور $count',
+              quality: '${variant.quality} · نسخه $count',
             ),
     );
   }
@@ -613,12 +621,40 @@ int _qualityRank(String value) {
       0;
 }
 
+// A second part is a different set of episodes, not another video server.
+String? _partNumber(String input) => RegExp(
+  r'(?:پارت|بخش|part|cour)\s*[:\-]?\s*(\d+)',
+  caseSensitive: false,
+).firstMatch(_latinDigits(input))?.group(1);
+
+String _sourceDescription(String input) {
+  final value = _latinDigits(input);
+  final labels = <String>[];
+  if (RegExp(r'دوبله|\bdub(?:bed)?\b', caseSensitive: false).hasMatch(value)) {
+    labels.add('دوبله');
+  } else if (RegExp(
+    r'زیرنویس|\bsub(?:bed|title[sd]?)?\b',
+    caseSensitive: false,
+  ).hasMatch(value)) {
+    labels.add('زیرنویس');
+  }
+  final server = RegExp(
+    r'(?:سرور|server)\s*[:\-]?\s*(\d+)',
+    caseSensitive: false,
+  ).firstMatch(value)?.group(1);
+  if (server != null) labels.add('سرور $server');
+  return labels.join(' · ');
+}
+
 String _seasonKey(String input, int fallbackIndex) {
   var value = _latinDigits(input).toLowerCase();
   if (isTrailerLabel(value)) return 'trailer';
   value = value.replaceAll(RegExp(r'\d{3,4}\s*p\b'), ' ');
   final number = RegExp(r'\d+').firstMatch(value)?.group(0);
-  if (number != null) return 'season-${int.parse(number)}';
+  if (number != null) {
+    final part = _partNumber(value);
+    return 'season-${int.parse(number)}${part == null ? '' : '-part-$part'}';
+  }
   value = value
       .replaceAll(RegExp(r'فصل|season|زیرنویس|دوبله|فارسی|اختصاصی'), ' ')
       .replaceAll(RegExp(r'[^a-z\u0600-\u06ff]+'), ' ')
@@ -642,8 +678,10 @@ String _episodeKey(String input, int fallbackIndex) {
 
 String _seasonDisplayName(String key, String original) {
   if (key == 'trailer') return 'تیزرها';
-  final number = RegExp(r'^season-(\d+)$').firstMatch(key)?.group(1);
-  if (number != null) return 'فصل $number';
+  final match = RegExp(r'^season-(\d+)(?:-part-(\d+))?$').firstMatch(key);
+  if (match != null) {
+    return 'فصل ${match.group(1)}${match.group(2) == null ? '' : ' · پارت ${match.group(2)}'}';
+  }
   final cleaned = original
       .replaceAll(RegExp(r'\d{3,4}\s*[pP]\b'), ' ')
       .replaceAll(RegExp(r'زیرنویس|دوبله|فارسی|اختصاصی'), ' ')

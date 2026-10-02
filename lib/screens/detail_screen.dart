@@ -14,7 +14,7 @@ import '../core/web_subtitles.dart';
 import 'dart:async';
 import '../core/app_platform.dart';
 
-import 'package:animations/animations.dart';
+import '../widgets/watch_episode_button.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1147,76 +1147,14 @@ class _DetailSummaryCard extends StatelessWidget {
     ),
   );
 
-  Widget _animatedWatchButton(BuildContext context, {required bool desktop}) {
-    final enabled = !loading && hasPlayable;
-    return OpenContainer<void>(
-      transitionType: ContainerTransitionType.fade,
-      transitionDuration: Duration(milliseconds: desktop ? 500 : 300),
-      closedColor: Colors.transparent,
-      middleColor: AnimeColors.surfaceHigh,
-      openColor: AnimeColors.background,
-      closedElevation: 0,
-      openElevation: 0,
-      closedShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(desktop ? 18 : 40),
-      ),
-      openShape: const RoundedRectangleBorder(),
-      tappable: false,
-      openBuilder: (context, _) => pickerBuilder(context),
-      closedBuilder: (context, openContainer) => SizedBox(
-        width: double.infinity,
-        height: desktop ? 176 : null,
-        child: FilledButton(
-          onPressed: enabled ? openContainer : null,
-          style: FilledButton.styleFrom(
-            minimumSize: desktop ? const Size(210, 176) : null,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(desktop ? 18 : 40),
-            ),
-          ),
-          child: desktop
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 62,
-                      height: 62,
-                      decoration: const BoxDecoration(
-                        color: Colors.black12,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.play_arrow_rounded, size: 40),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      loading ? 'در حال دریافت…' : 'شروع تماشا',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    if (!loading) ...[
-                      const SizedBox(height: 5),
-                      const Text(
-                        'انتخاب فصل و قسمت',
-                        style: TextStyle(fontSize: 11, color: Colors.black54),
-                      ),
-                    ],
-                  ],
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.play_arrow_rounded),
-                    const SizedBox(width: 8),
-                    Text(loading ? 'در حال دریافت لینک پخش…' : 'شروع تماشا'),
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
+  Widget _animatedWatchButton(BuildContext context, {required bool desktop}) =>
+      WatchEpisodeButton(
+        loading: loading,
+        hasPlayable: hasPlayable,
+        desktop: desktop,
+        adult: item.isHentai,
+        pickerBuilder: pickerBuilder,
+      );
 
   Widget _mobileCard(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -5265,12 +5203,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
           )
         : showTopPlayerPanel<SubtitlePreferences>(
+            fullWidth: !isLargeScreenDevice,
             panelTheme: widget.content.isHentai
                 ? _playerRedTheme(context)
                 : null,
             context: context,
             backgroundColor: AnimeColors.surface,
             builder: (context) => SubtitleAppearancePanel(
+              twoColumnLayout: !isLargeScreenDevice,
               initial: _subtitle,
               onChanged: (value) {
                 if (mounted) setState(() => _subtitle = value);

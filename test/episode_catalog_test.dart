@@ -56,6 +56,76 @@ void main() {
     );
   });
 
+  test(
+    'dub, sub and part two remain real sources rather than fake servers',
+    () {
+      final seasons = <AnimeSeason>[
+        for (final part in ['', ' (پارت ۲)'])
+          for (final voice in ['دوبله', 'زیرنویس'])
+            for (final quality in ['480p', '720p', '1080p'])
+              AnimeSeason(
+                id: '$voice-$quality-$part',
+                name: 'فصل : ۱ $quality $voice$part',
+                episodes: [
+                  AnimeEpisode(
+                    id: '$voice-$quality-$part-1',
+                    name: '1',
+                    fileUrl: '$voice-$quality-$part-1',
+                  ),
+                  if (voice == 'زیرنویس')
+                    AnimeEpisode(
+                      id: '$voice-$quality-$part-2',
+                      name: '2',
+                      fileUrl: '$voice-$quality-$part-2',
+                    ),
+                ],
+              ),
+      ];
+      final content = AnimeContent(
+        id: 'spy',
+        title: 'Spy x Family',
+        subtitle: '',
+        description: '',
+        year: 2022,
+        rating: 8,
+        kind: ContentKind.series,
+        colors: [],
+        genres: [],
+        seasons: seasons,
+      );
+      final catalog = EpisodeCatalog.from(content);
+      expect(catalog.seasons.map((s) => s.name), ['فصل 1', 'فصل 1 · پارت 2']);
+      expect(catalog.qualities, hasLength(6));
+      expect(catalog.qualities.any((q) => q.contains('سرور')), isFalse);
+      for (final season in catalog.seasons) {
+        final first = season.episodes.first;
+        expect(first.variants, hasLength(6));
+        expect(
+          first.variantFor('720p · دوبله').episode.fileUrl,
+          contains('دوبله-720p'),
+        );
+        expect(
+          season.episodes.last.variants.map((v) => v.quality),
+          contains('720p · زیرنویس'),
+        );
+        expect(
+          first.variantFor('1080p · زیرنویس').episode.fileUrl.contains('پارت'),
+          season.name.contains('پارت'),
+        );
+      }
+      expect(recommendedEpisodeQuality(catalog.qualities), startsWith('720p'));
+      for (final source in seasons) {
+        expect(
+          catalog
+              .groupFor(source.episodes.first)
+              ?.variants
+              .map((v) => v.episode.id),
+          contains(source.episodes.first.id),
+        );
+      }
+    },
+  );
+
   test('movie qualities become one playable movie', () {
     const content = AnimeContent(
       id: 'movie',
@@ -226,10 +296,10 @@ void main() {
     expect(plan.movieAll, isNotNull);
     expect(plan.movieAll!.label, 'دانلود همه 2 کیفیت');
     expect(plan.movieAll!.episodes, hasLength(2));
-    expect(
-      plan.batches.map((batch) => batch.label),
-      ['دانلود کیفیت 1080p', 'دانلود کیفیت 720p'],
-    );
+    expect(plan.batches.map((batch) => batch.label), [
+      'دانلود کیفیت 1080p',
+      'دانلود کیفیت 720p',
+    ]);
     for (final batch in plan.batches) {
       expect(batch.episodes, hasLength(1));
       expect(batch.episodes.single.fileUrl, isNot('movie-trailer'));
@@ -334,10 +404,7 @@ void main() {
     expect(isUnknownQuality('بدون برچسب کیفیت · سرور 2'), isTrue);
     expect(isUnknownQuality('720p'), isFalse);
     expect(qualityDisplayLabel('بدون برچسب کیفیت'), 'پخش');
-    expect(
-      qualityDisplayLabel('بدون برچسب کیفیت • سرور ۲'),
-      'سرور ۲',
-    );
+    expect(qualityDisplayLabel('بدون برچسب کیفیت • سرور ۲'), 'سرور ۲');
   });
 
   test('raw file sizes display as compact MB/GB labels', () {
