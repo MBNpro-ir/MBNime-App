@@ -100,10 +100,13 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
   void _openSearch() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => HentaiSearchPage(
-          api: widget.api,
-          initialQuery: '',
-          onOpen: widget.onOpen,
+        builder: (_) => Theme(
+          data: hentaiTheme(Theme.of(context)),
+          child: HentaiSearchPage(
+            api: widget.api,
+            initialQuery: '',
+            onOpen: widget.onOpen,
+          ),
         ),
       ),
     );
@@ -457,7 +460,13 @@ class _HentaiSectionDrawer extends StatelessWidget {
     Navigator.pop(context);
     Future<void>.delayed(const Duration(milliseconds: 220), () {
       if (context.mounted) {
-        Navigator.push<void>(context, MaterialPageRoute(builder: (_) => page));
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                Theme(data: hentaiTheme(Theme.of(context)), child: page),
+          ),
+        );
       }
     });
   }
@@ -918,7 +927,8 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
   ) {
     Navigator.push<void>(
       context,
-      slideUpRoute(
+      _hentaiRoute(
+        context,
         _HentaiHtmlListPage(
           title: title,
           loader: loader,
@@ -931,7 +941,8 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
   void _pushTerm(HentaiSection section) {
     Navigator.push<void>(
       context,
-      slideUpRoute(
+      _hentaiRoute(
+        context,
         _HentaiTermResultsPage(
           api: widget.api,
           taxonomy: section.taxonomy,
@@ -1780,11 +1791,12 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
                 itemCount: terms.length,
                 itemBuilder: (_, i) {
                   final term = terms[i];
-                  final accent = _termAccents[i % _termAccents.length];
+                  const accent = AnimeColors.playerAccent;
                   return Pressable(
                     onTap: () => Navigator.push<void>(
                       context,
-                      slideUpRoute(
+                      _hentaiRoute(
+                        context,
                         _HentaiTermResultsPage(
                           api: widget.api,
                           taxonomy: widget.taxonomy,
@@ -1846,16 +1858,8 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
   );
 }
 
-const _termAccents = <Color>[
-  Color(0xFFFF7A1A),
-  Color(0xFF8D6BFF),
-  Color(0xFF3FD8D4),
-  Color(0xFFFF4F6D),
-  Color(0xFF4ADE80),
-  Color(0xFFFBBF24),
-  Color(0xFFF472B6),
-  Color(0xFF60A5FA),
-];
+PageRoute<void> _hentaiRoute(BuildContext context, Widget page) =>
+    slideUpRoute(Theme(data: hentaiTheme(Theme.of(context)), child: page));
 
 class _HentaiTermResultsPage extends StatefulWidget {
   const _HentaiTermResultsPage({
@@ -2305,7 +2309,7 @@ class _HentaiBlogTabState extends State<_HentaiBlogTab> {
                     return Pressable(
                       onTap: () => Navigator.push<void>(
                         context,
-                        slideUpRoute(_HentaiPostPage(post: post)),
+                        _hentaiRoute(context, _HentaiPostPage(post: post)),
                       ),
                       child: DecoratedBox(
                         decoration: BoxDecoration(

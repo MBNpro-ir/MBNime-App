@@ -309,6 +309,17 @@ ThemeData hentaiTheme(ThemeData base) {
       primaryContainer: red.withValues(alpha: .2),
       secondaryContainer: red.withValues(alpha: .2),
     ),
+    inputDecorationTheme: base.inputDecorationTheme.copyWith(
+      focusedBorder: base.inputDecorationTheme.focusedBorder?.copyWith(
+        borderSide: const BorderSide(color: red, width: 1.4),
+      ),
+    ),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: red,
+      selectionColor: red.withValues(alpha: .3),
+      selectionHandleColor: red,
+    ),
+    progressIndicatorTheme: base.progressIndicatorTheme.copyWith(color: red),
     sliderTheme: base.sliderTheme.copyWith(
       activeTrackColor: red,
       thumbColor: red,
