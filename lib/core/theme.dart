@@ -332,6 +332,13 @@ ThemeData hentaiTheme(ThemeData base) {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(foregroundColor: red),
     ),
+    chipTheme: base.chipTheme.copyWith(
+      selectedColor: red.withValues(alpha: .2),
+      secondarySelectedColor: red.withValues(alpha: .2),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(foregroundColor: red),
+    ),
     tabBarTheme: base.tabBarTheme.copyWith(
       indicatorColor: red,
       labelColor: red,

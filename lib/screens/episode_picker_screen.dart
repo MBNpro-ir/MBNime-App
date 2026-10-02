@@ -23,7 +23,7 @@ import '../widgets/wireless_display_sheet.dart';
 /// Shows seasons as chips and the selected season's files as a tidy list
 /// with per-episode saved positions. Tapping an episode asks whether to
 /// resume or restart when a previous position exists.
-class EpisodePickerScreen extends StatefulWidget {
+class EpisodePickerScreen extends StatelessWidget {
   const EpisodePickerScreen({
     super.key,
     required this.content,
@@ -38,10 +38,36 @@ class EpisodePickerScreen extends StatefulWidget {
   final bool deferInitialContent;
 
   @override
-  State<EpisodePickerScreen> createState() => _EpisodePickerScreenState();
+  Widget build(BuildContext context) {
+    final body = _EpisodePickerBody(
+      content: content,
+      onPlay: onPlay,
+      deferInitialContent: deferInitialContent,
+    );
+    // The picker opens in its own route. Keep its State below this Theme so
+    // dialogs and sheets opened through State.context inherit the same colors.
+    return content.isHentai
+        ? Theme(data: hentaiTheme(Theme.of(context)), child: body)
+        : body;
+  }
 }
 
-class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
+class _EpisodePickerBody extends StatefulWidget {
+  const _EpisodePickerBody({
+    required this.content,
+    required this.onPlay,
+    required this.deferInitialContent,
+  });
+
+  final AnimeContent content;
+  final Future<void> Function(AnimeEpisode episode, Duration startAt) onPlay;
+  final bool deferInitialContent;
+
+  @override
+  State<_EpisodePickerBody> createState() => _EpisodePickerScreenState();
+}
+
+class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
   final _progress = WatchProgressStore();
   final _saved = <String, SavedWatchProgress>{};
   late final EpisodeCatalog _catalog;
@@ -442,7 +468,7 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     required List<Widget> children,
   }) => Row(
     children: [
-      Icon(icon, size: 20, color: AnimeColors.orange),
+      Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
       const SizedBox(width: 7),
       Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
       const SizedBox(width: 12),
@@ -674,7 +700,9 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                   IconButton.outlined(
                     tooltip: 'دانلود با انتخاب کیفیت',
                     onPressed: () => _downloadEpisode(group),
-                    color: AnimeColors.cyan,
+                    color: widget.content.isHentai
+                        ? Theme.of(context).colorScheme.primary
+                        : AnimeColors.cyan,
                     icon: const Icon(Icons.download_rounded),
                   ),
                 ],

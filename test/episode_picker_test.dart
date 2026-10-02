@@ -99,23 +99,89 @@ const trailerContent = AnimeContent(
 );
 
 void main() {
+  testWidgets(
+    'hentai picker retains red theme across its separate route and sheets',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final adult = AnimeContent(
+        id: 'adult-theme',
+        title: content.title,
+        subtitle: '',
+        description: '',
+        year: 2026,
+        rating: 8,
+        kind: content.kind,
+        colors: content.colors,
+        genres: const [],
+        seasons: content.seasons,
+        isHentai: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AnimeTheme.dark,
+          home: EpisodePickerScreen(content: adult, onPlay: (_, _) async {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final play = find.text('پخش').first;
+      expect(
+        Theme.of(tester.element(play)).colorScheme.primary,
+        AnimeColors.playerAccent,
+      );
+      final chip = find.byType(ChoiceChip).first;
+      expect(
+        Theme.of(tester.element(chip)).chipTheme.selectedColor,
+        AnimeColors.playerAccent.withValues(alpha: .2),
+      );
+      await tester.tap(play);
+      await tester.pumpAndSettle();
+      final sheetTile = find.byType(ListTile).first;
+      expect(
+        Theme.of(tester.element(sheetTile)).colorScheme.primary,
+        AnimeColors.playerAccent,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
-  testWidgets('reset is shown only for watched progress and clears every quality identity', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final group = EpisodeCatalog.from(content).episodes.first;
-    await WatchProgressStore().save(contentId: content.id, episodeId: group.id,
-      position: const Duration(minutes:20), duration: const Duration(minutes:40));
-    await tester.pumpWidget(MaterialApp(theme: ThemeData.dark(), home: Directionality(
-      textDirection: TextDirection.rtl,
-      child: EpisodePickerScreen(content:content, onPlay: (_,_) async {}))));
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('پاک کردن سابقهٔ این قسمت'), findsOneWidget);
-    await tester.tap(find.byTooltip('پاک کردن سابقهٔ این قسمت'));
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('پاک کردن سابقهٔ این قسمت'), findsNothing);
-    expect(await WatchProgressStore().load(contentId:content.id,episodeId:group.id),isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  testWidgets(
+    'reset is shown only for watched progress and clears every quality identity',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final group = EpisodeCatalog.from(content).episodes.first;
+      await WatchProgressStore().save(
+        contentId: content.id,
+        episodeId: group.id,
+        position: const Duration(minutes: 20),
+        duration: const Duration(minutes: 40),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: EpisodePickerScreen(
+              content: content,
+              onPlay: (_, _) async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('پاک کردن سابقهٔ این قسمت'), findsOneWidget);
+      await tester.tap(find.byTooltip('پاک کردن سابقهٔ این قسمت'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('پاک کردن سابقهٔ این قسمت'), findsNothing);
+      expect(
+        await WatchProgressStore().load(
+          contentId: content.id,
+          episodeId: group.id,
+        ),
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('trailer season hides the unknown quality label', (tester) async {
     SharedPreferences.setMockInitialValues({});
