@@ -1,3 +1,4 @@
+import '../widgets/responsive_web_layout.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../core/app_platform.dart';
@@ -251,7 +252,10 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
   }
 
   Future<void> _showPlayback(EpisodeGroup group) async {
-    if (kIsWeb) { await _tapEpisode(group, group.variantFor(_selectedQuality)); return; }
+    if (kIsWeb) {
+      await _tapEpisode(group, group.variantFor(_selectedQuality));
+      return;
+    }
     final variant = group.variantFor(_selectedQuality);
     final allowedPlayers = <String>{
       PlaybackPreferenceStore.internalPlayer,
@@ -463,10 +467,15 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
       );
       if (!mounted) return;
       setState(() => _saved.remove(group.id));
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        synced ? 'سابقهٔ این قسمت پاک شد.' :
-          'سابقهٔ این قسمت پاک شد؛ حذف از سرور با اتصال بعدی انجام می‌شود.',
-      )));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            synced
+                ? 'سابقهٔ این قسمت پاک شد.'
+                : 'سابقهٔ این قسمت پاک شد؛ حذف از سرور با اتصال بعدی انجام می‌شود.',
+          ),
+        ),
+      );
     } finally {
       _resetting.remove(group.id);
       if (mounted) setState(() {});
@@ -579,16 +588,22 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
                 ),
                 child: Row(
                   children: [
-                    if (saved != null && (saved.positionMs > 15000 || saved.watched))
+                    if (saved != null &&
+                        (saved.positionMs > 15000 || saved.watched))
                       IconButton(
                         key: Key('reset-episode-${group.id}'),
                         tooltip: 'پاک کردن سابقهٔ این قسمت',
                         padding: EdgeInsets.zero,
                         visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
                         iconSize: 17,
                         color: const Color(0xFFFF5252),
-                        onPressed: _resetting.contains(group.id) ? null : () => _resetEpisode(group),
+                        onPressed: _resetting.contains(group.id)
+                            ? null
+                            : () => _resetEpisode(group),
                         icon: const Icon(Icons.close_rounded),
                       ),
                     Icon(statusIcon, size: 20, color: statusColor),
@@ -687,103 +702,109 @@ class _EpisodePickerScreenState extends State<EpisodePickerScreen> {
     final displayQualities = season.displayQualities;
     return Scaffold(
       appBar: AppBar(title: const Text('انتخاب قسمت')),
-      body: AmbientBackground(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Text(
-                widget.content.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge,
+      body: ResponsiveContentFrame(
+        enabled: kIsWeb,
+        child: AmbientBackground(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: Text(
+                  widget.content.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: Text(
-                '${widget.content.year} · ${widget.content.kindLabel}',
-                style: const TextStyle(color: AnimeColors.muted),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Text(
+                  '${widget.content.year} · ${widget.content.kindLabel}',
+                  style: const TextStyle(color: AnimeColors.muted),
+                ),
               ),
-            ),
-            Container(
-              margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AnimeColors.surface.withValues(alpha: .92),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Column(
-                children: [
-                  if (seasons.length > 1) ...[
-                    _selectorRow(
-                      title: 'فصل',
-                      icon: Icons.video_library_rounded,
-                      children: [
-                        for (var i = 0; i < seasons.length; i++) ...[
-                          ChoiceChip(
-                            label: Text(seasons[i].name),
-                            selected: i == _seasonIndex,
-                            onSelected: (_) => _selectSeason(i),
-                          ),
-                          const SizedBox(width: 7),
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AnimeColors.surface.withValues(alpha: .92),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  children: [
+                    if (seasons.length > 1) ...[
+                      _selectorRow(
+                        title: 'فصل',
+                        icon: Icons.video_library_rounded,
+                        children: [
+                          for (var i = 0; i < seasons.length; i++) ...[
+                            ChoiceChip(
+                              label: Text(seasons[i].name),
+                              selected: i == _seasonIndex,
+                              onSelected: (_) => _selectSeason(i),
+                            ),
+                            const SizedBox(width: 7),
+                          ],
                         ],
-                      ],
-                    ),
-                    if (displayQualities.isNotEmpty)
-                      const SizedBox(height: 10),
-                  ],
-                  if (displayQualities.isNotEmpty)
-                    _selectorRow(
-                      title: 'کیفیت',
-                      icon: Icons.high_quality_rounded,
-                      children: [
-                        for (final quality in displayQualities) ...[
-                          ChoiceChip(
-                            key: Key('quality-$quality'),
-                            label: Text(quality),
-                            selected: quality == _selectedQuality,
-                            onSelected: (_) => _setQuality(quality),
-                          ),
-                          const SizedBox(width: 7),
-                        ],
-                      ],
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: !_contentReady
-                  ? const SizedBox.expand()
-                  : LayoutBuilder(
-                      builder: (context, constraints) => GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                        itemCount: episodes.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount:
-                              MediaQuery.textScalerOf(context).scale(14) > 22
-                              ? 1
-                              : (constraints.maxWidth / 245).floor().clamp(
-                                  2,
-                                  5,
-                                ),
-                          mainAxisExtent:
-                              210 +
-                              (MediaQuery.textScalerOf(context).scale(14) -
-                                      14) *
-                                  4,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                        ),
-                        itemBuilder: (_, i) {
-                          return _episodeCard(episodes[i]);
-                        },
                       ),
-                    ),
-            ),
-          ],
+                      if (displayQualities.isNotEmpty)
+                        const SizedBox(height: 10),
+                    ],
+                    if (displayQualities.isNotEmpty)
+                      _selectorRow(
+                        title: 'کیفیت',
+                        icon: Icons.high_quality_rounded,
+                        children: [
+                          for (final quality in displayQualities) ...[
+                            ChoiceChip(
+                              key: Key('quality-$quality'),
+                              label: Text(quality),
+                              selected: quality == _selectedQuality,
+                              onSelected: (_) => _setQuality(quality),
+                            ),
+                            const SizedBox(width: 7),
+                          ],
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: !_contentReady
+                    ? const SizedBox.expand()
+                    : LayoutBuilder(
+                        builder: (context, constraints) => GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          itemCount: episodes.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount:
+                                    MediaQuery.textScalerOf(context).scale(14) >
+                                        22
+                                    ? 1
+                                    : (constraints.maxWidth / 245)
+                                          .floor()
+                                          .clamp(2, 5),
+                                mainAxisExtent:
+                                    210 +
+                                    (MediaQuery.textScalerOf(
+                                              context,
+                                            ).scale(14) -
+                                            14) *
+                                        4,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                              ),
+                          itemBuilder: (_, i) {
+                            return _episodeCard(episodes[i]);
+                          },
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -799,7 +820,8 @@ String _hentaiEpisodeTitle(String name) => name
     )
     .trim();
 
-String _fmt(Duration value) {  final hours = value.inHours;
+String _fmt(Duration value) {
+  final hours = value.inHours;
   final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
   return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';

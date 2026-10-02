@@ -1,3 +1,4 @@
+import '../widgets/responsive_web_layout.dart';
 import '../services/player_system_ui.dart';
 import '../widgets/browser_video_view.dart';
 import '../widgets/player_speed_sheet.dart';
@@ -470,7 +471,7 @@ class _DetailScreenState extends State<DetailScreen> {
       final isHentai = item.isHentai || widget.content.isHentai;
       final headerHeight = isHentai
           ? 120.0
-          : isLargeScreenDevice
+          : isLargeScreenDevice || isWideWebLayout(context)
           ? (viewportHeight * .42).clamp(260.0, 380.0)
           : 430.0;
       final hasPlayable = item.seasons.any(
@@ -489,193 +490,202 @@ class _DetailScreenState extends State<DetailScreen> {
           widget.content.backdropUrl ??
           item.backdropUrl;
       return Scaffold(
-        body: CustomScrollView(
-          slivers: [
-            SliverAppBar.large(
-              expandedHeight: headerHeight,
-              toolbarHeight: 70,
-              pinned: true,
-              stretch: true,
-              backgroundColor: Colors.black,
-              surfaceTintColor: Colors.black,
-              leading: Padding(
-                padding: const EdgeInsets.all(7),
-                child: IconButton.filledTonal(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                ),
-              ),
-              actions: [
-                Padding(
+        body: ResponsiveContentFrame(
+          enabled: kIsWeb,
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar.large(
+                expandedHeight: headerHeight,
+                toolbarHeight: 70,
+                pinned: true,
+                stretch: true,
+                backgroundColor: Colors.black,
+                surfaceTintColor: Colors.black,
+                leading: Padding(
                   padding: const EdgeInsets.all(7),
                   child: IconButton.filledTonal(
-                    tooltip: 'اشتراک‌گذاری',
-                    onPressed: () => _share(item),
-                    icon: const Icon(Icons.share_rounded),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_forward_rounded),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: IconButton.filledTonal(
-                    tooltip: 'افزودن به پلی‌لیست',
-                    onPressed: () => showAddToPlaylistSheet(context, item),
-                    icon: const Icon(Icons.queue_music_rounded),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: IconButton.filledTonal(
-                    onPressed: _toggleFavorite,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 260),
-                      child: Icon(
-                        _favorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        key: ValueKey(_favorite),
-                      ),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.all(7),
+                    child: IconButton.filledTonal(
+                      tooltip: 'اشتراک‌گذاری',
+                      onPressed: () => _share(item),
+                      icon: const Icon(Icons.share_rounded),
                     ),
                   ),
-                ),
-              ],
-              flexibleSpace: FlexibleSpaceBar(
-                stretchModes: isDesktopWindow || DevicePerformance.lightweight
-                    ? const [StretchMode.zoomBackground]
-                    : const [
-                        StretchMode.zoomBackground,
-                        StretchMode.blurBackground,
-                      ],
-                // در هنتای کاور بزرگ بالا حذف شده و پس‌زمینه مشکی ساده است.
-                background: isHentai
-                    ? const ColoredBox(color: Colors.black)
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          // The backdrop remains independent from the catalog's
-                          // portrait Hero, but gets its own tag for cover preview.
-                          Pressable(
-                            onTap: () => _showCover(
-                              item,
-                              requestedImageUrl: backdropUrl,
-                              heroTag: 'detail-backdrop-${widget.heroTag}',
-                            ),
-                            child: Hero(
-                              tag: 'detail-backdrop-${widget.heroTag}',
-                              createRectTween: smoothHeroRectTween,
-                              child: _AnimatedDetailBackdrop(
-                                key: ValueKey(widget.heroTag),
-                                child: ContentArt(
-                                  content: item,
-                                  imageUrl: backdropUrl,
-                                  orientation: ArtworkOrientation.landscape,
-                                  borderRadius: 0,
-                                  showTitle: false,
-                                  lockToImageUrl: true,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Positioned(
-                            top: 0,
-                            right: 0,
-                            left: 0,
-                            height: 150,
-                            child: IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xB3000000),
-                                      Colors.transparent,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 110),
-              sliver: SliverList.list(
-                children: [
-                  if (snapshot.hasError) _InlineError(onRetry: _retry),
-                  _DetailSummaryCard(
-                    item: item,
-                    heroTag: widget.heroTag,
-                    portraitImageUrl: posterUrl,
-                    loading: loading,
-                    hasPlayable: hasPlayable,
-                    onPlay: (content, episode, startAt) =>
-                        _play(content, episode, startAt: startAt),
-                    onCoverTap: () => _showCover(
-                      item,
-                      requestedImageUrl: posterUrl,
-                      heroTag: widget.heroTag.startsWith('featured-')
-                          ? 'detail-poster-${widget.heroTag}'
-                          : widget.heroTag,
-                    ),
-                    pickerBuilder: (_) => EpisodePickerScreen(
-                      content: item,
-                      deferInitialContent: !isDesktopWindow,
-                      onPlay: (episode, startAt) =>
-                          _play(item, episode, startAt: startAt),
+                  Padding(
+                    padding: const EdgeInsets.all(7),
+                    child: IconButton.filledTonal(
+                      tooltip: 'افزودن به پلی‌لیست',
+                      onPressed: () => showAddToPlaylistSheet(context, item),
+                      icon: const Icon(Icons.queue_music_rounded),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _DetailSectionTabs(
-                    selected: _detailSection,
-                    onSelected: _selectDetailSection,
-                    hideComments: isHentai,
-                  ),
-                  const SizedBox(height: 22),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragEnd: _swipeDetailSection,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: Offset(_detailSectionDirection * .055, 0),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      ),
-                      layoutBuilder: (currentChild, previousChildren) => Stack(
-                        alignment: Alignment.topCenter,
-                        children: [...previousChildren, ?currentChild],
-                      ),
-                      child: KeyedSubtree(
-                        key: ValueKey(_detailSection),
-                        child: _AboutSection(
-                          item: item,
-                          api: widget.api,
-                          comments: _comments,
-                          section: _detailSection,
-                          onRelated: _openRelated,
-                          onDownloadSeason: (season) =>
-                              _downloadSeason(item, season),
-                          onDownloadQuality: (season, quality) =>
-                              _downloadSeasonByQuality(item, season, quality),
-                          onDownloadSelection: (season, episodes) =>
-                              _downloadSelection(item, season, episodes),
+                  Padding(
+                    padding: const EdgeInsets.all(7),
+                    child: IconButton.filledTonal(
+                      onPressed: _toggleFavorite,
+                      icon: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 260),
+                        child: Icon(
+                          _favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          key: ValueKey(_favorite),
                         ),
                       ),
                     ),
                   ),
                 ],
+                flexibleSpace: FlexibleSpaceBar(
+                  stretchModes: isDesktopWindow || DevicePerformance.lightweight
+                      ? const [StretchMode.zoomBackground]
+                      : const [
+                          StretchMode.zoomBackground,
+                          StretchMode.blurBackground,
+                        ],
+                  // در هنتای کاور بزرگ بالا حذف شده و پس‌زمینه مشکی ساده است.
+                  background: isHentai
+                      ? const ColoredBox(color: Colors.black)
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // The backdrop remains independent from the catalog's
+                            // portrait Hero, but gets its own tag for cover preview.
+                            Pressable(
+                              onTap: () => _showCover(
+                                item,
+                                requestedImageUrl: backdropUrl,
+                                heroTag: 'detail-backdrop-${widget.heroTag}',
+                              ),
+                              child: Hero(
+                                tag: 'detail-backdrop-${widget.heroTag}',
+                                createRectTween: smoothHeroRectTween,
+                                child: _AnimatedDetailBackdrop(
+                                  key: ValueKey(widget.heroTag),
+                                  child: ContentArt(
+                                    content: item,
+                                    imageUrl: backdropUrl,
+                                    orientation: ArtworkOrientation.landscape,
+                                    borderRadius: 0,
+                                    showTitle: false,
+                                    lockToImageUrl: true,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const Positioned(
+                              top: 0,
+                              right: 0,
+                              left: 0,
+                              height: 150,
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xB3000000),
+                                        Colors.transparent,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
               ),
-            ),
-          ],
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  22,
+                  20,
+                  isWideWebLayout(context) ? 32 : 110,
+                ),
+                sliver: SliverList.list(
+                  children: [
+                    if (snapshot.hasError) _InlineError(onRetry: _retry),
+                    _DetailSummaryCard(
+                      item: item,
+                      heroTag: widget.heroTag,
+                      portraitImageUrl: posterUrl,
+                      loading: loading,
+                      hasPlayable: hasPlayable,
+                      onPlay: (content, episode, startAt) =>
+                          _play(content, episode, startAt: startAt),
+                      onCoverTap: () => _showCover(
+                        item,
+                        requestedImageUrl: posterUrl,
+                        heroTag: widget.heroTag.startsWith('featured-')
+                            ? 'detail-poster-${widget.heroTag}'
+                            : widget.heroTag,
+                      ),
+                      pickerBuilder: (_) => EpisodePickerScreen(
+                        content: item,
+                        deferInitialContent: !isDesktopWindow,
+                        onPlay: (episode, startAt) =>
+                            _play(item, episode, startAt: startAt),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailSectionTabs(
+                      selected: _detailSection,
+                      onSelected: _selectDetailSection,
+                      hideComments: isHentai,
+                    ),
+                    const SizedBox(height: 22),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragEnd: _swipeDetailSection,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: Offset(_detailSectionDirection * .055, 0),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        layoutBuilder: (currentChild, previousChildren) =>
+                            Stack(
+                              alignment: Alignment.topCenter,
+                              children: [...previousChildren, ?currentChild],
+                            ),
+                        child: KeyedSubtree(
+                          key: ValueKey(_detailSection),
+                          child: _AboutSection(
+                            item: item,
+                            api: widget.api,
+                            comments: _comments,
+                            section: _detailSection,
+                            onRelated: _openRelated,
+                            onDownloadSeason: (season) =>
+                                _downloadSeason(item, season),
+                            onDownloadQuality: (season, quality) =>
+                                _downloadSeasonByQuality(item, season, quality),
+                            onDownloadSelection: (season, episodes) =>
+                                _downloadSelection(item, season, episodes),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       );
     },
@@ -1047,7 +1057,8 @@ class _DetailSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      isLargeScreenDevice && MediaQuery.sizeOf(context).width >= 800
+      (isLargeScreenDevice || isWideWebLayout(context)) &&
+          MediaQuery.sizeOf(context).width >= 800
       ? _desktopCard(context)
       : _mobileCard(context);
 
@@ -3595,78 +3606,87 @@ class _PlayerScreenState extends State<PlayerScreen>
     final group = _currentEpisodeGroup;
     if (group == null || group.variants.length < 2 || _switchingQuality) return;
     _hideTimer?.cancel();
-    final selected = await showModalBottomSheet<EpisodeVariant>(
+    final selected = await showResponsivePlayerPanel<EpisodeVariant>(
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
       backgroundColor: AnimeColors.surface,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: .78,
-        child: Column(
-          children: [
-            const ListTile(
-              leading: Icon(Icons.high_quality_rounded),
-              title: Text(
-                'کیفیت پخش',
-                style: TextStyle(fontWeight: FontWeight.w900),
+      builder: (context) => SizedBox(
+        height: kIsWeb
+            ? webPanelHeight(
+                context,
+                desired: 100 + group.variants.length * 52.0,
+              )
+            : null,
+        child: FractionallySizedBox(
+          heightFactor: kIsWeb ? 1 : .78,
+          child: Column(
+            children: [
+              const ListTile(
+                leading: Icon(Icons.high_quality_rounded),
+                title: Text(
+                  'کیفیت پخش',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: Text('زمان فعلی ویدیو هنگام تغییر حفظ می‌شود.'),
               ),
-              subtitle: Text('زمان فعلی ویدیو هنگام تغییر حفظ می‌شود.'),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.only(bottom: 12),
-                itemCount: group.variants.length,
-                itemBuilder: (context, index) {
-                  final variant = group.variants[index];
-                  final selected = variant.episode.fileUrl == _episode.fileUrl;
-                  return InkWell(
-                    key: Key('player-quality-${variant.quality}'),
-                    onTap: () => Navigator.pop(context, variant),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            selected
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_unchecked_rounded,
-                            color: selected ? AnimeColors.orange : null,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            qualityDisplayLabel(variant.quality),
-                            textDirection: TextDirection.ltr,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: group.variants.length,
+                  itemBuilder: (context, index) {
+                    final variant = group.variants[index];
+                    final selected =
+                        variant.episode.fileUrl == _episode.fileUrl;
+                    return InkWell(
+                      key: Key('player-quality-${variant.quality}'),
+                      onTap: () => Navigator.pop(context, variant),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              selected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.radio_button_unchecked_rounded,
                               color: selected ? AnimeColors.orange : null,
+                              size: 22,
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _playerVariantMeta(variant),
-                              style: const TextStyle(
-                                color: AnimeColors.muted,
-                                fontSize: 13,
+                            const SizedBox(width: 10),
+                            Text(
+                              qualityDisplayLabel(variant.quality),
+                              textDirection: TextDirection.ltr,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                color: selected ? AnimeColors.orange : null,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _playerVariantMeta(variant),
+                                style: const TextStyle(
+                                  color: AnimeColors.muted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3831,296 +3851,297 @@ class _PlayerScreenState extends State<PlayerScreen>
       (season) => season.episodes.any((group) => group.id == currentGroup?.id),
     );
     if (seasonIndex < 0) seasonIndex = 0;
-    final selected =
-        await showModalBottomSheet<
-          ({EpisodeGroup group, EpisodeVariant variant})
-        >(
-          context: context,
-          constraints: BoxConstraints(
-            maxWidth: panelWidth(context, large: 1040),
-          ),
-          isScrollControlled: true,
-          useSafeArea: true,
-          showDragHandle: true,
-          backgroundColor: AnimeColors.surface,
-          builder: (sheetContext) => StatefulBuilder(
-            builder: (context, updateSheet) {
-              final season = _episodeCatalog.seasons[seasonIndex];
-              final currentQuality = _currentVariant?.quality;
-              final choices = widget.content.kind == ContentKind.movie
-                  ? [
-                      for (final group in season.episodes)
-                        for (final variant in group.variants)
-                          (group: group, variant: variant),
-                    ]
-                  : [
-                      for (final group in season.episodes)
-                        (
-                          group: group,
-                          variant: group.variantFor(
-                            group.variants.any(
-                                  (item) => item.quality == currentQuality,
-                                )
-                                ? currentQuality
-                                : recommendedEpisodeQuality(
-                                    group.variants.map((item) => item.quality),
-                                  ),
-                          ),
+    final selected = await showResponsivePlayerPanel<({EpisodeGroup group, EpisodeVariant variant})>(
+      context: context,
+      constraints: BoxConstraints(maxWidth: panelWidth(context, large: 1040)),
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: AnimeColors.surface,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, updateSheet) {
+          final season = _episodeCatalog.seasons[seasonIndex];
+          final currentQuality = _currentVariant?.quality;
+          final choices = widget.content.kind == ContentKind.movie
+              ? [
+                  for (final group in season.episodes)
+                    for (final variant in group.variants)
+                      (group: group, variant: variant),
+                ]
+              : [
+                  for (final group in season.episodes)
+                    (
+                      group: group,
+                      variant: group.variantFor(
+                        group.variants.any(
+                              (item) => item.quality == currentQuality,
+                            )
+                            ? currentQuality
+                            : recommendedEpisodeQuality(
+                                group.variants.map((item) => item.quality),
+                              ),
+                      ),
+                    ),
+                ];
+          return SafeArea(
+            child: SizedBox(
+              height: kIsWeb
+                  ? webPanelHeight(
+                      context,
+                      desired:
+                          130 +
+                          (_episodeCatalog.seasons.length > 1 ? 48 : 0) +
+                          (choices.length /
+                                      playerEpisodePickerColumns(
+                                        panelWidth(context, large: 1040) - 32,
+                                      ))
+                                  .ceil() *
+                              120.0,
+                    )
+                  : null,
+              child: FractionallySizedBox(
+                heightFactor: kIsWeb ? .96 : .88,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(
+                          Icons.video_library_rounded,
+                          color: AnimeColors.orange,
                         ),
-                    ];
-              return SafeArea(
-                child: FractionallySizedBox(
-                  heightFactor: .88,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(
-                            Icons.video_library_rounded,
-                            color: AnimeColors.orange,
-                          ),
-                          title: Text(
-                            widget.content.kind == ContentKind.movie
-                                ? 'انتخاب نسخهٔ فیلم'
-                                : 'انتخاب قسمت',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          subtitle: const Text(
-                            'پخش در همین پلیر ادامه پیدا می‌کند.',
-                          ),
+                        title: Text(
+                          widget.content.kind == ContentKind.movie
+                              ? 'انتخاب نسخهٔ فیلم'
+                              : 'انتخاب قسمت',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
-                        if (_episodeCatalog.seasons.length > 1) ...[
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                for (final (index, item)
-                                    in _episodeCatalog.seasons.indexed) ...[
-                                  ChoiceChip(
-                                    key: Key('player-season-${item.id}'),
-                                    label: Text(item.name),
-                                    selected: index == seasonIndex,
-                                    onSelected: (_) =>
-                                        updateSheet(() => seasonIndex = index),
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
+                        subtitle: const Text(
+                          'پخش در همین پلیر ادامه پیدا می‌کند.',
+                        ),
+                      ),
+                      if (_episodeCatalog.seasons.length > 1) ...[
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final (index, item)
+                                  in _episodeCatalog.seasons.indexed) ...[
+                                ChoiceChip(
+                                  key: Key('player-season-${item.id}'),
+                                  label: Text(item.name),
+                                  selected: index == seasonIndex,
+                                  onSelected: (_) =>
+                                      updateSheet(() => seasonIndex = index),
+                                ),
+                                const SizedBox(width: 8),
                               ],
-                            ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                        ],
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final columns = playerEpisodePickerColumns(
-                                constraints.maxWidth,
-                              );
-                              return GridView.builder(
-                                key: ValueKey('player-episodes-${season.id}'),
-                                itemCount: choices.length,
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: columns,
-                                      crossAxisSpacing: 10,
-                                      mainAxisSpacing: 10,
-                                      childAspectRatio: columns >= 4
-                                          ? 1.85
-                                          : 1.55,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final columns = playerEpisodePickerColumns(
+                              constraints.maxWidth,
+                            );
+                            return GridView.builder(
+                              key: ValueKey('player-episodes-${season.id}'),
+                              itemCount: choices.length,
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    mainAxisExtent: kIsWeb ? 110 : null,
+                                    crossAxisSpacing: 10,
+                                    mainAxisSpacing: 10,
+                                    childAspectRatio: columns >= 4
+                                        ? 1.85
+                                        : 1.55,
+                                  ),
+                              itemBuilder: (context, index) {
+                                final choice = choices[index];
+                                final group = choice.group;
+                                final variant = choice.variant;
+                                final saved = savedEntries[group.id];
+                                final isCurrent =
+                                    widget.content.kind == ContentKind.movie
+                                    ? variant.episode.fileUrl ==
+                                          _episode.fileUrl
+                                    : group.id == currentGroup?.id;
+                                final status = saved?.watched == true
+                                    ? 'تماشا کردی'
+                                    : saved?.almostWatched == true
+                                    ? 'تقریباً تماشا کردی'
+                                    : saved?.isResumable == true
+                                    ? 'ادامه از ${_formatPlayerDuration(saved!.position)}'
+                                    : 'پخش از ابتدا';
+                                final isTrailerVariant =
+                                    group.isTrailer ||
+                                    isTrailerLabel(variant.episode.name);
+                                final episodeDisplayName =
+                                    widget.content.kind == ContentKind.movie
+                                    ? (isTrailerVariant
+                                          ? (variant.episode.name.trim().isEmpty
+                                                ? group.name
+                                                : variant.episode.name)
+                                          : qualityDisplayLabel(
+                                              variant.quality,
+                                            ))
+                                    : (widget.content.isHentai
+                                          ? _hentaiCleanEpisodeName(group.name)
+                                          : group.name);
+                                return Material(
+                                  color: isCurrent
+                                      ? AnimeColors.orange.withValues(
+                                          alpha: .18,
+                                        )
+                                      : Colors.white.withValues(alpha: .045),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(
+                                      color: isCurrent
+                                          ? AnimeColors.orange
+                                          : Colors.white12,
                                     ),
-                                itemBuilder: (context, index) {
-                                  final choice = choices[index];
-                                  final group = choice.group;
-                                  final variant = choice.variant;
-                                  final saved = savedEntries[group.id];
-                                  final isCurrent =
-                                      widget.content.kind == ContentKind.movie
-                                      ? variant.episode.fileUrl ==
-                                            _episode.fileUrl
-                                      : group.id == currentGroup?.id;
-                                  final status = saved?.watched == true
-                                      ? 'تماشا کردی'
-                                      : saved?.almostWatched == true
-                                      ? 'تقریباً تماشا کردی'
-                                      : saved?.isResumable == true
-                                      ? 'ادامه از ${_formatPlayerDuration(saved!.position)}'
-                                      : 'پخش از ابتدا';
-                                  final isTrailerVariant =
-                                      group.isTrailer ||
-                                      isTrailerLabel(variant.episode.name);
-                                  final episodeDisplayName =
-                                      widget.content.kind == ContentKind.movie
-                                      ? (isTrailerVariant
-                                            ? (variant.episode.name
-                                                      .trim()
-                                                      .isEmpty
-                                                  ? group.name
-                                                  : variant.episode.name)
-                                            : qualityDisplayLabel(
-                                                variant.quality,
-                                              ))
-                                      : (widget.content.isHentai
-                                            ? _hentaiCleanEpisodeName(
-                                                group.name,
-                                              )
-                                            : group.name);
-                                  return Material(
-                                    color: isCurrent
-                                        ? AnimeColors.orange.withValues(
-                                            alpha: .18,
-                                          )
-                                        : Colors.white.withValues(alpha: .045),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      side: BorderSide(
-                                        color: isCurrent
-                                            ? AnimeColors.orange
-                                            : Colors.white12,
-                                      ),
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: InkWell(
-                                      key: Key('player-episode-${group.id}'),
-                                      onTap: () => Navigator.pop(sheetContext, (
-                                        group: group,
-                                        variant: variant,
-                                      )),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: InkWell(
+                                    key: Key('player-episode-${group.id}'),
+                                    onTap: () => Navigator.pop(sheetContext, (
+                                      group: group,
+                                      variant: variant,
+                                    )),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  episodeDisplayName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                              Icon(
+                                                isCurrent
+                                                    ? Icons.equalizer_rounded
+                                                    : Icons.play_circle_rounded,
+                                                color: AnimeColors.orange,
+                                              ),
+                                            ],
+                                          ),
+                                          const Spacer(),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: Text(
+                                                      isCurrent
+                                                          ? 'در حال پخش'
+                                                          : status,
+                                                      maxLines: 1,
+                                                      style: TextStyle(
+                                                        color:
+                                                            isCurrent ||
+                                                                saved?.watched ==
+                                                                    true
+                                                            ? AnimeColors.orange
+                                                            : Colors.white70,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (!(group.isTrailer &&
+                                                  isUnknownQuality(
+                                                    variant.quality,
+                                                  ))) ...[
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: AnimeColors.orange
+                                                        .withValues(alpha: .12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: AnimeColors.orange
+                                                          .withValues(
+                                                            alpha: .28,
+                                                          ),
+                                                    ),
+                                                  ),
                                                   child: Text(
-                                                    episodeDisplayName,
+                                                    widget.content.kind ==
+                                                            ContentKind.movie
+                                                        ? _playerVariantMeta(
+                                                            variant,
+                                                          )
+                                                        : playerEpisodeQualityBadge(
+                                                            variant.quality,
+                                                          ),
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
+                                                    textDirection:
+                                                        TextDirection.ltr,
                                                     style: const TextStyle(
+                                                      color: AnimeColors.orange,
+                                                      fontSize: 10,
                                                       fontWeight:
-                                                          FontWeight.w900,
+                                                          FontWeight.w800,
                                                     ),
                                                   ),
-                                                ),
-                                                Icon(
-                                                  isCurrent
-                                                      ? Icons.equalizer_rounded
-                                                      : Icons
-                                                            .play_circle_rounded,
-                                                  color: AnimeColors.orange,
                                                 ),
                                               ],
-                                            ),
-                                            const Spacer(),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Align(
-                                                    alignment:
-                                                        Alignment.centerRight,
-                                                    child: FittedBox(
-                                                      fit: BoxFit.scaleDown,
-                                                      alignment:
-                                                          Alignment.centerRight,
-                                                      child: Text(
-                                                        isCurrent
-                                                            ? 'در حال پخش'
-                                                            : status,
-                                                        maxLines: 1,
-                                                        style: TextStyle(
-                                                          color:
-                                                              isCurrent ||
-                                                                  saved?.watched ==
-                                                                      true
-                                                              ? AnimeColors
-                                                                    .orange
-                                                              : Colors.white70,
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (!(group.isTrailer &&
-                                                    isUnknownQuality(
-                                                      variant.quality,
-                                                    ))) ...[
-                                                  const SizedBox(width: 8),
-                                                  Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 7,
-                                                          vertical: 3,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: AnimeColors.orange
-                                                          .withValues(
-                                                            alpha: .12,
-                                                          ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            999,
-                                                          ),
-                                                      border: Border.all(
-                                                        color: AnimeColors
-                                                            .orange
-                                                            .withValues(
-                                                              alpha: .28,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      widget.content.kind ==
-                                                              ContentKind.movie
-                                                          ? _playerVariantMeta(
-                                                              variant,
-                                                            )
-                                                          : playerEpisodeQualityBadge(
-                                                              variant.quality,
-                                                            ),
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      textDirection:
-                                                          TextDirection.ltr,
-                                                      style: const TextStyle(
-                                                        color:
-                                                            AnimeColors.orange,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ],
-                                        ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            },
-          ),
-        );
+              ),
+            ),
+          );
+        },
+      ),
+    );
     if (!mounted) return;
     if (selected != null) {
       if (selected.group.id == currentGroup?.id) {
@@ -4836,7 +4857,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _showTrackPicker() async {
     _hideTimer?.cancel();
-    await showModalBottomSheet<void>(
+    await showResponsivePlayerPanel<void>(
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
       isScrollControlled: true,
@@ -4849,10 +4870,20 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: SafeArea(
             top: false,
             child: SizedBox(
-              height: (MediaQuery.sizeOf(sheetContext).height * .76).clamp(
-                0.0,
-                560.0,
-              ),
+              height: kIsWeb
+                  ? webPanelHeight(
+                      sheetContext,
+                      desired:
+                          230 +
+                          (_tracks.audio.length > _tracks.subtitle.length
+                                  ? _tracks.audio.length
+                                  : _tracks.subtitle.length) *
+                              52.0,
+                    )
+                  : (MediaQuery.sizeOf(sheetContext).height * .76).clamp(
+                      0.0,
+                      560.0,
+                    ),
               child: Column(
                 children: [
                   Padding(
@@ -5186,39 +5217,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _showSubtitleSettings() async {
     _hideTimer?.cancel();
     setState(() => _controlsVisible = false);
-    final result = await showGeneralDialog<SubtitlePreferences>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'بستن تنظیمات زیرنویس',
-      barrierColor: Colors.black26,
-      transitionDuration: const Duration(milliseconds: 280),
-      transitionBuilder: (context, animation, secondary, child) =>
-          SlideTransition(
-            position: Tween(begin: const Offset(0, -1), end: Offset.zero)
-                .animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  ),
-                ),
-            child: child,
-          ),
-      pageBuilder: (context, animation, secondary) => SafeArea(
-        bottom: false,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Material(
-            color: AnimeColors.surface,
-            elevation: 18,
-            borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(24),
+    final result = await (kIsWeb
+        ? showResponsivePlayerPanel<SubtitlePreferences>(
+            context: context,
+            constraints: BoxConstraints(
+              maxWidth: panelWidth(context, large: 840),
             ),
-            child: SizedBox(
-              width: panelWidth(context, large: 1100),
-              height: (MediaQuery.sizeOf(context).height * .82).clamp(
-                0.0,
-                340.0,
-              ),
+            backgroundColor: AnimeColors.surface,
+            builder: (context) => SizedBox(
+              height: webPanelHeight(context, desired: 560),
               child: _TopSubtitleSettings(
                 initial: _subtitle,
                 onChanged: (value) {
@@ -5226,10 +5233,51 @@ class _PlayerScreenState extends State<PlayerScreen>
                 },
               ),
             ),
-          ),
-        ),
-      ),
-    );
+          )
+        : showGeneralDialog<SubtitlePreferences>(
+            context: context,
+            barrierDismissible: true,
+            barrierLabel: 'بستن تنظیمات زیرنویس',
+            barrierColor: Colors.black26,
+            transitionDuration: const Duration(milliseconds: 280),
+            transitionBuilder: (context, animation, secondary, child) =>
+                SlideTransition(
+                  position: Tween(begin: const Offset(0, -1), end: Offset.zero)
+                      .animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                  child: child,
+                ),
+            pageBuilder: (context, animation, secondary) => SafeArea(
+              bottom: false,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Material(
+                  color: AnimeColors.surface,
+                  elevation: 18,
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(24),
+                  ),
+                  child: SizedBox(
+                    width: panelWidth(context, large: 1100),
+                    height: (MediaQuery.sizeOf(context).height * .82).clamp(
+                      0.0,
+                      340.0,
+                    ),
+                    child: _TopSubtitleSettings(
+                      initial: _subtitle,
+                      onChanged: (value) {
+                        if (mounted) setState(() => _subtitle = value);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ));
     if (!mounted || _playerTornDown) return;
     if (result != null) {
       setState(() => _subtitle = result);
@@ -5242,19 +5290,23 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _showSpeedSettings() async {
     _hideTimer?.cancel();
-    final result = await showModalBottomSheet<(SubtitlePreferences, double)>(
-      context: context,
-      constraints: BoxConstraints(maxWidth: playerSpeedSheetWidth(context)),
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AnimeColors.surface,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final body = PlayerSpeedSheet(initial: _subtitle, initialRate: _rate);
-        if (!widget.content.isHentai) return body;
-        return Theme(data: _playerRedTheme(context), child: body);
-      },
-    );
+    final result =
+        await showResponsivePlayerPanel<(SubtitlePreferences, double)>(
+          context: context,
+          constraints: BoxConstraints(maxWidth: playerSpeedSheetWidth(context)),
+          isScrollControlled: true,
+          useSafeArea: true,
+          backgroundColor: AnimeColors.surface,
+          showDragHandle: true,
+          builder: (sheetContext) {
+            final body = PlayerSpeedSheet(
+              initial: _subtitle,
+              initialRate: _rate,
+            );
+            if (!widget.content.isHentai) return body;
+            return Theme(data: _playerRedTheme(context), child: body);
+          },
+        );
     if (!mounted || _playerTornDown) return;
     if (result != null) {
       setState(() => _subtitle = result.$1);
@@ -5399,30 +5451,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                         prefs: _subtitle,
                         isPictureInPicture: _isInPip,
                       ),
-                    if (kIsWeb)
-                      ValueListenableBuilder<bool>(
-                        valueListenable: WebGateway.preparingVideo,
-                        builder: (_, preparing, _) => preparing
-                            ? const Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'در حال آماده‌سازی پخش…',
-                                      style: TextStyle(color: Colors.white),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                    if (!_windowResizing &&
-                        _buffering &&
-                        !_touchLocked &&
-                        !WebGateway.preparingVideo.value)
-                      const Center(child: CircularProgressIndicator()),
+                    PlayerLoadingIndicator(
+                      preparing: WebGateway.preparingVideo,
+                      buffering: _buffering,
+                      enabled: !_windowResizing && !_touchLocked,
+                    ),
                     if (!_windowResizing && _error != null && !_touchLocked)
                       _PlayerError(onBack: () => unawaited(_exitPlayer())),
                     if (!_windowResizing)
@@ -5595,38 +5628,41 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     ),
                                   ),
                                   Center(
-                                    child: Row(
-                                      textDirection: TextDirection.ltr,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _HeroControl(
-                                          icon: Icons.replay_10_rounded,
-                                          tooltip: '۱۰ ثانیه عقب (←)',
-                                          onTap: () => _seekBy(-10),
-                                          size: 32,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _HeroControl(
-                                          icon: _playing
-                                              ? Icons.pause_rounded
-                                              : Icons.play_arrow_rounded,
-                                          tooltip: _webNeedsTap
-                                              ? 'برای شروع پخش لمس کن'
-                                              : _playing
-                                              ? 'توقف (Space)'
-                                              : 'پخش (Space)',
-                                          onTap: _toggle,
-                                          size: 52,
-                                          primary: true,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        _HeroControl(
-                                          icon: Icons.forward_10_rounded,
-                                          tooltip: '۱۰ ثانیه جلو (→)',
-                                          onTap: () => _seekBy(10),
-                                          size: 32,
-                                        ),
-                                      ],
+                                    child: PreparationControls(
+                                      preparing: WebGateway.preparingVideo,
+                                      child: Row(
+                                        textDirection: TextDirection.ltr,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          _HeroControl(
+                                            icon: Icons.replay_10_rounded,
+                                            tooltip: '۱۰ ثانیه عقب (←)',
+                                            onTap: () => _seekBy(-10),
+                                            size: 32,
+                                          ),
+                                          const SizedBox(width: 16),
+                                          _HeroControl(
+                                            icon: _playing
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            tooltip: _webNeedsTap
+                                                ? 'برای شروع پخش لمس کن'
+                                                : _playing
+                                                ? 'توقف (Space)'
+                                                : 'پخش (Space)',
+                                            onTap: _toggle,
+                                            size: 52,
+                                            primary: true,
+                                          ),
+                                          const SizedBox(width: 16),
+                                          _HeroControl(
+                                            icon: Icons.forward_10_rounded,
+                                            tooltip: '۱۰ ثانیه جلو (→)',
+                                            onTap: () => _seekBy(10),
+                                            size: 32,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   Positioned(
@@ -5637,7 +5673,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       builder: (context, constraints) {
                                         final compact =
                                             shouldCompactPlayerControls(
-                                              isDesktop: isDesktopWindow,
+                                              isDesktop:
+                                                  isDesktopWindow ||
+                                                  isWideWebLayout(context),
                                               width: constraints.maxWidth,
                                             );
                                         final volumeWidth = compact
@@ -6349,6 +6387,7 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
           Expanded(
             child: DropdownButtonFormField<String>(
               value: value.fontFamily,
+              isExpanded: kIsWeb,
               isDense: true,
               decoration: const InputDecoration(
                 labelText: 'فونت فارسی',
@@ -6487,36 +6526,47 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
         child: Column(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'تنظیمات ظاهر زیرنویس',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => change(
-                    SubtitlePreferences(
-                      delay: value.delay,
-                      timingScale: value.timingScale,
-                    ),
+            if (kIsWeb)
+              SubtitlePanelToolbar(
+                onReset: () => change(
+                  SubtitlePreferences(
+                    delay: value.delay,
+                    timingScale: value.timingScale,
                   ),
-                  icon: const Icon(Icons.restart_alt_rounded),
-                  label: const Text('پیش‌فرض'),
                 ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: () => Navigator.pop(context, value),
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('ذخیره'),
-                ),
-              ],
-            ),
+                onSave: () => Navigator.pop(context, value),
+              )
+            else
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'تنظیمات ظاهر زیرنویس',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => change(
+                      SubtitlePreferences(
+                        delay: value.delay,
+                        timingScale: value.timingScale,
+                      ),
+                    ),
+                    icon: const Icon(Icons.restart_alt_rounded),
+                    label: const Text('پیش‌فرض'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, value),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('ذخیره'),
+                  ),
+                ],
+              ),
             const Divider(),
             Expanded(
               child: LayoutBuilder(
