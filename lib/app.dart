@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'services/device_performance.dart';
 import 'services/cross_app_auth.dart';
 import 'dart:async';
@@ -567,6 +568,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                       )) {
                         return;
                       }
+                      TextInput.finishAutofillContext(shouldSave: true);
                       MbnSync.instance.configure(server: _session.server);
                       if (_session.userId != null) {
                         await MbnSync.instance.bindAccount(_session.userId!);

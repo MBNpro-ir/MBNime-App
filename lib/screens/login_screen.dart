@@ -102,9 +102,9 @@ class _LoginScreenState extends State<LoginScreen> {
         final message = e is MbnServerException && e.message.isNotEmpty
             ? e.message
             : 'ورود با حساب MBNMovie ناموفق بود؛ لطفاً دوباره تلاش کنید.';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -146,8 +146,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     offset: Offset(0, value),
                     child: child,
                   ),
-                  child: Form(
-                    key: _formKey,
+                  child: _LoginAutofillForm(
+                    formKey: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -231,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _email,
                           keyboardType: TextInputType.emailAddress,
                           textDirection: TextDirection.ltr,
-                          autofillHints: const [AutofillHints.email],
+                          autofillHints: const [AutofillHints.username],
                           decoration: InputDecoration(
                             labelText: registering
                                 ? 'ایمیل'
@@ -249,10 +249,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             final validUsername = RegExp(
                               r'^[a-zA-Z][a-zA-Z0-9_]{2,31}$',
                             ).hasMatch(text);
-                            final validMobile = RegExp(r'^09\d{9}$')
-                                .hasMatch(text);
+                            final validMobile = RegExp(
+                              r'^09\d{9}$',
+                            ).hasMatch(text);
                             if (!validEmail &&
-                                (registering || (!validUsername && !validMobile))) {
+                                (registering ||
+                                    (!validUsername && !validMobile))) {
                               return registering
                                   ? 'ایمیل معتبر وارد کن'
                                   : 'ایمیل، نام کاربری یا موبایل معتبر وارد کن';
@@ -404,4 +406,15 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+class _LoginAutofillForm extends StatelessWidget {
+  const _LoginAutofillForm({required this.formKey, required this.child});
+  final GlobalKey<FormState> formKey;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => AutofillGroup(
+    onDisposeAction: AutofillContextAction.cancel,
+    child: Form(key: formKey, child: child),
+  );
 }

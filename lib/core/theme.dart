@@ -296,3 +296,45 @@ class _MbnimePageTransitionsBuilder extends PageTransitionsBuilder {
     );
   }
 }
+
+ThemeData hentaiTheme(ThemeData base) {
+  const red = AnimeColors.playerAccent;
+  return base.copyWith(
+    primaryColor: red,
+    colorScheme: base.colorScheme.copyWith(
+      primary: red,
+      secondary: red,
+      onPrimary: Colors.white,
+      onSecondary: Colors.white,
+      primaryContainer: red.withValues(alpha: .2),
+      secondaryContainer: red.withValues(alpha: .2),
+    ),
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: red,
+      thumbColor: red,
+      overlayColor: red.withValues(alpha: .15),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: red,
+        foregroundColor: Colors.white,
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: red,
+        foregroundColor: Colors.white,
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: red),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(foregroundColor: red),
+    ),
+    tabBarTheme: base.tabBarTheme.copyWith(
+      indicatorColor: red,
+      labelColor: red,
+    ),
+  );
+}

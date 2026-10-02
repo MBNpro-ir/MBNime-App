@@ -505,7 +505,7 @@ class _MainShellState extends State<MainShell> {
                 favorites: _openFavorites,
                 switchApp: () => AppLinks.openSibling(context, siblingMovie),
               ),
-              if (isAndroidTv)
+              if (isAndroidTv || isDesktopWeb)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
@@ -546,7 +546,7 @@ class _MainShellState extends State<MainShell> {
           ),
         ),
       ),
-      bottomNavigationBar: isLargeScreenDevice
+      bottomNavigationBar: hideBottomNavigation
           ? null
           : _AnimatedBottomNav(index: _index, onSelected: _goToPage),
     );

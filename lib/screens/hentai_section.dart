@@ -110,7 +110,12 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Theme(
+    data: hentaiTheme(Theme.of(context)),
+    child: Builder(builder: _buildSection),
+  );
+
+  Widget _buildSection(BuildContext context) {
     final pages = [
       _HentaiHomeTab(
         key: _homeKey,
@@ -271,7 +276,7 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
           ),
         ),
       ),
-      bottomNavigationBar: isLargeScreenDevice
+      bottomNavigationBar: hideBottomNavigation
           ? null
           : _HentaiBottomNav(index: _index, onSelected: _goToPage),
     );
@@ -513,23 +518,23 @@ class _HentaiSectionDrawer extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Material(
-            color: AnimeColors.orange.withValues(alpha: .14),
+            color: AnimeColors.playerAccent.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(18),
             child: ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
                 side: BorderSide(
-                  color: AnimeColors.orange.withValues(alpha: .35),
+                  color: AnimeColors.playerAccent.withValues(alpha: .35),
                 ),
               ),
               leading: const Icon(
                 Icons.arrow_back_rounded,
-                color: AnimeColors.orange,
+                color: AnimeColors.playerAccent,
               ),
               title: const Text(
                 'بازگشت به انیمه‌های عادی',
                 style: TextStyle(
-                  color: AnimeColors.orange,
+                  color: AnimeColors.playerAccent,
                   fontWeight: FontWeight.w800,
                 ),
               ),

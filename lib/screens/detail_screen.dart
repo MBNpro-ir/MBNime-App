@@ -461,7 +461,14 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<AnimeContent>(
+  Widget build(BuildContext context) => widget.content.isHentai
+      ? Theme(
+          data: hentaiTheme(Theme.of(context)),
+          child: Builder(builder: _buildDetails),
+        )
+      : _buildDetails(context);
+
+  Widget _buildDetails(BuildContext context) => FutureBuilder<AnimeContent>(
     future: _details,
     builder: (context, snapshot) {
       final item = snapshot.data ?? widget.content;
@@ -1350,13 +1357,15 @@ class _DetailSectionTabs extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: selected == index
-                              ? AnimeColors.orange.withValues(alpha: .16)
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: .16)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(16),
                           border: Border(
                             bottom: BorderSide(
                               color: selected == index
-                                  ? AnimeColors.orange
+                                  ? Theme.of(context).colorScheme.primary
                                   : Colors.transparent,
                               width: 2,
                             ),
@@ -1370,7 +1379,7 @@ class _DetailSectionTabs extends StatelessWidget {
                                     items[index].$1,
                                     size: 19,
                                     color: selected == index
-                                        ? AnimeColors.orange
+                                        ? Theme.of(context).colorScheme.primary
                                         : AnimeColors.muted,
                                   ),
                                   const SizedBox(height: 3),
@@ -1382,7 +1391,9 @@ class _DetailSectionTabs extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 10.5,
                                       color: selected == index
-                                          ? AnimeColors.orange
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
                                           : AnimeColors.muted,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1396,7 +1407,7 @@ class _DetailSectionTabs extends StatelessWidget {
                                     items[index].$1,
                                     size: 19,
                                     color: selected == index
-                                        ? AnimeColors.orange
+                                        ? Theme.of(context).colorScheme.primary
                                         : AnimeColors.muted,
                                   ),
                                   const SizedBox(width: 7),
@@ -1407,7 +1418,9 @@ class _DetailSectionTabs extends StatelessWidget {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: selected == index
-                                            ? AnimeColors.orange
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
                                             : AnimeColors.muted,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -1629,7 +1642,11 @@ class _AboutSection extends StatelessWidget {
         const SizedBox(height: 22),
         Row(
           children: [
-            const Icon(Icons.link_rounded, color: AnimeColors.orange, size: 20),
+            Icon(
+              Icons.link_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Text(
               'لینک‌های مرتبط',
@@ -1663,7 +1680,11 @@ class _AboutSection extends StatelessWidget {
         const SizedBox(height: 22),
         Row(
           children: [
-            const Icon(Icons.sell_rounded, color: AnimeColors.orange, size: 20),
+            Icon(
+              Icons.sell_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Text('برچسب‌ها', style: Theme.of(context).textTheme.titleLarge),
           ],
@@ -1705,7 +1726,11 @@ class _AboutSection extends StatelessWidget {
         const SizedBox(height: 22),
         Row(
           children: [
-            const Icon(Icons.tag_rounded, color: AnimeColors.orange, size: 20),
+            Icon(
+              Icons.tag_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Text('ژانرها', style: Theme.of(context).textTheme.titleLarge),
           ],
@@ -2230,7 +2255,7 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Icon(icon, color: AnimeColors.orange),
+      Icon(icon, color: Theme.of(context).colorScheme.primary),
       const SizedBox(width: 10),
       Text('$title: ', style: const TextStyle(fontWeight: FontWeight.w800)),
       Expanded(
@@ -2396,9 +2421,9 @@ class _HentaiExtraInfo extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.info_rounded,
-                  color: AnimeColors.orange,
+                  color: Theme.of(context).colorScheme.primary,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2679,38 +2704,8 @@ class _HentaiTermResultsPageState extends State<_HentaiTermResultsPage> {
 
 /// Red accent for the MBNime player only (buttons, sliders, sheets).
 /// Keeps the rest of the app orange while the player uses hentai-red.
-ThemeData _playerRedTheme(BuildContext context) {
-  final base = Theme.of(context);
-  const red = AnimeColors.playerAccent;
-  final scheme = base.colorScheme.copyWith(
-    primary: red,
-    onPrimary: Colors.white,
-    secondary: red,
-    onSecondaryContainer: Colors.white,
-    secondaryContainer: red.withValues(alpha: .22),
-  );
-  final slider = (base.sliderTheme).copyWith(
-    activeTrackColor: red,
-    secondaryActiveTrackColor: red.withValues(alpha: .35),
-    thumbColor: red,
-    overlayColor: red.withValues(alpha: .15),
-  );
-  return base.copyWith(
-    colorScheme: scheme,
-    primaryColor: red,
-    sliderTheme: slider,
-    tabBarTheme: base.tabBarTheme.copyWith(
-      indicatorColor: red,
-      labelColor: red,
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: red,
-        foregroundColor: Colors.white,
-      ),
-    ),
-  );
-}
+ThemeData _playerRedTheme(BuildContext context) =>
+    hentaiTheme(Theme.of(context));
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({
@@ -3607,6 +3602,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (group == null || group.variants.length < 2 || _switchingQuality) return;
     _hideTimer?.cancel();
     final selected = await showResponsivePlayerPanel<EpisodeVariant>(
+      panelTheme: widget.content.isHentai ? _playerRedTheme(context) : null,
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 760)),
       isScrollControlled: true,
@@ -3655,7 +3651,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                               selected
                                   ? Icons.check_circle_rounded
                                   : Icons.radio_button_unchecked_rounded,
-                              color: selected ? AnimeColors.orange : null,
+                              color: selected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
                               size: 22,
                             ),
                             const SizedBox(width: 10),
@@ -3665,7 +3663,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
-                                color: selected ? AnimeColors.orange : null,
+                                color: selected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -3852,6 +3852,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     if (seasonIndex < 0) seasonIndex = 0;
     final selected = await showResponsivePlayerPanel<({EpisodeGroup group, EpisodeVariant variant})>(
+      panelTheme: widget.content.isHentai ? _playerRedTheme(context) : null,
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 1040)),
       isScrollControlled: true,
@@ -3908,9 +3909,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                     children: [
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.video_library_rounded,
-                          color: AnimeColors.orange,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         title: Text(
                           widget.content.kind == ContentKind.movie
@@ -3996,15 +3997,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                                           : group.name);
                                 return Material(
                                   color: isCurrent
-                                      ? AnimeColors.orange.withValues(
-                                          alpha: .18,
-                                        )
+                                      ? Theme.of(context).colorScheme.primary
+                                            .withValues(alpha: .18)
                                       : Colors.white.withValues(alpha: .045),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                     side: BorderSide(
                                       color: isCurrent
-                                          ? AnimeColors.orange
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
                                           : Colors.white12,
                                     ),
                                   ),
@@ -4038,7 +4040,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                 isCurrent
                                                     ? Icons.equalizer_rounded
                                                     : Icons.play_circle_rounded,
-                                                color: AnimeColors.orange,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.primary,
                                               ),
                                             ],
                                           ),
@@ -4063,7 +4067,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                             isCurrent ||
                                                                 saved?.watched ==
                                                                     true
-                                                            ? AnimeColors.orange
+                                                            ? Theme.of(context)
+                                                                  .colorScheme
+                                                                  .primary
                                                             : Colors.white70,
                                                         fontSize: 12,
                                                         fontWeight:
@@ -4085,14 +4091,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                         vertical: 3,
                                                       ),
                                                   decoration: BoxDecoration(
-                                                    color: AnimeColors.orange
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
                                                         .withValues(alpha: .12),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           999,
                                                         ),
                                                     border: Border.all(
-                                                      color: AnimeColors.orange
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .primary
                                                           .withValues(
                                                             alpha: .28,
                                                           ),
@@ -4112,8 +4122,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                         TextOverflow.ellipsis,
                                                     textDirection:
                                                         TextDirection.ltr,
-                                                    style: const TextStyle(
-                                                      color: AnimeColors.orange,
+                                                    style: TextStyle(
+                                                      color: Theme.of(
+                                                        context,
+                                                      ).colorScheme.primary,
                                                       fontSize: 10,
                                                       fontWeight:
                                                           FontWeight.w800,
@@ -4858,6 +4870,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _showTrackPicker() async {
     _hideTimer?.cancel();
     await showResponsivePlayerPanel<void>(
+      panelTheme: widget.content.isHentai ? _playerRedTheme(context) : null,
       context: context,
       constraints: BoxConstraints(maxWidth: panelWidth(context, large: 820)),
       isScrollControlled: true,
@@ -5217,8 +5230,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _showSubtitleSettings() async {
     _hideTimer?.cancel();
     setState(() => _controlsVisible = false);
-    final result = await (kIsWeb
+    final result = await (kIsWeb || (Platform.isAndroid && !isAndroidTv)
         ? showResponsivePlayerPanel<SubtitlePreferences>(
+            containsCloseButton: true,
+            panelTheme: widget.content.isHentai
+                ? _playerRedTheme(context)
+                : null,
             context: context,
             constraints: BoxConstraints(
               maxWidth: panelWidth(context, large: 840),
@@ -5292,6 +5309,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _hideTimer?.cancel();
     final result =
         await showResponsivePlayerPanel<(SubtitlePreferences, double)>(
+          containsCloseButton: true,
+          panelTheme: widget.content.isHentai ? _playerRedTheme(context) : null,
           context: context,
           constraints: BoxConstraints(maxWidth: playerSpeedSheetWidth(context)),
           isScrollControlled: true,
@@ -6526,7 +6545,7 @@ class _TopSubtitleSettingsState extends State<_TopSubtitleSettings> {
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
         child: Column(
           children: [
-            if (kIsWeb)
+            if (kIsWeb || !isLargeScreenDevice)
               SubtitlePanelToolbar(
                 onReset: () => change(
                   SubtitlePreferences(
@@ -6888,7 +6907,9 @@ class _SettingSlider extends StatelessWidget {
                 ),
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: AnimeColors.orange.withValues(alpha: .14),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: .14),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Padding(
@@ -6899,8 +6920,8 @@ class _SettingSlider extends StatelessWidget {
                     child: Text(
                       value.toStringAsFixed(1),
                       textDirection: TextDirection.ltr,
-                      style: const TextStyle(
-                        color: AnimeColors.orange,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
