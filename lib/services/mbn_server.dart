@@ -1,3 +1,5 @@
+import '../core/app_platform.dart';
+import '../core/platform_ui.dart' show isAndroidTv;
 import 'package:flutter/foundation.dart';
 import 'web_gateway.dart';
 import 'cross_app_auth.dart';
@@ -34,7 +36,10 @@ class MbnServerClient {
   final String baseUrl;
   String? _token;
   String? get token => _token;
-  set token(String? value) { _token = value; WebGateway.token = value; }
+  set token(String? value) {
+    _token = value;
+    WebGateway.token = value;
+  }
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse(baseUrl).replace(path: path, queryParameters: query);
@@ -42,8 +47,8 @@ class MbnServerClient {
   Future<Map<String, dynamic>> _decode(http.Response response) async {
     Map<String, dynamic> data;
     try {
-      data = jsonDecode(utf8.decode(response.bodyBytes))
-          as Map<String, dynamic>;
+      data =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     } catch (_) {
       throw const MbnServerException('پاسخ سرور نامعتبر است.');
     }
@@ -66,6 +71,11 @@ class MbnServerClient {
           .post(
             _uri(path),
             headers: {
+              'X-MBN-Platform': kIsWeb
+                  ? 'web'
+                  : isAndroidTv
+                  ? 'android_tv'
+                  : Platform.operatingSystem,
               'Content-Type': 'application/json',
               if (token != null) 'Authorization': 'Bearer $token',
             },
@@ -89,6 +99,11 @@ class MbnServerClient {
           .get(
             _uri(path, query),
             headers: {
+              'X-MBN-Platform': kIsWeb
+                  ? 'web'
+                  : isAndroidTv
+                  ? 'android_tv'
+                  : Platform.operatingSystem,
               if (token != null) 'Authorization': 'Bearer $token',
             },
           )
@@ -110,6 +125,11 @@ class MbnServerClient {
           .put(
             _uri(path),
             headers: {
+              'X-MBN-Platform': kIsWeb
+                  ? 'web'
+                  : isAndroidTv
+                  ? 'android_tv'
+                  : Platform.operatingSystem,
               'Content-Type': 'application/json',
               if (token != null) 'Authorization': 'Bearer $token',
             },
@@ -155,8 +175,13 @@ class MbnServerClient {
   Future<void> clearToken() async {
     final oldToken = token;
     if (oldToken != null) {
-      _client.post(_uri('/api/auth/logout'), headers: {'Authorization': 'Bearer $oldToken'})
-        .timeout(const Duration(seconds: 5)).then((_) {}, onError: (Object _) {});
+      _client
+          .post(
+            _uri('/api/auth/logout'),
+            headers: {'Authorization': 'Bearer $oldToken'},
+          )
+          .timeout(const Duration(seconds: 5))
+          .then((_) {}, onError: (Object _) {});
     }
     token = null;
     await CrossAppAuth.clearSharedToken(token: oldToken);
