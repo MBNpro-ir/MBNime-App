@@ -1,3 +1,4 @@
+import '../core/player_track_label.dart';
 import '../core/ass_subtitles.dart';
 import '../widgets/subtitle_appearance_panel.dart';
 import '../widgets/responsive_web_layout.dart';
@@ -5317,8 +5318,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                 initial: _subtitle,
                 onChanged: (value) {
                   if (mounted) {
+                    final previous = _subtitle;
                     setState(() => _subtitle = value);
-                    unawaited(_applyAssRendering());
+                    if (previous.originalAss != value.originalAss) {
+                      unawaited(_applyAssRendering());
+                    }
                   }
                 },
               ),
@@ -5337,8 +5341,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               initial: _subtitle,
               onChanged: (value) {
                 if (mounted) {
+                  final previous = _subtitle;
                   setState(() => _subtitle = value);
-                  unawaited(_applyAssRendering());
+                  if (previous.originalAss != value.originalAss) {
+                    unawaited(_applyAssRendering());
+                  }
                 }
               },
             ),
@@ -6258,21 +6265,8 @@ class _InstantPlayerTapState extends State<_InstantPlayerTap> {
   }
 }
 
-String _trackLabel(String id, String? title, String? language) {
-  if (id == 'auto') return 'انتخاب خودکار';
-  if (id == 'no') return 'خاموش';
-  final parts = [title, language]
-      .whereType<String>()
-      .map(
-        (value) => value.replaceAll(
-          RegExp(r'anime\s*on', caseSensitive: false),
-          'MBNime',
-        ),
-      )
-      .where((value) => value.trim().isNotEmpty)
-      .toList();
-  return parts.isEmpty ? 'ترک $id' : parts.join(' · ');
-}
+String _trackLabel(String id, String? title, String? language) =>
+    playerTrackLabel(id, title, language, appName: 'MBNime');
 
 class _AudioTracks extends StatelessWidget {
   const _AudioTracks({
