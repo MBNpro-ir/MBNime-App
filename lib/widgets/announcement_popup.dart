@@ -11,6 +11,7 @@ class AnnouncementService {
     BuildContext context,
     dynamic serverOrAuth, {
     String app = 'anime',
+    bool manual = false,
   }) async {
     if (_showing) return;
     _showing = true;
@@ -21,7 +22,14 @@ class AnnouncementService {
       );
       final list =
           (res['announcements'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-      if (list.isEmpty || !context.mounted) return;
+      if (!context.mounted) return;
+      if (list.isEmpty) {
+        if (manual) {
+          ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اطلاعیه‌ای برای نمایش وجود ندارد.')));
+        }
+        return;
+      }
 
       _showing = true;
       for (final item in list) {
@@ -33,7 +41,11 @@ class AnnouncementService {
         );
       }
     } catch (_) {
-      // Background check failure must be completely silent
+      if (manual && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('دریافت اطلاعیه‌ها انجام نشد؛ دوباره تلاش کن.')));
+      }
+      // Background checks stay silent.
     } finally {
       _showing = false;
     }

@@ -1,3 +1,4 @@
+import '../widgets/account_profile_panel.dart';
 import '../services/device_performance.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -43,6 +44,7 @@ class HentaiSectionPage extends StatefulWidget {
     required this.onToggleHentaiFavorite,
     required this.server,
     required this.email,
+    required this.onLogout,
   });
   final HentaiIranApi api;
   final HentaiOpenContent onOpen;
@@ -54,6 +56,7 @@ class HentaiSectionPage extends StatefulWidget {
   final void Function(AnimeContent item, bool selected) onToggleHentaiFavorite;
   final MbnServerClient server;
   final String email;
+  final VoidCallback onLogout;
 
   @override
   State<HentaiSectionPage> createState() => _HentaiSectionPageState();
@@ -172,6 +175,7 @@ class _HentaiSectionPageState extends State<HentaiSectionPage> {
         onSearch: _openSearch,
         server: widget.server,
         email: widget.email,
+        onLogout: widget.onLogout,
       ),
       body: AmbientBackground(
         child: SafeArea(
@@ -432,6 +436,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
     required this.onSearch,
     required this.server,
     required this.email,
+    required this.onLogout,
   });
 
   final int selected;
@@ -444,6 +449,7 @@ class _HentaiSectionDrawer extends StatelessWidget {
   final VoidCallback onSearch;
   final MbnServerClient server;
   final String email;
+  final VoidCallback onLogout;
 
   static const _red = Color(0xFFEF4444);
 
@@ -479,19 +485,9 @@ class _HentaiSectionDrawer extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 18, 12, 24),
         children: [
-          const Center(
-            child: BrandMark(
-              size: 82,
-              gradientColors: [Color(0xFFEF4444), AnimeColors.coral],
-              accent: Color(0xFFEF4444),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            email,
-            textAlign: TextAlign.center,
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: AnimeColors.muted),
+          DrawerAccountIdentity(
+            server: server,
+            openProfile: () => _openProfile(context),
           ),
           const SizedBox(height: 10),
           _subscriptionBadge(context),
@@ -657,17 +653,6 @@ class _HentaiSectionDrawer extends StatelessWidget {
                 () => _pushTool(context, const UpdateScreen()),
                 tool: true,
               ),
-            _tile(
-              Icons.workspace_premium_rounded,
-              'مدیریت اشتراک',
-              () => _pushTool(
-                context,
-                SubscriptionScreen(
-                  loadProfile: () => server.getJson('/api/me'),
-                ),
-              ),
-              tool: true,
-            ),
           ]),
           const Divider(height: 28),
           const Padding(
@@ -680,6 +665,11 @@ class _HentaiSectionDrawer extends StatelessWidget {
         ],
       ),
     ),
+  );
+
+  void _openProfile(BuildContext context) => _pushTool(
+    context,
+    SubscriptionScreen(loadProfile: () => server.getJson('/api/me')),
   );
 
   Widget _subscriptionBadge(
@@ -751,6 +741,15 @@ class _HentaiSectionDrawer extends StatelessWidget {
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _openProfile(context),
+                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                label: const Text('مدیریت اشتراک'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
               height: 34,
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(
@@ -772,6 +771,8 @@ class _HentaiSectionDrawer extends StatelessWidget {
                 ),
               ),
             ),
+            TextButton.icon(onPressed: onLogout, icon: const Icon(Icons.logout_rounded, size: 17),
+              label: const Text('خارج شدن از اشتراک')),
           ],
         ),
       );

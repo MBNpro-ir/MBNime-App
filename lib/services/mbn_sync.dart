@@ -1,3 +1,4 @@
+import 'account_profile.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../core/platform_ui.dart' show settingsDeviceProfile;
@@ -39,8 +40,20 @@ class MbnSync {
   bool _resettingProgress = false;
   static const _pendingResetKey = 'mbn_progress_resets_v1';
 
-  void configure({required MbnServerClient server}) => _server = server;
+  void configure({required MbnServerClient server}) {
+    _server = server;
+    AccountProfile.configure(server);
+    if (AccountProfile.owner != null) {
+      unawaited(
+      AccountProfile.reload()
+          .then((_) => AccountProfile.flush())
+          .catchError((Object _) {}),
+    );
+    }
+  }
+
   void clear() {
+    AccountProfile.configure(null);
     _pendingProgressPush?.cancel();
     _pendingPreferencesPush?.cancel();
     _pendingProgressPush = null;
