@@ -23,7 +23,7 @@ void main() {
   testWidgets('drawer tool group paints ListTile ink above its decoration', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({'promo_mbnmovie_seen_v1': true});
+    SharedPreferences.setMockInitialValues({});
     final api = _ReloadApi();
     await tester.pumpWidget(
       MaterialApp(
@@ -35,6 +35,7 @@ void main() {
         ),
       ),
     );
+    expect(find.byType(AlertDialog), findsNothing);
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -56,7 +57,7 @@ void main() {
   testWidgets('home retry handles consecutive failures and then recovers', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({'promo_mbnmovie_seen_v1': true});
+    SharedPreferences.setMockInitialValues({});
     final api = _ReloadApi();
     await tester.pumpWidget(
       MaterialApp(

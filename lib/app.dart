@@ -16,9 +16,6 @@ import 'core/theme.dart';
 import 'core/platform_ui.dart';
 import 'services/mbn_sync.dart';
 import 'services/mbn_server.dart';
-import 'services/auth_handoff.dart';
-import 'services/app_links.dart';
-import 'services/app_updater.dart';
 import 'widgets/tv_navigation.dart';
 import 'widgets/server_status_gate.dart';
 import 'screens/login_screen.dart';
@@ -47,12 +44,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   bool _restoring = true;
   Timer? _accountTimer;
   Timer? _syncTimer;
-  Timer? _handoffTimer;
-  bool _handoffBusy = false;
-  bool _siblingAvailable = false;
   bool _checkingAccount = false;
-  bool _sharedLoginBusy = false;
-  bool _loginBusy = false;
   bool _terminating = false;
   late final SessionWatch _sessionWatch = SessionWatch(_forceLogout);
 
@@ -62,17 +54,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _accountTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       unawaited(_checkAccount());
-      unawaited(_restoreSharedLogin());
     });
     _syncTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => unawaited(MbnSync.instance.syncAll()),
     );
-    _handoffTimer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => unawaited(_checkHandoff()),
-    );
-    unawaited(_checkSibling());
     _restoreSession();
   }
 
@@ -81,7 +67,6 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     _sessionWatch.dispose();
     _accountTimer?.cancel();
     _syncTimer?.cancel();
-    _handoffTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -90,11 +75,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkAccount();
-      unawaited(_restoreSharedLogin());
       UpdatePresentation.checkNow();
       unawaited(MbnSync.instance.syncAll());
-      unawaited(_checkSibling());
-      unawaited(_checkHandoff());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       unawaited(MbnSync.instance.flushPending());
@@ -175,9 +157,6 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       await Future.wait([
         () async {
           await _session.restore();
-          if (_session.forcedLogoutMessage == null) {
-            await _restoreSharedLogin(startup: true);
-          }
           if (!_session.isLoggedIn &&
               _session.forcedLogoutMessage == null &&
               kDebugMode &&
@@ -218,59 +197,12 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _restoreSharedLogin({bool startup = false}) async {
-    if (_loginBusy ||
-        _sharedLoginBusy ||
-        (!startup && _restoring) ||
-        (!startup && _session.isLoggedIn) ||
-        _terminating ||
-        !mounted) {
-      return;
-    }
-    _sharedLoginBusy = true;
-    try {
-      final token =
-          await (widget.sharedTokenReader?.call() ??
-              CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie'));
-      if (token == null) {
-        final current = _session.server.token;
-        if (startup && current != null) {
-          await CrossAppAuth.saveSharedToken(
-            token: current,
-            email: _session.email ?? "",
-          );
-        }
-        return;
-      }
-      if (!mounted || _terminating || (!startup && _session.isLoggedIn)) return;
-      await _session.loginWithToken(token);
-      if (_session.userId != null) {
-        await MbnSync.instance.bindAccount(_session.userId!);
-      }
-      MbnSync.instance.configure(server: _session.server);
-      if (mounted) setState(() {});
-      unawaited(MbnSync.instance.syncAll());
-    } catch (_) {
-      // An expired/revoked sibling token never creates a replacement session.
-    } finally {
-      _sharedLoginBusy = false;
-    }
-  }
-
   void _refresh() => setState(() {});
-
-  Future<void> _checkSibling() async {
-    final available = await AppLinks.isSiblingAvailable(siblingMovie);
-    if (mounted && _siblingAvailable != available) {
-      setState(() => _siblingAvailable = available);
-    }
-  }
 
   Future<bool> _loginWithCapacity(
     Future<void> Function() action,
     String identifier,
   ) async {
-    _loginBusy = true;
     try {
       await action();
       return true;
@@ -287,12 +219,14 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       await _session.loginWithHandoff(result, fallbackIdentifier: identifier);
       return true;
     } finally {
-      _loginBusy = false;
     }
   }
 
   Future<void> _beginHandoff() async {
-    final token = await CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie');
+    final token =
+        await (widget.sharedTokenReader?.call() ??
+            CrossAppAuth.readSiblingToken(siblingId: 'MBNMovie'));
+    if (!mounted || _terminating) return;
     if (token == null || token.isEmpty) {
       appMessengerKey.currentState?.showSnackBar(
         const SnackBar(
@@ -336,138 +270,6 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
           ),
         ),
       );
-    }
-  }
-
-  Future<void> _checkHandoff() async {
-    if (_handoffBusy ||
-        _restoring ||
-        !mounted ||
-        AppUpdater.instance.startupCheckPending ||
-        AppUpdater.instance.requiredRelease != null) {
-      return;
-    }
-    _handoffBusy = true;
-    try {
-      final message = await AppLinks.takeHandoff('MBNime');
-      if (message == null) return;
-      final parts = message.split(':');
-      if (parts.length != 2 || parts[1].length < 20) return;
-      if (parts[0] == 'request') {
-        await _respondHandoff(parts[1]);
-      } else if (parts[0] == 'return') {
-        await _offerHandoff(parts[1]);
-      }
-    } finally {
-      _handoffBusy = false;
-    }
-  }
-
-  Future<void> _respondHandoff(String id) async {
-    if (_session.isLoggedIn && _session.server.token != null) {
-      final approved =
-          await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) => AlertDialog(
-              title: const Text('ورود مشترک به MBNMovie'),
-              content: Text(
-                'حساب ${_session.email} در MBNime فعال است. اجازه می‌دهی همین حساب در MBNMovie پیشنهاد شود؟',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('خیر'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('بله، پیشنهاد بده'),
-                ),
-              ],
-            ),
-          ) ??
-          false;
-      try {
-        if (approved) {
-          await AuthHandoff.approve(post: _session.server.postJson, id: id);
-        } else {
-          await AuthHandoff.deny(post: _session.server.postJson, id: id);
-        }
-      } catch (_) {}
-    }
-    await AppLinks.launchHandoff(siblingMovie, 'return:$id');
-  }
-
-  Future<void> _offerHandoff(String id) async {
-    try {
-      final status = await AuthHandoff.status(
-        post: _session.server.postJson,
-        id: id,
-      );
-      if (status == null || status['state'] != 'approved') {
-        if (mounted) {
-          appMessengerKey.currentState?.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'حساب فعالی در برنامهٔ دیگر تأیید نشد؛ می‌توانی دستی وارد شوی.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      final identifier = status['identifier']?.toString() ?? '';
-      if (!mounted) return;
-      final useIt =
-          await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) => AlertDialog(
-              title: const Text('استفاده از حساب MBNMovie'),
-              content: Text(
-                'در MBNMovie با $identifier وارد شده‌ای. می‌خواهی همین حساب در MBNime استفاده شود؟',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('ورود با حساب دیگر'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('استفاده از همین حساب'),
-                ),
-              ],
-            ),
-          ) ??
-          false;
-      if (!useIt) return;
-      if (!await _loginWithCapacity(() async {
-        final data = await AuthHandoff.consume(
-          post: _session.server.postJson,
-          id: id,
-          targetApp: 'anime',
-        );
-        if (data == null) return;
-        await _session.loginWithHandoff(data, fallbackIdentifier: identifier);
-      }, identifier)) {
-        return;
-      }
-      if (_session.userId != null) {
-        await MbnSync.instance.bindAccount(_session.userId!);
-      }
-      MbnSync.instance.configure(server: _session.server);
-      await MbnSync.instance.syncAll();
-      if (mounted) setState(() {});
-    } catch (_) {
-      if (mounted) {
-        appMessengerKey.currentState?.showSnackBar(
-          const SnackBar(
-            content: Text('ورود مشترک انجام نشد؛ دوباره تلاش کن.'),
-          ),
-        );
-      }
-    } finally {
-      await AuthHandoff.clear(id);
     }
   }
 
@@ -560,7 +362,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                   )
                 : LoginScreen(
                     key: const ValueKey('login'),
-                    onUseOtherApp: _siblingAvailable ? _beginHandoff : null,
+                    onUseOtherApp: _beginHandoff,
                     onLogin: (email, password) async {
                       if (!await _loginWithCapacity(
                         () => _session.login(email: email, password: password),

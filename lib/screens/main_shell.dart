@@ -75,7 +75,6 @@ class _MainShellState extends State<MainShell> {
     _pageController = PageController();
     _restore();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showMoviePromoOnce();
       if (mounted) {
         unawaited(
           AnnouncementService.checkAndShow(
@@ -86,18 +85,6 @@ class _MainShellState extends State<MainShell> {
         );
       }
     });
-  }
-
-  /// One-time promo for the new MBNMovie app (film & series).
-  Future<void> _showMoviePromoOnce() async {
-    if (kIsWeb) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool('promo_mbnmovie_seen_v1') ?? false) return;
-      if (!mounted) return;
-      await AppLinks.showSiblingPromo(context, siblingMovie);
-      await prefs.setBool('promo_mbnmovie_seen_v1', true);
-    } catch (_) {}
   }
 
   @override
@@ -323,7 +310,9 @@ class _MainShellState extends State<MainShell> {
       _push(
         HentaiSectionPage(
           api: _hentaiApi,
-          onLogout: () { unawaited(widget.onLogout()); },
+          onLogout: () {
+            unawaited(widget.onLogout());
+          },
           onOpen: (item, tag) => _open(item, tag),
           hentaiHistory: _hentaiHistory,
           onOpenHentaiHistory: () => _openHentaiHistory(),
