@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../core/theme.dart';
 import '../services/mbn_server.dart';
+import '../services/network_gate.dart';
 
 enum ServerState { checking, online, offline, maintenance }
 
@@ -38,6 +39,8 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
   int _serverTimeSkew = 0;
   Duration _currentPollInterval = const Duration(seconds: 10);
   bool _retrying = false;
+  bool _polling = false;
+  final http.Client _client = http.Client();
 
   @override
   void initState() {
@@ -75,6 +78,7 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
     }
     _pollTimer?.cancel();
     _countdownTimer?.cancel();
+    _client.close();
     super.dispose();
   }
 
@@ -104,13 +108,25 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
   }
 
   Future<void> _checkServer() async {
+    if (_polling) return;
+    _polling = true;
     setState(() => _retrying = true);
     try {
-      final uri = Uri.parse('${kIsWeb ? Uri.base.origin : widget.baseUrl}/api/maintenance');
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final uri = Uri.parse(
+        '${kIsWeb ? Uri.base.origin : widget.baseUrl}/api/maintenance',
+      );
+      final res = await sendBuffered(
+        _client,
+        'GET',
+        uri,
+        timeout: const Duration(seconds: 10),
+        maxBytes: 64 * 1024,
+        followRedirects: false,
+      );
       if (!mounted) return;
       if (res.statusCode == 200 || res.statusCode == 503) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        final data =
+            jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
         final m = (data['maintenance'] as Map<String, dynamic>?) ?? data;
         final enabled = m['enabled'] == true;
         if (enabled) {
@@ -136,17 +152,30 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
     } catch (_) {
       if (mounted) setState(() => _state = ServerState.offline);
     } finally {
+      _polling = false;
       if (mounted) setState(() => _retrying = false);
     }
   }
 
   Future<void> _pollServer() async {
+    if (_polling || !mounted) return;
+    _polling = true;
     try {
-      final uri = Uri.parse('${kIsWeb ? Uri.base.origin : widget.baseUrl}/api/maintenance');
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      final uri = Uri.parse(
+        '${kIsWeb ? Uri.base.origin : widget.baseUrl}/api/maintenance',
+      );
+      final res = await sendBuffered(
+        _client,
+        'GET',
+        uri,
+        timeout: const Duration(seconds: 5),
+        maxBytes: 64 * 1024,
+        followRedirects: false,
+      );
       if (!mounted) return;
       if (res.statusCode == 200 || res.statusCode == 503) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        final data =
+            jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
         final m = (data['maintenance'] as Map<String, dynamic>?) ?? data;
         final enabled = m['enabled'] == true;
         if (enabled) {
@@ -161,7 +190,9 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
           }
         }
         // If maintenance is turned off or time elapsed:
-        if (_state == ServerState.maintenance || _state == ServerState.checking || _state == ServerState.offline) {
+        if (_state == ServerState.maintenance ||
+            _state == ServerState.checking ||
+            _state == ServerState.offline) {
           setState(() {
             _maintenanceData = null;
             _remainingSeconds = 0;
@@ -170,7 +201,10 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
           _adjustPollInterval(const Duration(seconds: 10));
         }
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _polling = false;
+    }
   }
 
   String _formatTimer(int sec) {
@@ -233,10 +267,7 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
                   const Text(
                     'سرور در دسترس نیست لطفا بعدا امتحان کنید',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
                   ),
                   const SizedBox(height: 28),
                   FilledButton.icon(
@@ -245,14 +276,20 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.refresh_rounded),
                     label: const Text('تلاش مجدد'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AnimeColors.orange,
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 14,
+                      ),
                     ),
                   ),
                 ],
@@ -261,7 +298,9 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
           ),
         );
       case ServerState.maintenance:
-        final msg = _maintenanceData?['message']?.toString() ?? 'سرور در حال بروزرسانی و تعمیرات است. لطفاً شکیبا باشید.';
+        final msg =
+            _maintenanceData?['message']?.toString() ??
+            'سرور در حال بروزرسانی و تعمیرات است. لطفاً شکیبا باشید.';
         return Scaffold(
           backgroundColor: const Color(0xFF080A0F),
           body: Center(
@@ -276,7 +315,10 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
                     decoration: BoxDecoration(
                       color: AnimeColors.orange.withValues(alpha: .12),
                       shape: BoxShape.circle,
-                      border: Border.all(color: AnimeColors.orange.withValues(alpha: .3), width: 2),
+                      border: Border.all(
+                        color: AnimeColors.orange.withValues(alpha: .3),
+                        width: 2,
+                      ),
                     ),
                     child: const Icon(
                       Icons.engineering_rounded,
@@ -309,17 +351,25 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
                   if (_remainingSeconds > 0) ...[
                     const SizedBox(height: 32),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: AnimeColors.orange.withValues(alpha: .1),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AnimeColors.orange.withValues(alpha: .3)),
+                        border: Border.all(
+                          color: AnimeColors.orange.withValues(alpha: .3),
+                        ),
                       ),
                       child: Column(
                         children: [
                           const Text(
                             'زمان باقیمانده تا بازگشایی خودکار:',
-                            style: TextStyle(fontSize: 12, color: Colors.white60),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white60,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -343,7 +393,10 @@ class _ServerStatusGateState extends State<ServerStatusGate> {
                       SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: AnimeColors.orange),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AnimeColors.orange,
+                        ),
                       ),
                       SizedBox(width: 10),
                       Text(

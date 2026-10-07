@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'web_gateway.dart';
+import 'network_gate.dart';
 import 'dart:convert';
 import '../core/app_platform.dart';
 
@@ -57,10 +58,8 @@ abstract interface class ContentApi {
 class AnimeOnApi implements ContentApi {
   static const defaultApiKey = '1661e8b60126d9f9';
 
-  AnimeOnApi({
-    http.Client? client,
-    this.apiKey = defaultApiKey,
-  }) : _client = client ?? _directClient();
+  AnimeOnApi({http.Client? client, this.apiKey = defaultApiKey})
+    : _client = client ?? _directClient();
 
   /// Normal-anime traffic is pinned to DIRECT on every platform: it must
   /// never travel over the system proxy (or any proxy). The +18 section has
@@ -85,6 +84,7 @@ class AnimeOnApi implements ContentApi {
   static const _legacyVersion = '𝑴𝑶𝑫 𝑩𝒚 @𝑯𝒂𝒄𝒌_𝑻𝒆𝒂𝒎';
 
   final http.Client _client;
+  final NetworkRequestGate _requests = NetworkRequestGate();
   String? _sessionCookie;
   String? get sessionCookie => _sessionCookie;
   void restoreCookie(String cookie) => _sessionCookie = cookie;
@@ -664,16 +664,33 @@ class AnimeOnApi implements ContentApi {
   }
 
   Future<http.Response> _get(Uri uri) async {
+    final cookie = _sessionCookie;
+    final headers = _headers(uri);
     try {
-      final response = await _client
-          .get(uri, headers: _headers(uri))
-          .timeout(const Duration(seconds: 25));
-      _captureCookie(response, uri);
-      return response;
-    } on TimeoutException {
-      throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
-    } on http.ClientException {
-      throw const AnimeOnApiException('اتصال به MBNime برقرار نشد.');
+      return await _requests.run<http.Response>(
+        'GET $uri ${cookie ?? ''}',
+        () async {
+          try {
+            final response = await sendBuffered(
+              _client,
+              'GET',
+              uri,
+              headers: headers,
+              timeout: const Duration(seconds: 25),
+            );
+            if (_sessionCookie == cookie) _captureCookie(response, uri);
+            return response;
+          } on TimeoutException {
+            throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
+          } on http.ClientException {
+            throw const AnimeOnApiException('اتصال به MBNime برقرار نشد.');
+          }
+        },
+      );
+    } on NetworkQueueException {
+      throw const AnimeOnApiException(
+        'درخواست‌های زیادی در انتظار است؛ کمی بعد تلاش کنید.',
+      );
     }
   }
 
@@ -681,16 +698,31 @@ class AnimeOnApi implements ContentApi {
     Uri uri, {
     required Map<String, String> body,
   }) async {
+    final headers = _headers(uri);
+    final cookie = _sessionCookie;
     try {
-      final response = await _client
-          .post(uri, headers: _headers(uri), body: body)
-          .timeout(const Duration(seconds: 25));
-      _captureCookie(response, uri);
-      return response;
-    } on TimeoutException {
-      throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
-    } on http.ClientException {
-      throw const AnimeOnApiException('اتصال به MBNime برقرار نشد.');
+      return await _requests.run<http.Response>('POST $uri', () async {
+        try {
+          final response = await sendBuffered(
+            _client,
+            'POST',
+            uri,
+            headers: headers,
+            body: body,
+            timeout: const Duration(seconds: 25),
+          );
+          if (_sessionCookie == cookie) _captureCookie(response, uri);
+          return response;
+        } on TimeoutException {
+          throw const AnimeOnApiException('ارتباط با MBNime زمان‌بر شد.');
+        } on http.ClientException {
+          throw const AnimeOnApiException('اتصال به MBNime برقرار نشد.');
+        }
+      }, dedupe: false);
+    } on NetworkQueueException {
+      throw const AnimeOnApiException(
+        'درخواست‌های زیادی در انتظار است؛ کمی بعد تلاش کنید.',
+      );
     }
   }
 

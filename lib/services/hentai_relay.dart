@@ -25,6 +25,7 @@ class HentaiMediaRelay {
   HttpServer? _server;
   bool _listening = false;
   final Map<String, Uri> _targets = {};
+  final Set<Completer<void>> _active = {};
   int _seq = 0;
 
   bool get isServing => _server != null;
@@ -57,6 +58,8 @@ class HentaiMediaRelay {
   }
 
   Future<void> _handle(HttpRequest request) async {
+    final abort = Completer<void>();
+    _active.add(abort);
     try {
       final segments = request.uri.pathSegments;
       final rawToken = segments.length == 2 && segments[0] == 't'
@@ -76,7 +79,11 @@ class HentaiMediaRelay {
         return;
       }
       final client = _upstreamClient ?? await HentaiNetwork.proxyLeg();
-      final outgoing = http.Request(request.method, target);
+      final outgoing = http.AbortableRequest(
+        request.method,
+        target,
+        abortTrigger: abort.future,
+      );
       final range = request.headers.value(HttpHeaders.rangeHeader);
       if (range != null && range.isNotEmpty) {
         outgoing.headers[HttpHeaders.rangeHeader] = range;
@@ -122,7 +129,6 @@ class HentaiMediaRelay {
         await response.close();
       } catch (_) {
         // mpv went away (seek/dispose): drop the upstream quietly.
-        unawaited(upstream.stream.drain().catchError((Object _) {}));
         try {
           await response.close();
         } catch (_) {}
@@ -132,6 +138,9 @@ class HentaiMediaRelay {
         request.response.statusCode = HttpStatus.badGateway;
         await request.response.close();
       } catch (_) {}
+    } finally {
+      _active.remove(abort);
+      if (!abort.isCompleted) abort.complete();
     }
   }
 
@@ -140,6 +149,9 @@ class HentaiMediaRelay {
     _server = null;
     _listening = false;
     _targets.clear();
+    for (final abort in _active.toList()) {
+      if (!abort.isCompleted) abort.complete();
+    }
     try {
       await server?.close(force: true);
     } catch (_) {}

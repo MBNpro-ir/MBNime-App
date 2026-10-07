@@ -3,6 +3,7 @@ import '../core/app_platform.dart';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'network_gate.dart';
 
 /// Networking policy exclusive to the +18 section on Windows.
 ///
@@ -64,18 +65,22 @@ class WindowsSystemProxy {
   }
 
   static Future<String?> _read() async {
-    final enabled = await Process.run(
-      'reg',
-      ['query', _key, '/v', 'ProxyEnable'],
-    ).timeout(const Duration(seconds: 4));
+    final enabled = await Process.run('reg', [
+      'query',
+      _key,
+      '/v',
+      'ProxyEnable',
+    ]).timeout(const Duration(seconds: 4));
     if (enabled.exitCode != 0 ||
         !isProxyEnabledRegOutput(enabled.stdout.toString())) {
       return null;
     }
-    final server = await Process.run(
-      'reg',
-      ['query', _key, '/v', 'ProxyServer'],
-    ).timeout(const Duration(seconds: 4));
+    final server = await Process.run('reg', [
+      'query',
+      _key,
+      '/v',
+      'ProxyServer',
+    ]).timeout(const Duration(seconds: 4));
     if (server.exitCode != 0) return null;
     return normalizeProxyServer(
       regStringValue(server.stdout.toString(), 'ProxyServer'),
@@ -137,10 +142,7 @@ class WindowsSystemProxy {
       value = https ?? httpEntry ?? bare ?? '';
       if (value.isEmpty) return null;
     }
-    value = value.replaceFirst(
-      RegExp(r'^https?://', caseSensitive: false),
-      '',
-    );
+    value = value.replaceFirst(RegExp(r'^https?://', caseSensitive: false), '');
     final slash = value.indexOf('/');
     if (slash >= 0) value = value.substring(0, slash);
     value = value.trim();
@@ -205,10 +207,14 @@ class HentaiNetwork {
     Object? transportError;
     for (final leg in order) {
       try {
-        final request = http.Request('GET', uri);
-        if (headers != null) request.headers.addAll(headers);
-        final streamed = await race.sendOnLeg(leg, request).timeout(timeout);
-        final response = await http.Response.fromStream(streamed);
+        await race.ensureLegs();
+        final response = await sendBuffered(
+          leg == 1 ? race.proxyLeg : race._direct,
+          'GET',
+          uri,
+          headers: headers,
+          timeout: timeout,
+        );
         if (response.statusCode >= 200 && response.statusCode < 300) {
           noteRoute(proxy: leg == 1);
           return response;
@@ -232,21 +238,28 @@ class HentaiNetwork {
   static Future<bool> probeRoute(Uri uri) async {
     final race = await _sharedClient();
     Future<bool> attempt(int leg) async {
-      final request = http.Request('GET', uri)
-        ..headers['Range'] = 'bytes=0-0'
-        ..headers['User-Agent'] = 'MBNime/1.0';
-      final streamed = await race
-          .sendOnLeg(leg, request)
-          .timeout(const Duration(seconds: 6));
-      if (streamed.statusCode != 200 && streamed.statusCode != 206) {
-        await streamed.stream.drain().timeout(const Duration(seconds: 6));
-        throw HttpException(
-          'probe leg $leg answered ${streamed.statusCode}',
-          uri: uri,
-        );
+      final abort = Completer<void>();
+      try {
+        final request =
+            http.AbortableRequest('GET', uri, abortTrigger: abort.future)
+              ..headers['Range'] = 'bytes=0-0'
+              ..headers['User-Agent'] = 'MBNime/1.0';
+        final streamed = await race
+            .sendOnLeg(leg, request)
+            .timeout(const Duration(seconds: 6));
+        if (streamed.statusCode != 200 && streamed.statusCode != 206) {
+          throw HttpException(
+            'probe leg $leg answered ${streamed.statusCode}',
+            uri: uri,
+          );
+        }
+        // Some hosts ignore Range and return the entire movie. Probe one chunk,
+        // then cancel the upstream instead of downloading it in the background.
+        await streamed.stream.first.timeout(const Duration(seconds: 6));
+        return leg == 1;
+      } finally {
+        if (!abort.isCompleted) abort.complete();
       }
-      await streamed.stream.drain().timeout(const Duration(seconds: 6));
-      return leg == 1;
     }
 
     final wonProxy = await firstSuccess(attempt(0), attempt(1));
@@ -436,12 +449,19 @@ class HentaiRaceClient extends http.BaseClient {
     } else {
       body = await original.finalize().toBytes();
     }
-    http.Request make() => http.Request(method, url)
-      ..headers.addAll(headers)
-      ..followRedirects = followRedirects
-      ..maxRedirects = maxRedirects
-      ..persistentConnection = persistentConnection
-      ..bodyBytes = body;
+    http.Request make() =>
+        http.AbortableRequest(
+            method,
+            url,
+            abortTrigger: original is http.Abortable
+                ? original.abortTrigger
+                : null,
+          )
+          ..headers.addAll(headers)
+          ..followRedirects = followRedirects
+          ..maxRedirects = maxRedirects
+          ..persistentConnection = persistentConnection
+          ..bodyBytes = body;
     return [make(), make()];
   }
 
