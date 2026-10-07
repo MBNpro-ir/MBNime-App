@@ -272,8 +272,9 @@ class HentaiIranApi implements ContentApi {
         },
       );
       final response = await _get(uri);
-      if (response.statusCode != 200)
+      if (response.statusCode != 200) {
         throw const AnimeOnApiException('آرشیو هنتای ایران در دسترس نیست.');
+      }
       final data = jsonDecode(response.body);
       final rows = data is List
           ? data
@@ -400,13 +401,15 @@ class HentaiIranApi implements ContentApi {
       final numeric =
           int.tryParse(summary.id) ??
           int.tryParse((await _restSingle(summary))?['id']?.toString() ?? '');
-      if (numeric == null)
+      if (numeric == null) {
         throw const AnimeOnApiException('شناسه این عنوان معتبر نیست.');
+      }
       final response = await _get(
         Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'),
       );
-      if (response.statusCode != 200)
+      if (response.statusCode != 200) {
         throw const AnimeOnApiException('جزئیات این عنوان قابل خواندن نیست.');
+      }
       return contentFromRest(
         jsonDecode(response.body) as Map<String, dynamic>,
         summary: summary,

@@ -175,7 +175,7 @@ class MbnSync {
     try {
       if (!await _flushEpisodeResets()) return;
       if (generation != _generation || server.token != credential) return;
-      final remote = await server!.getJson('/api/sync', query: {'app': _app});
+      final remote = await server.getJson('/api/sync', query: {'app': _app});
       if (generation != _generation || server.token != credential) return;
       final lib = LibraryStore();
       final lists = PlaylistStore();
@@ -317,15 +317,17 @@ class MbnSync {
     _resettingProgress = true;
     try {
       while ((prefs.getStringList(_pendingResetKey) ?? []).isNotEmpty) {
-        if (generation != _generation || source?.token != credential)
+        if (generation != _generation || source?.token != credential) {
           return false;
+        }
         final entry = prefs.getStringList(_pendingResetKey)!.first;
         await source!.postJson(
           '/api/sync/progress/reset-episode',
           Map<String, dynamic>.from(jsonDecode(entry) as Map),
         );
-        if (generation != _generation || source.token != credential)
+        if (generation != _generation || source.token != credential) {
           return false;
+        }
         final remaining = prefs.getStringList(_pendingResetKey) ?? [];
         remaining.remove(entry);
         await prefs.setStringList(_pendingResetKey, remaining);
