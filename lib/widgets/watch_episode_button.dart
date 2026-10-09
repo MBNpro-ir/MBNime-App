@@ -1,6 +1,7 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
+import '../services/device_performance.dart';
 
 /// Keeps the scoped adult accent during the route-overlay transition.
 class WatchEpisodeButton extends StatelessWidget {
@@ -20,6 +21,25 @@ class WatchEpisodeButton extends StatelessWidget {
     final watchTheme = adult
         ? hentaiTheme(Theme.of(context))
         : Theme.of(context);
+    if (DevicePerformance.appleMobileWeb) {
+      return Theme(
+        data: watchTheme,
+        child: FilledButton.icon(
+          onPressed: enabled
+              ? () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => Theme(
+                      data: watchTheme,
+                      child: Builder(builder: pickerBuilder),
+                    ),
+                  ),
+                )
+              : null,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: Text(loading ? 'در حال دریافت لینک پخش…' : 'شروع تماشا'),
+        ),
+      );
+    }
     return OpenContainer<void>(
       transitionType: ContainerTransitionType.fade,
       transitionDuration: Duration(milliseconds: desktop ? 500 : 300),
