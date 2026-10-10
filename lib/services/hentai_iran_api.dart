@@ -397,22 +397,33 @@ class HentaiIranApi implements ContentApi {
 
   @override
   Future<AnimeContent> details(AnimeContent summary) async {
-    if (kIsWeb) {
+    // The source now creates its download controls with JavaScript. The
+    // structured endpoint carries the episode URLs on native and web alike.
+    // Keep the old HTML adapter only as a fallback for native installations.
+    try {
       final numeric =
           int.tryParse(summary.id) ??
           int.tryParse((await _restSingle(summary))?['id']?.toString() ?? '');
-      if (numeric == null) {
-        throw const AnimeOnApiException('شناسه این عنوان معتبر نیست.');
+      if (numeric != null) {
+        final response = await _get(
+          Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'),
+        );
+        if (response.statusCode == 200) {
+          final row = jsonDecode(response.body);
+          if (row is Map<String, dynamic> && row['episodes'] is List) {
+            final content = contentFromRest(row, summary: summary);
+            if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
+              return content;
+            }
+          }
+        }
       }
-      final response = await _get(
-        Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'),
-      );
-      if (response.statusCode != 200) {
-        throw const AnimeOnApiException('جزئیات این عنوان قابل خواندن نیست.');
-      }
-      return contentFromRest(
-        jsonDecode(response.body) as Map<String, dynamic>,
-        summary: summary,
+    } catch (_) {
+      // A native client can still use the legacy page when REST is unavailable.
+    }
+    if (kIsWeb) {
+      throw const AnimeOnApiException(
+        'لینک قسمت‌ها دریافت نشد؛ اتصال VPN را بررسی کن و دوباره تلاش کن.',
       );
     }
     // 1) Structured taxonomy terms from the REST single endpoint.
@@ -474,6 +485,11 @@ class HentaiIranApi implements ContentApi {
     final seasons = page.episodesByNumber.isEmpty
         ? const <AnimeSeason>[]
         : _buildSeasons(page.episodesByNumber);
+    if (seasons.isEmpty) {
+      throw const AnimeOnApiException(
+        'لینک قسمت‌ها دریافت نشد؛ اتصال VPN را بررسی کن و دوباره تلاش کن.',
+      );
+    }
     final downloads = page.episodesByNumber.values
         .expand((list) => list)
         .map(

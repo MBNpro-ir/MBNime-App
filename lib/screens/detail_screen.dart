@@ -627,7 +627,13 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
                 sliver: SliverList.list(
                   children: [
-                    if (snapshot.hasError) _InlineError(onRetry: _retry),
+                    if (snapshot.hasError)
+                      _InlineError(
+                        onRetry: _retry,
+                        message: snapshot.error is AnimeOnApiException
+                            ? snapshot.error.toString()
+                            : 'جزئیات کامل دریافت نشد',
+                      ),
                     _DetailSummaryCard(
                       item: item,
                       heroTag: widget.heroTag,
@@ -1023,8 +1029,12 @@ class _ContinueWatchButtonState extends State<_ContinueWatchButton> {
 }
 
 class _InlineError extends StatelessWidget {
-  const _InlineError({required this.onRetry});
+  const _InlineError({
+    required this.onRetry,
+    this.message = 'جزئیات کامل دریافت نشد',
+  });
   final VoidCallback onRetry;
+  final String message;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 18),
@@ -1033,7 +1043,7 @@ class _InlineError extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: ListTile(
         leading: const Icon(Icons.error_outline_rounded),
-        title: const Text('جزئیات کامل دریافت نشد'),
+        title: Text(message),
         trailing: TextButton(
           onPressed: onRetry,
           child: const Text('تلاش دوباره'),
