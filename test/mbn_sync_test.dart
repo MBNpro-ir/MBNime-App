@@ -258,4 +258,39 @@ void main() {
       MbnSync.instance.clear();
     }
   });
+
+  test(
+    'a throttled history edit is included in the scheduled upload',
+    () async {
+      final batches = <Map>[];
+      final server = MbnServerClient(
+        client: MockClient((request) async {
+          final data = jsonDecode(request.body)['data'] as Map;
+          batches.add(data);
+          return http.Response(
+            jsonEncode({
+              for (final entry in data.entries)
+                entry.key: {
+                  'payload': entry.value,
+                  'updated_at': 1000 + batches.length,
+                },
+            }),
+            200,
+          );
+        }),
+      )..token = 'tok';
+      MbnSync.instance.configure(server: server);
+      try {
+        await MbnSync.instance.pushHistoryThrottled();
+        batches.clear();
+        await MbnSync.instance.pushHistoryThrottled();
+        expect(batches, isEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 5200));
+        expect(batches.length, 1);
+        expect(batches.single.keys, containsAll(['history', 'progress']));
+      } finally {
+        MbnSync.instance.clear();
+      }
+    },
+  );
 }
