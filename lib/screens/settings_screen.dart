@@ -127,8 +127,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   void _onRemoteSync() {
     if (mounted &&
         !_loading &&
-        MbnSync.instance.changedCategories.contains('preferences'))
+        MbnSync.instance.changedCategories.contains('preferences')) {
       unawaited(_load());
+    }
   }
 
   Future<void> _load() async {

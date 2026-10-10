@@ -3604,8 +3604,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _remotePreferencesChanged() {
     if (!mounted ||
         _playerTornDown ||
-        !MbnSync.instance.changedCategories.contains('preferences'))
+        !MbnSync.instance.changedCategories.contains('preferences')) {
       return;
+    }
     _remotePreferencesPending = true;
     if (!_subtitlePanelOpen) unawaited(_applyRemotePreferences());
   }
@@ -5487,8 +5488,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _showControls();
     } finally {
       _subtitlePanelOpen = false;
-      if (_remotePreferencesPending && mounted)
+      if (_remotePreferencesPending && mounted) {
         unawaited(_applyRemotePreferences());
+      }
     }
   }
 
