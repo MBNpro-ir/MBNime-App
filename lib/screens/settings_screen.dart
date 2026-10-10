@@ -104,6 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void initState() {
     super.initState();
+    MbnSync.instance.changes.addListener(_onRemoteSync);
     WidgetsBinding.instance.addObserver(this);
     _load();
   }
@@ -117,9 +118,17 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   void dispose() {
+    MbnSync.instance.changes.removeListener(_onRemoteSync);
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onRemoteSync() {
+    if (mounted &&
+        !_loading &&
+        MbnSync.instance.changedCategories.contains('preferences'))
+      unawaited(_load());
   }
 
   Future<void> _load() async {

@@ -72,35 +72,50 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    MbnSync.instance.changes.addListener(_onRemoteSync);
     _pageController = PageController();
     _restore();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        unawaited(
-          AnnouncementService.checkAndShow(
-            context,
-            widget.server,
-            app: 'anime',
-          ),
-        );
+        unawaited(_showStartupDialogs(context, widget.server, app: 'anime'));
       }
     });
   }
 
+  Future<void> _showStartupDialogs(
+    BuildContext context,
+    dynamic source, {
+    required String app,
+  }) async {
+    await MbnSync.instance.checkOtherAppSettingsPrompt(context);
+    if (context.mounted) {
+      await AnnouncementService.checkAndShow(context, source, app: app);
+    }
+  }
+
   @override
   void dispose() {
+    MbnSync.instance.changes.removeListener(_onRemoteSync);
     _pageController.dispose();
     super.dispose();
   }
 
+  void _onRemoteSync() {
+    if (!mounted) return;
+    unawaited(_restore());
+    unawaited(_homeKey.currentState?.refreshContinueWatch());
+  }
+
+  int _restoreGeneration = 0;
   Future<void> _restore() async {
+    final generation = ++_restoreGeneration;
     final values = await Future.wait([
       _store.favorites(),
       _store.hentaiFavorites(),
       _store.history(),
       _store.hentaiHistory(),
     ]);
-    if (!mounted) return;
+    if (!mounted || generation != _restoreGeneration) return;
     // Strict separation by isHentai + one-time migration of legacy entries
     // that were stored in the normal keys before the split.
     List<AnimeContent> dedup(List<AnimeContent> items) {
@@ -137,6 +152,10 @@ class _MainShellState extends State<MainShell> {
       ),
     ]);
     setState(() {
+      _favorites.clear();
+      _hentaiFavorites.clear();
+      _history.clear();
+      _hentaiHistory.clear();
       _favorites.addEntries(favNormal.entries);
       _hentaiFavorites.addEntries(favHentai.entries);
       _history.addAll(histNormal);

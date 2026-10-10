@@ -39,7 +39,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('فایل صدا'));
+      await tester.tap(find.text('فایل'));
       await tester.pumpAndSettle();
       expect(selected?.uri, isTrue);
       expect(selected?.id, 'C:/audio/dub.mp3');
@@ -61,7 +61,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('لینک صدا'));
+      await tester.tap(find.text('لینک'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'https:');
       await tester.tap(find.text('افزودن'));
@@ -93,11 +93,11 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('فایل صدا'));
+      await tester.tap(find.text('فایل'));
       await tester.pumpAndSettle();
       expect(find.textContaining('صدا اضافه نشد'), findsNothing);
       canceled = false;
-      await tester.tap(find.text('فایل صدا'));
+      await tester.tap(find.text('فایل'));
       await tester.pumpAndSettle();
       expect(find.textContaining('صدا اضافه نشد'), findsOneWidget);
       expect(tester.takeException(), isNull);

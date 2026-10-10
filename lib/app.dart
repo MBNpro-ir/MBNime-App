@@ -46,7 +46,11 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   Timer? _syncTimer;
   bool _checkingAccount = false;
   bool _terminating = false;
-  late final SessionWatch _sessionWatch = SessionWatch(_forceLogout);
+  late final SessionWatch _sessionWatch = SessionWatch(
+    _forceLogout,
+    app: 'anime',
+    onSync: () => MbnSync.instance.syncAll(),
+  );
 
   @override
   void initState() {
@@ -56,7 +60,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       unawaited(_checkAccount());
     });
     _syncTimer = Timer.periodic(
-      const Duration(minutes: 1),
+      const Duration(seconds: 60),
       (_) => unawaited(MbnSync.instance.syncAll()),
     );
     _restoreSession();
@@ -173,12 +177,6 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
             }
             MbnSync.instance.configure(server: _session.server);
             await MbnSync.instance.syncAll();
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final ctx = appNavigatorKey.currentContext;
-              if (ctx != null) {
-                MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
-              }
-            });
           }
         }(),
         Future<void>.delayed(const Duration(milliseconds: 1450)),
@@ -218,8 +216,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
       if (result == null) return false;
       await _session.loginWithHandoff(result, fallbackIdentifier: identifier);
       return true;
-    } finally {
-    }
+    } finally {}
   }
 
   Future<void> _beginHandoff() async {
@@ -248,6 +245,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
         await MbnSync.instance.bindAccount(_session.userId!);
       }
       MbnSync.instance.configure(server: _session.server);
+      MbnSync.instance.beginSettingsChoice();
       await MbnSync.instance.syncAll();
       if (mounted) {
         setState(() {});
@@ -375,14 +373,9 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                       if (_session.userId != null) {
                         await MbnSync.instance.bindAccount(_session.userId!);
                       }
+                      MbnSync.instance.beginSettingsChoice();
                       await MbnSync.instance.syncAll();
                       _refresh();
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        final ctx = appNavigatorKey.currentContext;
-                        if (ctx != null) {
-                          MbnSync.instance.checkOtherAppSettingsPrompt(ctx);
-                        }
-                      });
                     },
                     onRegister: (name, email, mobile, password) async {
                       await _session.register(

@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/animeon_api.dart';
 import '../services/mbn_server.dart';
-import '../services/cross_app_auth.dart';
 
 /// Server-backed login session (https://login.a.mbnpro.ir).
 ///
@@ -138,9 +137,6 @@ class SessionStore {
       'identifier': email.trim().toLowerCase(),
       'password': password,
       'app': 'anime',
-      'shared_token': await CrossAppAuth.readSiblingToken(
-        siblingId: 'MBNMovie',
-      ),
     });
     await loginWithHandoff(data, fallbackIdentifier: email);
   }
