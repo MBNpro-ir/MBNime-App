@@ -1,3 +1,4 @@
+import '../services/mbn_sync.dart';
 import '../widgets/responsive_web_layout.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -77,6 +78,8 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
   int _seasonIndex = 0;
   String _selectedQuality = unknownQualityLabel;
   final _resetting = <String>{};
+  bool _loadingSaved = false;
+  bool _reloadSaved = false;
   Timer? _initialContentTimer;
   late bool _contentReady;
 
@@ -95,6 +98,8 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
   void initState() {
     super.initState();
     _catalog = EpisodeCatalog.from(widget.content);
+    WatchProgressStore.changes.addListener(_onProgressChanged);
+    MbnSync.instance.changes.addListener(_onSyncChanged);
     if (_catalog.seasons.isEmpty) {
       // Guard the public empty-state contract: quality/season lookup below
       // indexes seasons[0] and would crash before build() shows its empty UI.
@@ -109,7 +114,7 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
     );
     _contentReady = !widget.deferInitialContent;
     if (_contentReady) {
-      unawaited(_loadSaved());
+      unawaited(_refreshFromServer());
       unawaited(_loadQualityPreference());
     } else {
       // Keep the container-transform frames light on phones. The episode grid
@@ -117,7 +122,7 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
       _initialContentTimer = Timer(const Duration(milliseconds: 310), () {
         if (!mounted) return;
         setState(() => _contentReady = true);
-        unawaited(_loadSaved());
+        unawaited(_refreshFromServer());
         unawaited(_loadQualityPreference());
       });
     }
@@ -125,11 +130,46 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
 
   @override
   void dispose() {
+    WatchProgressStore.changes.removeListener(_onProgressChanged);
+    MbnSync.instance.changes.removeListener(_onSyncChanged);
     _initialContentTimer?.cancel();
     super.dispose();
   }
 
+  void _onProgressChanged() {
+    if (mounted) unawaited(_loadSaved());
+  }
+
+  void _onSyncChanged() {
+    if (mounted && MbnSync.instance.changedCategories.contains('progress')) {
+      unawaited(_loadSaved());
+    }
+  }
+
+  Future<void> _refreshFromServer() async {
+    try {
+      await MbnSync.instance.syncProgressIfStale();
+    } catch (_) {}
+    if (mounted) await _loadSaved();
+  }
+
   Future<void> _loadSaved() async {
+    if (_loadingSaved) {
+      _reloadSaved = true;
+      return;
+    }
+    _loadingSaved = true;
+    try {
+      do {
+        _reloadSaved = false;
+        await _loadSavedNow();
+      } while (_reloadSaved && mounted);
+    } finally {
+      _loadingSaved = false;
+    }
+  }
+
+  Future<void> _loadSavedNow() async {
     final entries = <String, SavedWatchProgress>{};
     for (final group in _catalog.episodes) {
       // Canonical group record is authoritative once present; legacy
