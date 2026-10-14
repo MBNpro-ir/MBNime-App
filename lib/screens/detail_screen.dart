@@ -2855,7 +2855,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(
       _startInitialPlayback().catchError((Object error) {
         if (!mounted || _playerTornDown) return;
-        setState(() => _error = '$error');
+        // Route through the graced handler (suppressed while paused or
+        // transitioning) instead of a raw fullscreen error.
+        _handlePlaybackError('$error');
       }),
     );
     _armHideTimer();
@@ -3156,11 +3158,35 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (resumeAt > Duration.zero) {
       await _waitUntilSeekable(generation: generation);
     }
-    await _restorePositionAndPlay(
-      resumeAt,
-      generation: generation,
-      playing: true,
-    );
+    try {
+      await _restorePositionAndPlay(
+        resumeAt,
+        generation: generation,
+        playing: true,
+      );
+    } catch (error) {
+      // A superseded op must propagate; a missed resume seek must not kill
+      // web playback (stale ticket/HLS without duration). Keep playing from
+      // the live decoder clock and retry the seek once it settles.
+      if ('$error'.contains('superseded')) rethrow;
+      if (!_isCurrentMediaOp(generation)) return;
+      try {
+        await _requestPlay();
+      } catch (playError) {
+        _handlePlaybackError('$playError');
+        return;
+      }
+      if (resumeAt > Duration.zero && _isCurrentMediaOp(generation)) {
+        unawaited(
+          Future<void>.delayed(const Duration(seconds: 1)).then((_) async {
+            if (!_isCurrentMediaOp(generation) || _playerTornDown) return;
+            try {
+              await _player.seek(resumeAt);
+            } catch (_) {}
+          }),
+        );
+      }
+    }
   }
 
   /// Waits until this generation's media is actually loadable: duration (or
@@ -5113,12 +5139,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _seekBy(int seconds, {bool showControls = true}) {
     if (showControls) {
       _onSeekStateChanged(true);
-      _player.seek(
-        playerSeekTarget(
-          _player.state.position,
-          _player.state.duration,
-          seconds,
-        ),
+      unawaited(
+        _player
+            .seek(
+              playerSeekTarget(
+                _player.state.position,
+                _player.state.duration,
+                seconds,
+              ),
+            )
+            .catchError((Object _) {}),
       );
       _showControls();
       _showFeedback(
@@ -5137,8 +5167,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_controlsVisible && mounted) {
       setState(() => _controlsVisible = false);
     }
-    _player.seek(
-      playerSeekTarget(_player.state.position, _player.state.duration, seconds),
+    unawaited(
+      _player
+          .seek(
+            playerSeekTarget(
+              _player.state.position,
+              _player.state.duration,
+              seconds,
+            ),
+          )
+          .catchError((Object _) {}),
     );
     _showFeedback(
       seconds < 0
@@ -6221,6 +6259,26 @@ class _SeekBar extends StatefulWidget {
 }
 
 class _SeekBarState extends State<_SeekBar> {
+  Timer? _debounce;
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _safeSeek(Duration target) {
+    // Coalesce scrub bursts; a seek failure must never tear down playback.
+    _debounce?.cancel();
+    widget.onSeekStateChanged?.call(true);
+    _debounce = Timer(const Duration(milliseconds: 120), () {
+      unawaited(
+        widget.player.seek(target).catchError((Object _) {}).whenComplete(() {
+          widget.onSeekStateChanged?.call(false);
+        }),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<Duration>(
     stream: widget.player.stream.position,
@@ -6233,7 +6291,7 @@ class _SeekBarState extends State<_SeekBar> {
         position: position,
         duration: duration,
         buffer: buffer,
-        onSeek: (target) => widget.player.seek(target),
+        onSeek: _safeSeek,
         onSeekStateChanged: widget.onSeekStateChanged,
       );
     },
