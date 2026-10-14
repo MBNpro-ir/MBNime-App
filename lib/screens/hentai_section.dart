@@ -16,6 +16,7 @@ import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
 import '../services/mbn_server.dart';
+import '../services/mbn_sync.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
@@ -911,6 +912,9 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
 
   /// Reloads the +18 «ادامه تماشا» shelf (own slot, never mixed with normal).
   Future<void> refreshContinueWatch() async {
+    try {
+      await MbnSync.instance.syncProgressIfStale();
+    } catch (_) {}
     final last = await _lastWatchStore.load();
     if (mounted) setState(() => _lastWatch = last);
   }
