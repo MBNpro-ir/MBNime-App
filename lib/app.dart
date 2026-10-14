@@ -370,9 +370,13 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
                       }
                       TextInput.finishAutofillContext(shouldSave: true);
                       MbnSync.instance.configure(server: _session.server);
-                      if (_session.userId != null) {
-                        await MbnSync.instance.bindAccount(_session.userId!);
-                      }
+                      // The session is already issued: local account
+                      // bookkeeping must never fail the login itself.
+                      try {
+                        if (_session.userId != null) {
+                          await MbnSync.instance.bindAccount(_session.userId!);
+                        }
+                      } catch (_) {}
                       MbnSync.instance.beginSettingsChoice();
                       await MbnSync.instance.syncAll();
                       _refresh();
