@@ -5,6 +5,7 @@ import '../core/app_platform.dart';
 import '../services/browser_features.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/episode_catalog.dart';
@@ -398,7 +399,7 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
             content: Text(
               BrowserFeatures.isAppleMobile
                   ? 'پلیر باید روی آیفون نصب باشد. مرورگر ممکن است تأیید بازکردن برنامه را بخواهد.'
-                  : 'VLC و نسخهٔ ویندوز همین برنامه باید نصب باشند. برنامهٔ ویندوز را یک‌بار باز کن تا ارتباط با مرورگر فعال شود.',
+                  : 'مرورگر نمی‌تواند مستقیم VLC را باز کند: «باز کردن خودکار» فقط لینک را به نسخهٔ ویندوز همین برنامه می‌دهد تا آن را به VLC بفرستد (پنجرهٔ برنامه فقط لحظه‌ای واسط است). اگر نمی‌خواهی برنامهٔ ویندوز باز شود، «کپی لینک مستقیم» را بزن و آن را در VLC (Media > Open Network Stream) بچسبان.',
             ),
             actions: [
               TextButton(
@@ -411,6 +412,25 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
                 ),
                 child: const Text('دانلود پلیر'),
               ),
+              if (!BrowserFeatures.isAppleMobile)
+                TextButton(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: url));
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                    }
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'لینک مستقیم پخش کپی شد؛ در VLC بچسبان.',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('کپی لینک مستقیم'),
+                ),
               FilledButton(
                 onPressed: () {
                   // This tap, not the async media preparation, owns Safari's gesture.
@@ -421,7 +441,11 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
                   );
                   Navigator.pop(dialogContext);
                 },
-                child: const Text('باز کردن پلیر'),
+                child: Text(
+                  BrowserFeatures.isAppleMobile
+                      ? 'باز کردن پلیر'
+                      : 'باز کردن خودکار با VLC',
+                ),
               ),
             ],
           ),
