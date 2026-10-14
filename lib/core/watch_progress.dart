@@ -166,8 +166,9 @@ class WatchProgressStore {
       }
       changes.value++;
     }
-    if (lastWatch?.isHentai != true)
+    if (lastWatch?.isHentai != true) {
       unawaited(MbnSync.instance.pushProgressThrottled());
+    }
   }
 
   Future<SavedWatchProgress?> load({
