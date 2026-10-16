@@ -45,6 +45,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   Timer? _accountTimer;
   Timer? _syncTimer;
   bool _checkingAccount = false;
+  bool _restoringRemote = false;
   bool _terminating = false;
   late final SessionWatch _sessionWatch = SessionWatch(
     _forceLogout,
@@ -90,6 +91,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   Future<void> _checkAccount() async {
     if ((_session.server.token == null && !_session.isLoggedIn) ||
         _checkingAccount ||
+        _restoringRemote ||
         _terminating) {
       return;
     }
@@ -157,41 +159,56 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreSession() async {
+    var localSession = false;
     try {
-      await Future.wait([
-        () async {
-          await _session.restore();
-          if (!_session.isLoggedIn &&
-              _session.forcedLogoutMessage == null &&
-              kDebugMode &&
-              _debugIdentifier.isNotEmpty &&
-              _debugPassword.isNotEmpty) {
-            await _session.login(
-              email: _debugIdentifier,
-              password: _debugPassword,
-            );
-          }
-          if (_session.isLoggedIn) {
-            if (_session.userId != null) {
-              await MbnSync.instance.bindAccount(_session.userId!);
-            }
-            MbnSync.instance.configure(server: _session.server);
-            await MbnSync.instance.syncAll();
-          }
-        }(),
-        Future<void>.delayed(const Duration(milliseconds: 1450)),
-      ]);
+      // Render from the cached account first. Remote validation and sync run
+      // after the first interactive frame, so a slow Safari request cannot
+      // swallow the opening taps behind the splash screen.
+      localSession = await _session.restoreLocal().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
+      if (!localSession &&
+          kDebugMode &&
+          _debugIdentifier.isNotEmpty &&
+          _debugPassword.isNotEmpty) {
+        await _session.login(email: _debugIdentifier, password: _debugPassword);
+        localSession = _session.isLoggedIn;
+      }
     } catch (_) {
       // restore() itself never throws; this guard only ensures a storage
       // failure can never brick the app on the splash screen.
     }
     if (mounted) setState(() => _restoring = false);
-    final message = _session.forcedLogoutMessage;
-    if (mounted && message != null) {
-      _terminating = true;
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showLogoutDialog(message),
-      );
+    if (localSession) unawaited(_refreshSessionInBackground());
+  }
+
+  Future<void> _refreshSessionInBackground() async {
+    if (_restoringRemote || !_session.isLoggedIn) return;
+    _restoringRemote = true;
+    try {
+      await _session.restore().timeout(const Duration(seconds: 25));
+      if (_session.isLoggedIn) {
+        if (_session.userId != null) {
+          await MbnSync.instance.bindAccount(_session.userId!);
+        }
+        MbnSync.instance.configure(server: _session.server);
+        unawaited(MbnSync.instance.syncAll());
+      }
+    } catch (_) {
+      // Cached data remains usable when the account server is slow/offline.
+    } finally {
+      _restoringRemote = false;
+      if (mounted) {
+        final message = _session.forcedLogoutMessage;
+        setState(() {});
+        if (message != null) {
+          _terminating = true;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showLogoutDialog(message),
+          );
+        }
+      }
     }
   }
 

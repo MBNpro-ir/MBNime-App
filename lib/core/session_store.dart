@@ -26,6 +26,36 @@ class SessionStore {
 
   bool get isLoggedIn => email != null && email!.isNotEmpty;
 
+  /// Restores only the local identity and token.  The remote validation is
+  /// intentionally left to the caller so a slow mobile browser cannot keep
+  /// the first interactive frame behind a network request.
+  Future<bool> restoreLocal() async {
+    forcedLogoutMessage = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_signedOutKey) ?? false) {
+        email = null;
+        api.clearSession();
+        return false;
+      }
+      final token = await server.readToken();
+      final cachedEmail = await server.readEmail();
+      if (token == null ||
+          token.isEmpty ||
+          cachedEmail == null ||
+          cachedEmail.isEmpty) {
+        email = null;
+        api.clearSession();
+        return false;
+      }
+      server.token = token;
+      email = cachedEmail;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Restores a previously saved session. Never throws.
   ///
   /// A valid server token re-establishes the AnimeOn web session silently.
