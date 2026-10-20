@@ -2732,6 +2732,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Duration _duration = Duration.zero;
   bool _playing = false;
   bool _buffering = true;
+  final _bufferingNotifier = ValueNotifier<bool>(true);
   bool _controlsVisible = true;
   bool _touchLocked = false;
   bool _unlockButtonVisible = false;
@@ -2768,6 +2769,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _transitioning = false;
   bool _playerTornDown = false;
 
+  void _setBuffering(bool value) {
+    _buffering = value;
+    if (_bufferingNotifier.value != value) _bufferingNotifier.value = value;
+  }
+
   bool _isCurrentMediaOp(int generation) =>
       mounted &&
       !_exitingPlayer &&
@@ -2789,7 +2795,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _webAssSource;
   int _assRenderingGeneration = 0;
   bool get _assAvailable =>
-      kIsWeb ? _webAssSource != null : isAssTrack(_selectedSubtitle);
+      kIsWeb
+          ? _webAssSource != null && !DevicePerformance.appleMobileWeb
+          : isAssTrack(_selectedSubtitle);
   WebSubtitleDocument? _webSubtitle;
   int _webSubtitleSelection = 0;
   int _webAudioSelection = 0;
@@ -2868,7 +2876,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         // playing event has occurred yet. Surface it instead of loading forever.
         _playbackErrorTimer?.cancel();
         setState(() {
-          _buffering = false;
+          _setBuffering(false);
           _webNeedsTap = false;
           _controlsVisible = false;
           _error = 'این فایل فعلاً توسط سرور پخش نشد.';
@@ -3059,6 +3067,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     _audioDelay = await PlaybackPreferenceStore.audioDelay();
     requireCurrent();
     if (!kIsWeb) {
+      for (final entry in NativePlaybackPolicy.playerProperties(
+        windows: Platform.isWindows,
+      ).entries) {
+        await setNativePlayerProperty(
+          _player.platform!,
+          entry.key,
+          entry.value,
+        );
+      }
       await setNativePlayerProperty(_player.platform!, 'video-sync', 'audio');
       await setNativePlayerProperty(
         _player.platform!,
@@ -3132,7 +3149,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _webNeedsTap = !started;
         if (!started) {
           _error = null;
-          _buffering = false;
+          _setBuffering(false);
           _controlsVisible = true;
         }
       });
@@ -3147,7 +3164,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           if (mounted) {
             setState(() {
               _webNeedsTap = true;
-              _buffering = false;
+              _setBuffering(false);
               _controlsVisible = true;
             });
           }
@@ -3424,7 +3441,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       }),
     );
     watchQuiet(_player.stream.buffering, (value) {
-      if (mounted && value != _buffering) setState(() => _buffering = value);
+      if (_playerTornDown || value == _buffering) return;
+      // Buffering is a small overlay concern. Updating it through a notifier
+      // avoids rebuilding the video texture and every player control on each
+      // transient cache/core-idle event.
+      _setBuffering(value);
     });
     watch(_player.stream.volume, (value) => _volume = value);
     watch(_player.stream.rate, (value) => _rate = value);
@@ -3491,7 +3512,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _clearPlaybackError();
     if (mounted) {
       setState(() {
-        _buffering = true;
+        _setBuffering(true);
         _controlsVisible = false;
       });
     }
@@ -3509,7 +3530,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         playing: true,
       );
       if (!_isCurrentMediaOp(generation) || !mounted) return;
-      setState(() => _buffering = false);
+      setState(() => _setBuffering(false));
     } catch (_) {
       if (mounted && _isCurrentMediaOp(generation) && _error == null) {
         setState(() => _error = 'این فایل فعلاً توسط سرور پخش نشد.');
@@ -3697,7 +3718,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 .where((a) => a.id.startsWith('http'))
                 .firstOrNull;
             if (track == null) throw StateError('No separate audio');
-            await BrowserFeatures.externalAudio(track.id, delay: _audioDelay);
+            await BrowserFeatures.externalAudio(
+              await _resolveWebAudioUrl(track.id),
+              delay: _audioDelay,
+            );
           }
         }
       } else {
@@ -3732,7 +3756,10 @@ class _PlayerScreenState extends State<PlayerScreen>
           await _applyAudioDelay(_audioDelay);
         }
       } else {
-        await BrowserFeatures.externalAudio(track.id, delay: _audioDelay);
+        await BrowserFeatures.externalAudio(
+          await _resolveWebAudioUrl(track.id),
+          delay: _audioDelay,
+        );
       }
       if (_isCurrentMediaOp(generation) && selection == _webAudioSelection) {
         setState(() => _track = _track.copyWith(audio: track));
@@ -3740,6 +3767,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else {
       await _player.setAudioTrack(track);
     }
+  }
+
+  /// Prepared browser tracks already point at our same-origin media relay.
+  /// Requesting a second media ticket for that relay URL is rejected by the
+  /// server's asset allow-list (and was the reason Safari audio selection
+  /// appeared to do nothing). Only raw upstream URLs need a new ticket.
+  Future<String> _resolveWebAudioUrl(String value) async {
+    final uri = Uri.tryParse(value);
+    if (uri != null &&
+        uri.origin == Uri.base.origin &&
+        uri.path == '/api/web/media') {
+      return value;
+    }
+    return WebGateway.externalAudio(value);
   }
 
   bool _remotePreferencesPending = false;
@@ -4090,7 +4131,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     if (mounted) {
       setState(() {
-        _buffering = true;
+        _setBuffering(true);
         _error = null;
       });
     }
@@ -4118,7 +4159,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted) return;
       if (_isCurrentMediaOp(generation)) {
         setState(() {
-          _buffering = false;
+          _setBuffering(false);
           _subtitles = const [];
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4147,7 +4188,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } catch (_) {}
       if (!mounted) return;
       if (_isCurrentMediaOp(generation)) {
-        setState(() => _buffering = false);
+        setState(() => _setBuffering(false));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('تغییر کیفیت انجام نشد؛ پخش قبلی بازیابی شد.'),
@@ -4574,7 +4615,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!_isCurrentMediaOp(generation)) return;
     if (mounted) {
       setState(() {
-        _buffering = true;
+        _setBuffering(true);
         _error = null;
         _nextEpisodeVisible = false;
       });
@@ -4605,7 +4646,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         setState(() {
           _position = startAt;
           _duration = _player.state.duration;
-          _buffering = false;
+          _setBuffering(false);
           _subtitles = const [];
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4636,7 +4677,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } catch (_) {}
       if (!mounted) return;
       if (_isCurrentMediaOp(generation)) {
-        setState(() => _buffering = false);
+        setState(() => _setBuffering(false));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('پخش قسمت انتخاب‌شده انجام نشد؛ پخش قبلی برگشت.'),
@@ -4706,7 +4747,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           // watched or advance; offer retry instead.
           if (mounted && _isCurrentMediaOp(generation)) {
             setState(() {
-              _buffering = false;
+              _setBuffering(false);
               _controlsVisible = false;
               _nextEpisodeVisible = false;
               _error = 'truncated stream';
@@ -5042,6 +5083,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     _subtitleLines.dispose();
     _subtitleAppearance.dispose();
+    _bufferingNotifier.dispose();
     final player = _player;
     unawaited(
       Future.delayed(const Duration(milliseconds: 350), () async {
@@ -5362,7 +5404,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           onSelected: (track) => choose(() async {
             if (kIsWeb) {
               final uri = track.id.startsWith('http')
-                  ? await WebGateway.externalAudio(track.id)
+                  ? await _resolveWebAudioUrl(track.id)
                   : track.id;
               await BrowserFeatures.externalAudio(uri, delay: _audioDelay);
             } else {
@@ -5889,6 +5931,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     PlayerLoadingIndicator(
                       preparing: WebGateway.preparingVideo,
                       buffering: _buffering,
+                      bufferingListenable: _bufferingNotifier,
                       enabled: !_windowResizing && !_touchLocked,
                     ),
                     if (!_windowResizing)

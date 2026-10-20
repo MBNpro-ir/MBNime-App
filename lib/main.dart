@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'services/device_performance.dart';
+import 'services/browser_features.dart';
 import 'services/android_network_trust.dart';
 import 'package:flutter/foundation.dart';
 import 'core/app_platform.dart';
@@ -61,8 +62,12 @@ Future<void> _initializeWebAfterFirstFrame() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Enable the accessible DOM from the first frame on every browser.
-  if (kIsWeb) {
+  // On iOS Safari Flutter's semantics DOM sits above the gesture arena and
+  // can swallow ordinary taps for several frames (especially while the PWA
+  // is restoring its cached session). Keep semantic labels available on
+  // desktop/assistive browsers, but let touch events go through on Apple
+  // mobile; the web CSS below keeps the semantic nodes non-interactive there.
+  if (kIsWeb && !BrowserFeatures.isAppleMobile) {
     _webSemantics ??= SemanticsBinding.instance.ensureSemantics();
   }
   // A missing libmpv must break only video playback, never the whole window.

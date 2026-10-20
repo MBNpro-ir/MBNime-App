@@ -57,11 +57,16 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _accountTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      unawaited(_checkAccount());
-    });
+    _accountTimer = Timer.periodic(
+      DevicePerformance.appleMobileWeb
+          ? const Duration(seconds: 30)
+          : const Duration(seconds: 6),
+      (_) => unawaited(_checkAccount()),
+    );
     _syncTimer = Timer.periodic(
-      const Duration(seconds: 60),
+      DevicePerformance.appleMobileWeb
+          ? const Duration(minutes: 5)
+          : const Duration(seconds: 60),
       (_) => unawaited(MbnSync.instance.syncAll()),
     );
     _restoreSession();
@@ -290,7 +295,12 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    _sessionWatch.track(_session.server.token, _session.server.baseUrl);
+    // WebKit can evict/reload a PWA while an SSE connection is open. The
+    // bounded foreground account poll remains active on Apple mobile web.
+    _sessionWatch.track(
+      DevicePerformance.appleMobileWeb ? null : _session.server.token,
+      _session.server.baseUrl,
+    );
     return ListenableBuilder(
       listenable: AccessibilityService.instance,
       builder: (context, _) {
@@ -338,7 +348,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
             ),
           ),
           home: AnimatedSwitcher(
-            duration: access.reduceMotion
+            duration: access.reduceMotion || DevicePerformance.appleMobileWeb
                 ? Duration.zero
                 : Duration(
                     milliseconds: DevicePerformance.lightweight ? 180 : 650,
