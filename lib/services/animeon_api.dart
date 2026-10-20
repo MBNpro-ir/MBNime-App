@@ -156,6 +156,21 @@ class AnimeOnApi implements ContentApi {
   }
 
   Future<HomeCatalog> home() async {
+    // A cold mobile connection can lose one of the parallel catalog calls
+    // while DNS/TLS is settling. Retry the complete snapshot so the user
+    // does not have to press «تلاش دوباره» after a normal transient failure.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await _homeOnce();
+      } catch (_) {
+        if (attempt == 2) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+      }
+    }
+    throw StateError('unreachable');
+  }
+
+  Future<HomeCatalog> _homeOnce() async {
     final responses = await Future.wait([
       _legacyGet('get_slider'),
       _legacyGet('get_latest_movies'),
@@ -671,12 +686,15 @@ class AnimeOnApi implements ContentApi {
         'GET $uri ${cookie ?? ''}',
         () async {
           try {
-            final response = await sendBuffered(
-              _client,
-              'GET',
-              uri,
-              headers: headers,
-              timeout: const Duration(seconds: 25),
+            final response = await readWithRetry(
+              () => sendBuffered(
+                _client,
+                'GET',
+                uri,
+                headers: headers,
+                timeout: const Duration(seconds: 25),
+              ),
+              maxAttempts: 3,
             );
             if (_sessionCookie == cookie) _captureCookie(response, uri);
             return response;
@@ -703,13 +721,16 @@ class AnimeOnApi implements ContentApi {
     try {
       return await _requests.run<http.Response>('POST $uri', () async {
         try {
-          final response = await sendBuffered(
-            _client,
-            'POST',
-            uri,
-            headers: headers,
-            body: body,
-            timeout: const Duration(seconds: 25),
+          final response = await readWithRetry(
+            () => sendBuffered(
+              _client,
+              'POST',
+              uri,
+              headers: headers,
+              body: body,
+              timeout: const Duration(seconds: 25),
+            ),
+            maxAttempts: 2,
           );
           if (_sessionCookie == cookie) _captureCookie(response, uri);
           return response;
