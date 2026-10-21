@@ -3,10 +3,49 @@
 const mbnAppleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.vendor.includes('Apple') && navigator.maxTouchPoints > 1);
 if (mbnAppleMobile) document.documentElement.classList.add('mbn-apple-mobile');
 const mbnAssetRoot = new URL('.', document.currentScript.src).href;
+
+// Safari's visual viewport can move independently of the layout viewport
+// after keyboard use, page zoom or rotation. Let Flutter measure the same
+// DOM rectangle used for input coordinates, instead of mixing full-page
+// dimensions with a displaced visual viewport. Desktop keeps full-page mode.
+function mbnCreateViewportHost() {
+  if (!mbnAppleMobile) return undefined;
+  const host = document.createElement('div');
+  host.id = 'mbn-viewport-host';
+  host.style.cssText = 'position:absolute;margin:0;padding:0;overflow:hidden;touch-action:none;';
+  document.body.appendChild(host);
+  const viewport = window.visualViewport;
+  let frame = 0;
+  function sync() {
+    frame = 0;
+    const values = {
+      left: viewport ? viewport.pageLeft : window.scrollX,
+      top: viewport ? viewport.pageTop : window.scrollY,
+      width: viewport && viewport.width > 0 ? viewport.width : window.innerWidth,
+      height: viewport && viewport.height > 0 ? viewport.height : window.innerHeight,
+    };
+    for (const [key, value] of Object.entries(values)) {
+      const css = value + 'px';
+      if (host.style[key] !== css) host.style[key] = css;
+    }
+  }
+  function schedule() {
+    if (!frame) frame = requestAnimationFrame(sync);
+  }
+  sync();
+  viewport?.addEventListener('resize', schedule, {passive: true});
+  viewport?.addEventListener('scroll', schedule, {passive: true});
+  window.addEventListener('resize', schedule, {passive: true});
+  window.addEventListener('orientationchange', schedule, {passive: true});
+  document.addEventListener('focusout', schedule);
+  document.addEventListener('visibilitychange', schedule);
+  return host;
+}
 _flutter.loader.load({
   config: {entryPointBaseUrl: mbnAssetRoot, assetBase: mbnAssetRoot, canvasKitBaseUrl: mbnAssetRoot + 'canvaskit/', ...(mbnAppleMobile ? {canvasKitMaximumSurfaces: 2} : {})},
   onEntrypointLoaded: async function(engineInitializer) {
-    const appRunner = await engineInitializer.initializeEngine({assetBase: mbnAssetRoot});
+    const hostElement = mbnCreateViewportHost();
+    const appRunner = await engineInitializer.initializeEngine({assetBase: mbnAssetRoot, ...(hostElement ? {hostElement} : {})});
     await appRunner.runApp();
     document.getElementById('loading')?.remove();
     document.documentElement.classList.add('mbn-flutter-ready');
