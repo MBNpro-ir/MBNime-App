@@ -16,6 +16,7 @@ import 'core/session_store.dart';
 import 'core/theme.dart';
 import 'core/platform_ui.dart';
 import 'services/mbn_sync.dart';
+import 'services/network_gate.dart';
 import 'services/mbn_server.dart';
 import 'widgets/tv_navigation.dart';
 import 'widgets/server_status_gate.dart';
@@ -95,7 +96,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   }
 
   Future<void> _checkAccount() async {
-    if ((_session.server.token == null && !_session.isLoggedIn) ||
+    if (OfflineMode.active ||
+        (_session.server.token == null && !_session.isLoggedIn) ||
         _checkingAccount ||
         _restoringRemote ||
         _terminating) {

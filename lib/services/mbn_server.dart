@@ -83,6 +83,11 @@ class MbnServerClient {
     Map<String, String>? query,
     Map<String, dynamic>? body,
   }) async {
+    if (OfflineMode.active) {
+      throw const MbnServerException(
+        'سرور مرکزی در دسترس نیست؛ اطلاعات محلی در حالت آفلاین استفاده می‌شود.',
+      );
+    }
     final credential = token;
     final generation = _generation;
     final uri = _uri(path, query);
@@ -169,7 +174,7 @@ class MbnServerClient {
 
   Future<void> clearToken() async {
     final oldToken = token;
-    if (oldToken != null) {
+    if (oldToken != null && !OfflineMode.active) {
       sendBuffered(
         _client,
         'POST',
