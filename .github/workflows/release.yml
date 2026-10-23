@@ -7,7 +7,7 @@ on:
       release_tag:
         description: Stable release tag matching pubspec.yaml and Persian changelog
         required: true
-        default: v2.0.70
+        default: v2.0.72
         type: string
 
 permissions:
