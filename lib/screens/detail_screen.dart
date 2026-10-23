@@ -30,6 +30,8 @@ import '../services/web_gateway.dart';
 import '../services/browser_features.dart';
 import '../core/web_subtitles.dart';
 import 'dart:async';
+import '../core/video_decode_mode.dart';
+import '../widgets/decoder_mode_builder.dart';
 import '../core/app_platform.dart';
 
 import '../widgets/watch_episode_button.dart';
@@ -2757,7 +2759,7 @@ class PlayerScreen extends StatelessWidget {
   );
 }
 
-class _AuthorizedPlayerScreen extends StatefulWidget {
+class _AuthorizedPlayerScreen extends StatelessWidget {
   const _AuthorizedPlayerScreen({
     required this.content,
     required this.episode,
@@ -2767,16 +2769,42 @@ class _AuthorizedPlayerScreen extends StatefulWidget {
   final AnimeContent content;
   final AnimeEpisode episode;
   final Duration initialPosition;
+  final String? progressEpisodeId;
+
+  @override
+  Widget build(BuildContext context) => DecoderModeBuilder(
+    builder: (mode) => _ConfiguredPlayerScreen(
+      content: content,
+      episode: episode,
+      initialPosition: initialPosition,
+      progressEpisodeId: progressEpisodeId,
+      decoderMode: mode,
+    ),
+  );
+}
+
+class _ConfiguredPlayerScreen extends StatefulWidget {
+  const _ConfiguredPlayerScreen({
+    required this.decoderMode,
+    required this.content,
+    required this.episode,
+    this.initialPosition = Duration.zero,
+    this.progressEpisodeId,
+  });
+  final VideoDecodeMode decoderMode;
+  final AnimeContent content;
+  final AnimeEpisode episode;
+  final Duration initialPosition;
 
   /// Canonical progress identity override (download metadata's logical
   /// group id). When set, progress is read/written under this id so offline
   /// playback shares the streaming record instead of forking a raw id.
   final String? progressEpisodeId;
   @override
-  State<_AuthorizedPlayerScreen> createState() => _PlayerScreenState();
+  State<_ConfiguredPlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<_AuthorizedPlayerScreen>
+class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
     with WindowListener, WidgetsBindingObserver {
   final _watchClock = WatchClock();
   final _watchOwner = AccountProfile.owner;
@@ -2950,6 +2978,7 @@ class _PlayerScreenState extends State<_AuthorizedPlayerScreen>
     _video = VideoController(
       _player,
       configuration: NativePlaybackPolicy.videoConfiguration(
+        decoderMode: widget.decoderMode,
         android: Platform.isAndroid,
         sdk: DevicePerformance.androidSdk,
         emulator: DevicePerformance.emulator,
@@ -3200,6 +3229,7 @@ class _PlayerScreenState extends State<_AuthorizedPlayerScreen>
     requireCurrent();
     if (!kIsWeb) {
       for (final entry in NativePlaybackPolicy.playerProperties(
+        decoderMode: widget.decoderMode,
         windows: Platform.isWindows,
         android: Platform.isAndroid,
         sdk: DevicePerformance.androidSdk,

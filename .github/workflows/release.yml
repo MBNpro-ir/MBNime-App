@@ -7,7 +7,7 @@ on:
       release_tag:
         description: Stable release tag matching pubspec.yaml and Persian changelog
         required: true
-        default: v2.0.75
+        default: v2.0.76
         type: string
 
 permissions:
@@ -163,6 +163,7 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG.TrimStart('v')
           $source = 'build\windows\x64\runner\Release'
+          ./tools/Verify-WindowsPlaybackCore.ps1 -Bundle $source
           if (-not (Test-Path -LiteralPath "$source\updater.exe")) { throw 'updater.exe was not bundled' }
           $legacyExecutable = Join-Path $source 'animeon.exe'
           if (Test-Path -LiteralPath $legacyExecutable) {

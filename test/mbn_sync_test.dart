@@ -47,11 +47,13 @@ void main() {
         await started.future;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setDouble('player_rate', 1.75);
+        await prefs.setString('player_decoder_mode', 'software');
         final pending = List.generate(20, (_) => MbnSync.instance.pushAll());
         release.complete();
         await Future.wait([first, ...pending]);
         expect(bodies.length, 2);
         expect(bodies.last, contains('"player_rate":1.75'));
+        expect(bodies.last, contains('"player_decoder_mode":"software"'));
       } finally {
         if (!release.isCompleted) release.complete();
         MbnSync.instance.clear();
@@ -117,6 +119,7 @@ void main() {
         'preferences': {
           'payload': {
             'windows': {
+              'player_decoder_mode': 'software',
               'player_volume': 90,
               'player_rate': 1.5,
               'sub_font': 'Vazirmatn',
@@ -152,6 +155,7 @@ void main() {
       expect(success, isTrue);
 
       final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('player_decoder_mode'), 'software');
       expect(prefs.getDouble('player_volume'), 90.0);
       expect(prefs.getDouble('player_rate'), 1.5);
       expect(prefs.getDouble('sub_size'), 26.0);
