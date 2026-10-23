@@ -31,8 +31,8 @@ class HentaiIranApi implements ContentApi {
   }
 
   static const origin = 'https://hentaiiran.com';
-  static const _episodeCatalog =
-      'https://raw.githubusercontent.com/MBNpro-ir/MBNime-App/source-catalog/v1/titles';
+  static const episodeGateway =
+      'https://mbnime-source-live.mbnpro.workers.dev/v1/titles';
   static const _detailCachePrefix = 'mbnime_hentai_detail_cache_v1_';
 
   /// Taxonomy slugs exactly as exposed by `/wp-json/wp/v2/types`.
@@ -425,9 +425,8 @@ class HentaiIranApi implements ContentApi {
 
   @override
   Future<AnimeContent> details(AnimeContent summary) async {
-    // The source now creates its download controls with JavaScript. The
-    // structured endpoint carries the episode URLs on native and web alike.
-    // Keep the old HTML adapter only as a fallback for native installations.
+    // Public REST supplies metadata; the Worker reads the authenticated source
+    // page for every detail refresh. Source credentials stay inside the Worker.
     var numeric = int.tryParse(summary.id);
     Future<AnimeContent?> cached() async {
       if (numeric == null) return null;
@@ -443,59 +442,57 @@ class HentaiIranApi implements ContentApi {
       }
     }
 
-    Map<String, dynamic>? publicDetail;
     try {
       numeric ??= int.tryParse(
         (await _restSingle(summary))?['id']?.toString() ?? '',
       );
-      if (numeric != null) {
-        final response = await _get(
-          Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'),
-        );
-        if (response.statusCode == 200) {
+    } catch (_) {
+      // A native client can still resolve a legacy HTML title below.
+    }
+    if (numeric != null) {
+      Future<Map<String, dynamic>?> readDetail(Uri uri) async {
+        try {
+          final response = await _get(uri);
+          if (response.statusCode != 200) return null;
           final row = jsonDecode(response.body);
-          if (row is Map<String, dynamic> && row['episodes'] is List) {
-            publicDetail = row;
-            final content = contentFromRest(row, summary: summary);
-            if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
-              unawaited(_cacheRestDetail('$numeric', row));
-              return content;
-            }
-            // A valid endpoint response can temporarily contain no links
-            // while the source is updating or requires a session. Keep the
-            // last complete response instead of deleting working episodes.
-          }
+          return row is Map<String, dynamic> &&
+                  row['id']?.toString() == '$numeric' &&
+                  row['episodes'] is List
+              ? row
+              : null;
+        } catch (_) {
+          return null;
         }
       }
-    } catch (_) {
-      // A native client can still use the legacy page when REST is unavailable.
-    }
-    // Login-gated links are refreshed outside the account server by a trusted
-    // source-only CI job. Clients fetch metadata from GitHub and play directly
-    // from the source CDN; no source credentials are shipped in the app.
-    if (numeric != null) {
-      try {
-        final response = await _get(
-          Uri.parse('$_episodeCatalog/$numeric.json'),
-        );
-        if (response.statusCode != 200) throw const FormatException();
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        if (data['id']?.toString() != '$numeric') {
-          throw const FormatException();
+
+      // Fetch together so a slow public endpoint cannot delay starting the
+      // live read. Live episodes take priority even when public REST has links.
+      final details = await Future.wait([
+        readDetail(Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric')),
+        readDetail(Uri.parse('$episodeGateway/$numeric')),
+      ]);
+      final publicDetail = details[0];
+      final liveDetail = details[1];
+      final candidates = <Map<String, dynamic>>[
+        if (liveDetail != null)
+          {
+            ...?publicDetail,
+            'id': numeric,
+            'title': publicDetail?['title'] ?? summary.title,
+            'episodes': liveDetail['episodes'],
+          },
+        ?publicDetail,
+      ];
+      for (final row in candidates) {
+        try {
+          final content = contentFromRest(row, summary: summary);
+          if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
+            await _cacheRestDetail('$numeric', row);
+            return content;
+          }
+        } catch (_) {
+          // A malformed/empty refresh never erases a complete local detail.
         }
-        final row = <String, dynamic>{
-          ...?publicDetail,
-          'id': numeric,
-          'title': publicDetail?['title'] ?? summary.title,
-          'episodes': data['episodes'],
-        };
-        final content = contentFromRest(row, summary: summary);
-        if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
-          unawaited(_cacheRestDetail('$numeric', row));
-          return content;
-        }
-      } catch (_) {
-        // A failed refresh never replaces the last complete episode list.
       }
     }
     final previous = await cached();

@@ -25,7 +25,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test(
-    'gated source uses direct catalog snapshot without account server or credentials',
+    'gated source uses the live Worker without client credentials',
     () async {
       final calls = <Uri>[];
       final api = HentaiIranApi(
@@ -33,13 +33,14 @@ void main() {
           calls.add(request.url);
           expect(request.headers.containsKey('Authorization'), isFalse);
           expect(request.headers.containsKey('Cookie'), isFalse);
-          final snapshot = request.url.host == 'raw.githubusercontent.com';
+          final live =
+              request.url.host == 'mbnime-source-live.mbnpro.workers.dev';
           return http.Response(
             jsonEncode({
               'id': 42,
               'title': 'Example',
               'synopsis_fa': 'description',
-              'episodes': snapshot
+              'episodes': live
                   ? [
                       {
                         'episode': 1,
@@ -61,12 +62,9 @@ void main() {
       final content = await api.details(summary());
       expect(calls.map((u) => u.host), [
         'hentaiiran.com',
-        'raw.githubusercontent.com',
+        'mbnime-source-live.mbnpro.workers.dev',
       ]);
-      expect(
-        calls.last.path,
-        '/MBNpro-ir/MBNime-App/source-catalog/v1/titles/42.json',
-      );
+      expect(calls.last.path, '/v1/titles/42');
       expect(content.seasons.single.episodes, hasLength(2));
       expect(content.description, 'description');
     },
@@ -101,11 +99,133 @@ void main() {
         }),
       );
       final content = await api.details(summary());
-      expect(calls, ['/wp-json/hanime/v1/anime/42']);
+      expect(calls, ['/wp-json/hanime/v1/anime/42', '/v1/titles/42']);
       expect(content.seasons.single.episodes, hasLength(2));
       expect(
         content.seasons.single.episodes.first.fileUrl,
         'https://cdn.example/1.mp4',
+      );
+    },
+  );
+
+  test(
+    'live reads beat both stale public REST and the local episode cache',
+    () async {
+      var liveCount = 1;
+      var liveCalls = 0;
+      final api = HentaiIranApi(
+        client: MockClient((request) async {
+          final live =
+              request.url.host == 'mbnime-source-live.mbnpro.workers.dev';
+          if (live) liveCalls++;
+          return http.Response(
+            jsonEncode({
+              'id': 42,
+              'title': 'Example',
+              'episodes': List.generate(
+                live ? liveCount : 1,
+                (i) => {
+                  'episode': i + 1,
+                  'quality': '720p',
+                  'download_url': 'https://cdn.example/${i + 1}.mp4',
+                },
+              ),
+            }),
+            200,
+          );
+        }),
+      );
+      expect(
+        (await api.details(summary())).seasons.single.episodes,
+        hasLength(1),
+      );
+      liveCount = 2;
+      expect(
+        (await api.details(summary())).seasons.single.episodes,
+        hasLength(2),
+      );
+      expect(liveCalls, 2);
+    },
+  );
+
+  test(
+    'a Worker outage falls back to public REST without GitHub snapshots',
+    () async {
+      final api = HentaiIranApi(
+        client: MockClient((request) async {
+          expect(request.url.host, isNot('raw.githubusercontent.com'));
+          if (request.url.host == 'mbnime-source-live.mbnpro.workers.dev') {
+            return http.Response('{"error":"source_unavailable"}', 503);
+          }
+          return http.Response(
+            jsonEncode({
+              'id': 42,
+              'title': 'Example',
+              'episodes': [
+                {
+                  'episode': 1,
+                  'quality': '720p',
+                  'download_url': 'https://cdn.example/public.mp4',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      expect(
+        (await api.details(summary())).seasons.single.episodes.single.fileUrl,
+        'https://cdn.example/public.mp4',
+      );
+    },
+  );
+
+  test(
+    'a mismatched Worker title cannot overwrite a complete cached detail',
+    () async {
+      await HentaiIranApi(
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'id': 42,
+              'title': 'Example',
+              'episodes': [
+                {
+                  'episode': 1,
+                  'quality': '720p',
+                  'download_url': 'https://cdn.example/cached.mp4',
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      ).details(summary());
+      final api = HentaiIranApi(
+        client: MockClient(
+          (request) async => http.Response(
+            jsonEncode({
+              'id': request.url.host == 'mbnime-source-live.mbnpro.workers.dev'
+                  ? 43
+                  : 42,
+              'episodes':
+                  request.url.host == 'mbnime-source-live.mbnpro.workers.dev'
+                  ? [
+                      {
+                        'episode': 1,
+                        'quality': '720p',
+                        'download_url': 'https://cdn.example/wrong-title.mp4',
+                      },
+                    ]
+                  : [],
+            }),
+            200,
+          ),
+        ),
+      );
+      expect(
+        (await api.details(summary())).seasons.single.episodes.single.fileUrl,
+        'https://cdn.example/cached.mp4',
       );
     },
   );

@@ -1,0 +1,16 @@
+{
+  "name": "mbnime-source-live",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "htmlparser2": "12.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}
