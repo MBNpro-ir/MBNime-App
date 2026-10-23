@@ -41,12 +41,15 @@ Future<void> load(int id) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  globalContext.setProperty('mbnProbeStage'.toJS, 'preferences'.toJS);
   await (await SharedPreferences.getInstance()).setBool(
     'player_gestures_introduced',
     true,
   );
   MediaKit.ensureInitialized();
+  globalContext.setProperty('mbnProbeStage'.toJS, 'media'.toJS);
   DevicePerformance.configureWeb();
+  globalContext.setProperty('mbnProbeStage'.toJS, 'hooks'.toJS);
   globalContext.setProperty(
     'mbnSourceLoad'.toJS,
     ((JSNumber id) {
@@ -67,6 +70,7 @@ Future<void> main() async {
     (() => jsonEncode({
       'state': state.value,
       'episodes': content?.seasons.expand((s) => s.episodes).length ?? 0,
+      'media': selected?.fileUrl,
     }).toJS).toJS,
   );
   runApp(
