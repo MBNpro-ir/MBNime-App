@@ -28,3 +28,9 @@ It uses the production source adapter and player and contains no credentials.
 The browser test checks playback, duration, seeking and pause/resume at all
 sample qualities in Chrome and iPhone-sized WebKit. This does not substitute
 for physical-device testing.
+
+Windows WebKit's remote-media transport may reject the CDN even when the same
+unchanged MP4 plays from loopback. `MBN_WEBKIT_RELAY=1` enables an explicitly
+labelled **test-only** loopback relay in the QA target. This verifies production
+player decoding and controls with real source bytes, not direct Safari network
+access. The release entry point has no relay hook or test configuration.

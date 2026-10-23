@@ -16,6 +16,7 @@ import 'package:mbnime/services/device_performance.dart';
 final state = ValueNotifier('idle');
 AnimeContent? content;
 AnimeEpisode? selected;
+bool testRelay = false;
 
 Future<void> load(int id) async {
   try {
@@ -57,11 +58,25 @@ Future<void> main() async {
     }).toJS,
   );
   globalContext.setProperty(
+    'mbnSourceSetRelay'.toJS,
+    ((JSBoolean enabled) => testRelay = enabled.toDart).toJS,
+  );
+  globalContext.setProperty(
     'mbnSourceOpen'.toJS,
     ((JSString quality) {
       selected = content!.seasons
           .expand((s) => s.episodes)
           .firstWhere((e) => e.name.contains(quality.toDart));
+      if (testRelay) {
+        selected = AnimeEpisode(
+          id: selected!.id,
+          name: selected!.name,
+          fileUrl: Uri.base
+              .resolve('/source-media/${quality.toDart}.mp4')
+              .toString(),
+          fileType: 'mp4',
+        );
+      }
       state.value = 'playing-${quality.toDart}';
     }).toJS,
   );

@@ -36,6 +36,8 @@ const assert=require('node:assert/strict');
    assert.equal(await page.evaluate(()=>JSON.parse(mbnSourceState()).state),'loaded','source metadata must load');
    assert((await page.evaluate(()=>JSON.parse(mbnSourceState()).episodes))>=3);
    console.log(engine,'source loaded');
+   const relay=engine==='webkit'&&process.env.MBN_WEBKIT_RELAY==='1';
+   if(relay) await page.evaluate(()=>mbnSourceSetRelay(true));
    for(const quality of ['480p','720p','1080p']) {
     await page.evaluate(q=>mbnSourceOpen(q),quality);
     try {await page.waitForFunction(()=>qaSelectedVideo()?.readyState>=1,null,{timeout:60000});}
@@ -54,7 +56,7 @@ const assert=require('node:assert/strict');
     await page.waitForTimeout(500);
     await page.evaluate(()=>qaSelectedVideo().play());
     await page.waitForFunction(()=>qaSelectedVideo()?.currentTime>304,null,{timeout:15000});
-    console.log(JSON.stringify({engine,quality,...state,play:true,seek:true,pauseResume:true}));
+    console.log(JSON.stringify({engine,quality,transport:relay?'loopback-test-relay':'direct',...state,play:true,seek:true,pauseResume:true}));
    }
    await context.close();
   } finally {await browser.close();}
