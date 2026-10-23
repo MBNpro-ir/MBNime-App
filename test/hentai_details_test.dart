@@ -1,3 +1,4 @@
+import 'package:mbnime/services/adult_access.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,16 +23,27 @@ AnimeContent summary() => const AnimeContent(
   detailUrl: 'https://hentaiiran.com/anime/example/',
 );
 void main() {
+  setUp(() {
+    AdultAccess.instance.bind('adult-test', 'https://account.test');
+    AdultAccess.instance.observe('adult-test', true);
+  });
+  tearDown(() => AdultAccess.instance.bind(null, ''));
+
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test(
-    'gated source uses the live Worker without client credentials',
+    'gated source sends the account token only to the live Worker',
     () async {
       final calls = <Uri>[];
       final api = HentaiIranApi(
         client: MockClient((request) async {
           calls.add(request.url);
-          expect(request.headers.containsKey('Authorization'), isFalse);
+          expect(
+            request.headers['Authorization'],
+            request.url.host == 'mbnime-source-live.mbnpro.workers.dev'
+                ? 'Bearer adult-test'
+                : isNull,
+          );
           expect(request.headers.containsKey('Cookie'), isFalse);
           final live =
               request.url.host == 'mbnime-source-live.mbnpro.workers.dev';

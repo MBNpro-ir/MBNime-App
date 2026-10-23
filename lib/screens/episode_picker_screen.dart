@@ -1,3 +1,4 @@
+import '../widgets/adult_access_gate.dart';
 import '../services/mbn_sync.dart';
 import '../widgets/responsive_web_layout.dart';
 import 'dart:async';
@@ -42,7 +43,10 @@ class EpisodePickerScreen extends StatelessWidget {
   final bool deferInitialContent;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AdultAccessGate(restricted: content.isHentai, builder: _buildAuthorized);
+
+  Widget _buildAuthorized(BuildContext context) {
     final body = _EpisodePickerBody(
       content: content,
       onPlay: onPlay,
@@ -99,7 +103,6 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
     super.initState();
     _catalog = EpisodeCatalog.from(widget.content);
     WatchProgressStore.changes.addListener(_onProgressChanged);
-    MbnSync.instance.changes.addListener(_onSyncChanged);
     if (_catalog.seasons.isEmpty) {
       // Guard the public empty-state contract: quality/season lookup below
       // indexes seasons[0] and would crash before build() shows its empty UI.
@@ -131,7 +134,6 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
   @override
   void dispose() {
     WatchProgressStore.changes.removeListener(_onProgressChanged);
-    MbnSync.instance.changes.removeListener(_onSyncChanged);
     _initialContentTimer?.cancel();
     super.dispose();
   }
@@ -140,17 +142,11 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
     if (mounted) unawaited(_loadSaved());
   }
 
-  void _onSyncChanged() {
-    if (mounted && MbnSync.instance.changedCategories.contains('progress')) {
-      unawaited(_loadSaved());
-    }
-  }
-
   Future<void> _refreshFromServer() async {
-    try {
-      await MbnSync.instance.syncProgressIfStale();
-    } catch (_) {}
-    if (mounted) await _loadSaved();
+    // Cached badges and resume positions must be usable before any network I/O.
+    await _loadSaved();
+    if (!mounted) return;
+    unawaited(MbnSync.instance.syncProgressIfStale());
   }
 
   Future<void> _loadSaved() async {
@@ -171,12 +167,19 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
 
   Future<void> _loadSavedNow() async {
     final entries = <String, SavedWatchProgress>{};
+    final prefs = await SharedPreferences.getInstance();
+    var scanned = 0;
     for (final group in _catalog.episodes) {
+      if (++scanned % 64 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
+      }
       // Canonical group record is authoritative once present; legacy
       // per-variant positions only seed it on first migration and are then
       // retired so a stale 20-minute legacy value can never overwrite a
       // newer 2-minute canonical rewind.
-      final canonical = await _progress.load(
+      final canonical = _progress.readFrom(
+        prefs,
         contentId: widget.content.id,
         episodeId: group.id,
       );
@@ -184,7 +187,8 @@ class _EpisodePickerScreenState extends State<_EpisodePickerBody> {
       var legacyWatched = false;
       for (final variant in group.variants) {
         if (variant.episode.id == group.id) continue;
-        final legacy = await _progress.load(
+        final legacy = _progress.readFrom(
+          prefs,
           contentId: widget.content.id,
           episodeId: variant.episode.id,
         );

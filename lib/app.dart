@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'services/adult_access.dart';
 import 'package:flutter/services.dart';
 import 'services/device_performance.dart';
 import 'services/cross_app_auth.dart';
@@ -53,6 +54,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
     _forceLogout,
     app: 'anime',
     onSync: () => MbnSync.instance.syncAll(),
+    onAdultAccess: AdultAccess.instance.observe,
   );
 
   @override
@@ -76,6 +78,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    AdultAccess.instance.bind(null, '');
     _sessionWatch.dispose();
     _accountTimer?.cancel();
     _syncTimer?.cancel();
@@ -86,6 +89,8 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (!AdultAccess.instance.allowed) AdultAccess.instance.deny();
+      unawaited(AdultAccess.instance.refresh());
       _checkAccount();
       UpdatePresentation.checkNow();
       unawaited(MbnSync.instance.syncAll());
@@ -298,6 +303,7 @@ class _MbnimeAppState extends State<MbnimeApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    AdultAccess.instance.bind(_session.server.token, _session.server.baseUrl);
     // WebKit can evict/reload a PWA while an SSE connection is open. The
     // bounded foreground account poll remains active on Apple mobile web.
     _sessionWatch.track(

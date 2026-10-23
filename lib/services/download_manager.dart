@@ -1,3 +1,5 @@
+import 'playback_activity.dart';
+import 'adult_access.dart';
 import 'dart:async';
 import 'dart:convert';
 import '../core/app_platform.dart';
@@ -16,7 +18,67 @@ import 'hentai_network.dart';
 import 'hentai_relay.dart';
 
 class DownloadManager extends ChangeNotifier {
-  DownloadManager._();
+  DownloadManager._() {
+    PlaybackActivity.changes.addListener(_playbackChanged);
+    AdultAccess.instance.changes.addListener(_adultChanged);
+  }
+
+  bool isAdult(Task task) => _taskMetadata(task)['isHentai'] == true;
+  bool canAccess(Task task) => !isAdult(task) || AdultAccess.instance.allowed;
+  void _adultChanged() {
+    if (!AdultAccess.instance.allowed && _downloader != null) {
+      unawaited(_stopAdultDownloads());
+    }
+    notifyListeners();
+  }
+
+  Future<void> _stopAdultDownloads() async {
+    for (final record in records.values.toList()) {
+      if (isAdult(record.task) &&
+          [
+            TaskStatus.running,
+            TaskStatus.enqueued,
+            TaskStatus.waitingToRetry,
+          ].contains(record.status)) {
+        await pause(record.task);
+      }
+    }
+  }
+
+  final Set<String> _playbackPaused = {};
+  Future<void> _playbackQueue = Future.value();
+  void _playbackChanged() {
+    _playbackQueue = _playbackQueue
+        .then((_) async {
+          if (_downloader == null) return;
+          if (PlaybackActivity.active) {
+            for (final record in records.values.toList()) {
+              if (!PlaybackActivity.active) break;
+              if ([
+                TaskStatus.running,
+                TaskStatus.enqueued,
+                TaskStatus.waitingToRetry,
+              ].contains(record.status)) {
+                if (await pause(record.task)) {
+                  _playbackPaused.add(record.taskId);
+                }
+              }
+            }
+          } else {
+            final paused = _playbackPaused.toList();
+            _playbackPaused.clear();
+            if (allPaused) return;
+            for (final id in paused) {
+              final record = records[id];
+              if (record != null && !PlaybackActivity.active) {
+                await resume(record.task);
+              }
+            }
+          }
+        })
+        .catchError((Object _) {});
+  }
+
   static final instance = DownloadManager._();
   static const group = 'mbnime-media';
   FileDownloader? _downloader;
@@ -37,9 +99,9 @@ class DownloadManager extends ChangeNotifier {
   /// canceled, and filters/cleanup/resume must use this too.
   TaskStatus effectiveStatus(TaskRecord record) =>
       heldForPause.contains(record.task.taskId) &&
-              record.status == TaskStatus.canceled
-          ? TaskStatus.paused
-          : record.status;
+          record.status == TaskStatus.canceled
+      ? TaskStatus.paused
+      : record.status;
 
   Future<void> _loadHeld() async {
     try {
@@ -103,9 +165,7 @@ class DownloadManager extends ChangeNotifier {
   static Map<String, dynamic> _taskMetadata(Task task) {
     try {
       if (task is DownloadTask) {
-        return Map<String, dynamic>.from(
-          jsonDecode(task.metaData) as Map,
-        );
+        return Map<String, dynamic>.from(jsonDecode(task.metaData) as Map);
       }
     } catch (_) {}
     return const {};
@@ -166,12 +226,14 @@ class DownloadManager extends ChangeNotifier {
     for (final record in await downloader.database.allRecords(group: group)) {
       records[record.taskId] = record;
     }
+    if (!AdultAccess.instance.allowed) await _stopAdultDownloads();
     await _loadHeld();
     // Drop hold markers for tasks that no longer exist (e.g. DB cleaned
     // externally) so they can never block future deduplication forever.
     heldForPause.retainWhere(records.containsKey);
     await _saveHeld();
     await downloader.start(autoCleanDatabase: false);
+    if (PlaybackActivity.active) _playbackChanged();
     // Apply the stored Wi-Fi policy to already-enqueued tasks as well;
     // on desktop this is a documented no-op (see settings()).
     try {
@@ -261,6 +323,7 @@ class DownloadManager extends ChangeNotifier {
     AnimeSeason season,
     List<AnimeEpisode> episodes,
   ) async {
+    if (content.isHentai) AdultAccess.instance.requireAllowed();
     await initialize();
     if (!await DeviceBridge.storageGranted()) {
       throw const FileSystemException(
@@ -309,16 +372,11 @@ class DownloadManager extends ChangeNotifier {
 
     final activeUrls = <String>{
       for (final record in records.values)
-        if (![
-          TaskStatus.failed,
-          TaskStatus.notFound,
-        ].contains(record.status) ||
-            heldForPause.contains(record.task.taskId))
-          ...[
-            if (record.task is DownloadTask)
-              (record.task as DownloadTask).url,
-            if (originOf(record).isNotEmpty) originOf(record),
-          ],
+        if (![TaskStatus.failed, TaskStatus.notFound].contains(record.status) ||
+            heldForPause.contains(record.task.taskId)) ...[
+          if (record.task is DownloadTask) (record.task as DownloadTask).url,
+          if (originOf(record).isNotEmpty) originOf(record),
+        ],
     };
     // +18 batch routing decision is probed once (same host family) so a
     // 10-file bulk does not race the probe 10 times.
@@ -389,8 +447,7 @@ class DownloadManager extends ChangeNotifier {
               .where((r) => r.task is DownloadTask)
               .firstWhere((r) => originOf(r) == episode.fileUrl);
           if (record.expectedFileSize >= 0) {
-            blocksRetry =
-                await destination.length() == record.expectedFileSize;
+            blocksRetry = await destination.length() == record.expectedFileSize;
           }
         } catch (_) {}
         if (blocksRetry) continue;
@@ -430,6 +487,7 @@ class DownloadManager extends ChangeNotifier {
           if (routed.$2 != null) 'originUrl': routed.$2,
         }),
       );
+      if (content.isHentai) AdultAccess.instance.requireAllowed();
       records[task.taskId] = TaskRecord(task, TaskStatus.enqueued, 0, -1);
       if (await downloader.enqueue(task)) {
         activeUrls.add(episode.fileUrl);
@@ -523,6 +581,8 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<bool> resume(Task task) async {
+    if (PlaybackActivity.active) return false;
+    if (!canAccess(task)) return false;
     if (heldForPause.remove(task.taskId)) {
       // ادامهٔ hold گروهی/تکی: ورود دوباره از مسیر صف هلدینگ تا
       // سقف دانلود هم‌زمان کاربر رعایت شود. لینک relay منقضی نوسازی
@@ -531,7 +591,7 @@ class DownloadManager extends ChangeNotifier {
         final fresh = task is DownloadTask
             ? await _freshDownloadTask(task)
             : task;
-        final ok = await downloader.enqueue(fresh);
+        final ok = (canAccess(fresh) && await downloader.enqueue(fresh));
         await _saveHeld();
         notifyListeners();
         return ok;
@@ -540,9 +600,7 @@ class DownloadManager extends ChangeNotifier {
         return false;
       }
     }
-    return task is DownloadTask
-        ? downloader.resume(task)
-        : Future.value(false);
+    return task is DownloadTask ? downloader.resume(task) : Future.value(false);
   }
 
   /// توقف واقعی همهٔ اعضای فعال یک باندل (در حال اجرا + در صف).
@@ -564,9 +622,7 @@ class DownloadManager extends ChangeNotifier {
     // ۱) در حال اجراها: pause واقعی (resume-data حفظ می‌شود).
     for (final task in running) {
       try {
-        ok =
-            await downloader.pause(task as DownloadTask) &&
-            ok;
+        ok = await downloader.pause(task as DownloadTask) && ok;
       } catch (_) {
         ok = false;
       }
@@ -632,7 +688,7 @@ class DownloadManager extends ChangeNotifier {
         final fresh = task is DownloadTask
             ? await _freshDownloadTask(task)
             : task;
-        ok = await downloader.enqueue(fresh) && ok;
+        ok = (canAccess(fresh) && await downloader.enqueue(fresh)) && ok;
       } catch (_) {
         ok = false;
       }
@@ -643,12 +699,15 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<bool> cancel(Task task) async {
+    _playbackPaused.remove(task.taskId);
     heldForPause.remove(task.taskId);
     await _saveHeld();
     return downloader.cancelTaskWithId(task.taskId);
   }
 
   Future<bool> retry(Task task) async {
+    if (PlaybackActivity.active) return false;
+    if (!canAccess(task)) return false;
     heldForPause.remove(task.taskId);
     await _saveHeld();
     final path = await task.filePath();
@@ -668,9 +727,7 @@ class DownloadManager extends ChangeNotifier {
     }
     if (task is DownloadTask) {
       final fresh = await _freshDownloadTask(task);
-      return downloader.enqueue(
-        fresh.copyWith(retriesRemaining: task.retries),
-      );
+      return downloader.enqueue(fresh.copyWith(retriesRemaining: task.retries));
     }
     return downloader.enqueue(task.copyWith(retriesRemaining: task.retries));
   }

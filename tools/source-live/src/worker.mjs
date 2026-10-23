@@ -17,6 +17,7 @@ export default {
     if (origin && !allowed.includes(origin)) return json({ error: 'origin_denied' }, 403);
     const cors = response => {
       const headers = new Headers(response.headers);
+      headers.set('Cache-Control', 'no-store');
       headers.set('Vary', 'Origin');
       if (origin) headers.set('Access-Control-Allow-Origin', origin);
       return new Response(response.body, { status: response.status, headers });
@@ -24,10 +25,26 @@ export default {
     if (!titleId(new URL(request.url).pathname)) return cors(json({ error: 'not_found' }, 404));
     if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204, headers: {
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Accept',
+      'Access-Control-Allow-Headers': 'Accept, Authorization',
       'Access-Control-Max-Age': '600',
     } }));
     if (request.method !== 'GET') return cors(json({ error: 'method_not_allowed' }, 405));
+    const authorization = request.headers.get('Authorization') ?? '';
+    if (!/^Bearer [^\s]{1,8192}$/.test(authorization)) return cors(json({ error: 'unauthorized' }, 401));
+    try {
+      // Every request checks the current account. Never cache a positive grant
+      // or follow redirects carrying a session credential.
+      const result = await fetch('https://login.a.mbnpro.ir/api/anime/adult-access', {
+        headers: { Authorization: authorization, 'Cache-Control': 'no-store' },
+        redirect: 'manual', signal: AbortSignal.timeout(5000),
+      });
+      if (result.status === 401 || result.status === 403) return cors(json({ error: 'unauthorized' }, 401));
+      if (result.status !== 200) return cors(json({ error: 'access_unavailable' }, 503));
+      const permission = await result.json();
+      if (permission?.allowed !== true) return cors(json({ error: 'access_denied' }, 403));
+    } catch (_) {
+      return cors(json({ error: 'access_unavailable' }, 503));
+    }
     try {
       // One source session; cookies/passwords never leave this object. Reads
       // are coalesced only while in flight, never served from a timed snapshot.

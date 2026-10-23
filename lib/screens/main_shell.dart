@@ -1,3 +1,6 @@
+import '../services/playback_activity.dart';
+import '../widgets/adult_access_gate.dart';
+import '../services/adult_access.dart';
 import '../widgets/account_profile_panel.dart';
 import '../services/device_performance.dart';
 import 'package:flutter/foundation.dart';
@@ -175,6 +178,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _open(AnimeContent item, String tag) async {
+    if (item.isHentai && !AdultAccess.instance.allowed) return;
     setState(() {
       if (item.isHentai) {
         _hentaiHistory.removeWhere((old) => old.id == item.id);
@@ -267,6 +271,7 @@ class _MainShellState extends State<MainShell> {
 
   void _openSearch() => _push(_SearchPage(api: widget.api, onOpen: _open));
   Future<void> _openHentai() async {
+    if (!AdultAccess.instance.allowed) return;
     final prefs = await SharedPreferences.getInstance();
     if (!(prefs.getBool('hentai_age_confirmed') ?? false)) {
       if (!mounted) return;
@@ -325,7 +330,7 @@ class _MainShellState extends State<MainShell> {
       );
       await prefs.setBool('hentai_vpn_warned', true);
     }
-    if (mounted) {
+    if (mounted && AdultAccess.instance.allowed) {
       _push(
         HentaiSectionPage(
           api: _hentaiApi,
@@ -363,41 +368,45 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _openHentaiHistory() => _push(
-    _SavedPage(
-      title: 'بازدیدشده‌های +۱۸',
-      emptyText: 'هنوز عنوانی از بخش +۱۸ باز نکرده‌ای',
-      emptyIcon: Icons.history_rounded,
-      itemsProvider: () => _hentaiHistory.toList(),
-      onOpen: _open,
-      clearTooltip: 'پاک کردن تاریخچه',
-      clearTitle: 'پاک کردن تاریخچه؟',
-      clearMessage: 'فهرست عنوان‌های بازدیدشده پاک می‌شود.',
-      onClear: () async {
-        await _store.clearHentaiHistory();
-        if (mounted) {
-          setState(() {
-            _hentaiHistory.clear();
-          });
-        }
-      },
+    AdultAccessGate(
+      builder: (_) => _SavedPage(
+        title: 'بازدیدشده‌های +۱۸',
+        emptyText: 'هنوز عنوانی از بخش +۱۸ باز نکرده‌ای',
+        emptyIcon: Icons.history_rounded,
+        itemsProvider: () => _hentaiHistory.toList(),
+        onOpen: _open,
+        clearTooltip: 'پاک کردن تاریخچه',
+        clearTitle: 'پاک کردن تاریخچه؟',
+        clearMessage: 'فهرست عنوان‌های بازدیدشده پاک می‌شود.',
+        onClear: () async {
+          await _store.clearHentaiHistory();
+          if (mounted) {
+            setState(() {
+              _hentaiHistory.clear();
+            });
+          }
+        },
+      ),
     ),
   );
 
   void _openHentaiFavorites() => _push(
-    _SavedPage(
-      title: 'علاقه‌مندی‌های +۱۸',
-      emptyText: 'هنوز چیزی به علاقه‌مندی‌های +۱۸ اضافه نکرده‌ای',
-      emptyIcon: Icons.favorite_outline_rounded,
-      itemsProvider: () => _hentaiFavorites.values.toList(),
-      onOpen: _open,
-      clearTooltip: 'پاک کردن علاقه‌مندی‌ها',
-      clearTitle: 'پاک کردن علاقه‌مندی‌ها؟',
-      clearMessage: 'همهٔ علاقه‌مندی‌های +۱۸ پاک می‌شود.',
-      onClear: () async {
-        _hentaiFavorites.clear();
-        await _store.saveHentaiFavorites([]);
-        if (mounted) setState(() {});
-      },
+    AdultAccessGate(
+      builder: (_) => _SavedPage(
+        title: 'علاقه‌مندی‌های +۱۸',
+        emptyText: 'هنوز چیزی به علاقه‌مندی‌های +۱۸ اضافه نکرده‌ای',
+        emptyIcon: Icons.favorite_outline_rounded,
+        itemsProvider: () => _hentaiFavorites.values.toList(),
+        onOpen: _open,
+        clearTooltip: 'پاک کردن علاقه‌مندی‌ها',
+        clearTitle: 'پاک کردن علاقه‌مندی‌ها؟',
+        clearMessage: 'همهٔ علاقه‌مندی‌های +۱۸ پاک می‌شود.',
+        onClear: () async {
+          _hentaiFavorites.clear();
+          await _store.saveHentaiFavorites([]);
+          if (mounted) setState(() {});
+        },
+      ),
     ),
   );
 
@@ -445,7 +454,14 @@ class _MainShellState extends State<MainShell> {
   void _openPlaylists() => _push(PlaylistsPage(onOpen: _open));
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: PlaybackActivity.changes,
+    child: _buildShell(context),
+    builder: (context, active, child) =>
+        TickerMode(enabled: !active, child: child!),
+  );
+
+  Widget _buildShell(BuildContext context) {
     final pages = [
       _HomePage(
         key: _homeKey,
@@ -920,7 +936,12 @@ class _MenuDrawer extends StatelessWidget {
   final VoidCallback hentai;
 
   @override
-  Widget build(BuildContext context) => Drawer(
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: AdultAccess.instance.changes,
+    builder: (context, _) => _buildDrawer(context),
+  );
+
+  Widget _buildDrawer(BuildContext context) => Drawer(
     width: MediaQuery.sizeOf(context).width.clamp(290, 360).toDouble(),
     backgroundColor: AnimeColors.surface,
     child: SafeArea(
@@ -1026,25 +1047,26 @@ class _MenuDrawer extends StatelessWidget {
               onTap: () => AppLinks.openSibling(context, siblingMovie),
             ),
           ),
-          _section('بخش ویژه', [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xFF7F1D1D).withValues(alpha: .32),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFFEF4444).withValues(alpha: .55),
+          if (AdultAccess.instance.allowed)
+            _section('بخش ویژه', [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7F1D1D).withValues(alpha: .32),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFFEF4444).withValues(alpha: .55),
+                  ),
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: _tile(
+                    Icons.explicit_rounded,
+                    'هنتای ایران  •  +۱۸',
+                    hentai,
+                  ),
                 ),
               ),
-              child: Material(
-                type: MaterialType.transparency,
-                child: _tile(
-                  Icons.explicit_rounded,
-                  'هنتای ایران  •  +۱۸',
-                  hentai,
-                ),
-              ),
-            ),
-          ]),
+            ]),
           _section('ابزارهای برنامه', [
             if (!kIsWeb)
               _tile(
@@ -1283,17 +1305,15 @@ class _HomePageState extends State<_HomePage> {
     }
   }
 
-  Future<void> _reloadContinueWatch() => refreshContinueWatch();
+  Future<void> _reloadContinueWatch() async {
+    final last = await _lastWatchStore.load();
+    if (mounted) setState(() => _lastWatch = last);
+  }
 
   /// Reloads the «ادامه تماشا» shelf (called on tab select + after resume).
   Future<void> refreshContinueWatch() async {
-    // Pull the newest server progress first (debounced inside sync), so a
-    // phone that watched episode 3 updates a Windows shelf stuck on episode 1.
-    try {
-      await MbnSync.instance.syncProgressIfStale();
-    } catch (_) {}
-    final last = await _lastWatchStore.load();
-    if (mounted) setState(() => _lastWatch = last);
+    await _reloadContinueWatch();
+    if (mounted) unawaited(MbnSync.instance.syncProgressIfStale());
   }
 
   void _openSectionAll(HomeSection section) {
@@ -1603,6 +1623,7 @@ class _FeaturedState extends State<_Featured> {
   @override
   void initState() {
     super.initState();
+    PlaybackActivity.changes.addListener(_restartAutoPlay);
     _controller = PageController(viewportFraction: .9);
     _restartAutoPlay();
   }
@@ -1616,14 +1637,22 @@ class _FeaturedState extends State<_Featured> {
 
   @override
   void dispose() {
+    PlaybackActivity.changes.removeListener(_restartAutoPlay);
     _autoPlayTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _restartAutoPlay();
+  }
+
   void _restartAutoPlay() {
     _autoPlayTimer?.cancel();
-    if (_count < 2 ||
+    if (PlaybackActivity.active ||
+        _count < 2 ||
         isAndroidTv ||
         DevicePerformance.lightweight ||
         AccessibilityService.instance.reduceMotion) {

@@ -4,6 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'network_gate.dart';
 
+/// Browser-native files can keep playing from their HTTPS source when the
+/// user continues without the account server. Container/codec conversion and
+/// extracted tracks still require the bridge.
+bool canPlayDirectWhenOffline(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return false;
+  return RegExp(r'\.(mp4|m4v)$', caseSensitive: false).hasMatch(uri.path);
+}
+
 /// Browser traffic stays on HTTPS and uses the account server's catalog bridge.
 abstract final class WebGateway {
   static String? _token;
@@ -77,6 +86,12 @@ abstract final class WebGateway {
     bool Function()? active,
   }) async {
     if (!kIsWeb || !url.startsWith('http')) return url;
+    if (OfflineMode.active && !externalAudio && canPlayDirectWhenOffline(url)) {
+      if (token == null || active?.call() == false) {
+        throw StateError('جلسه پایان یافت.');
+      }
+      return url;
+    }
     final initialGeneration = _generation;
     final response = await _request('/api/web/media-ticket', {
       'url': url,
@@ -136,17 +151,28 @@ abstract final class WebGateway {
 }
 
 class WebCatalogClient extends http.BaseClient {
-  final http.Client _inner = http.Client();
+  WebCatalogClient({http.Client? client, Uri? endpoint})
+    : _inner = client ?? http.Client(),
+      _endpoint =
+          endpoint ??
+          (kIsWeb
+              ? WebGateway.endpoint('/api/web/proxy')
+              : Uri.parse('https://login.m.mbnpro.ir/api/web/proxy'));
+  final http.Client _inner;
+  final Uri _endpoint;
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final body = await request.finalize().toBytes();
     final generation = WebGateway._generation;
     final credential = WebGateway.token;
+    if (credential == null) {
+      throw http.ClientException('نشست شما پایان یافته است.');
+    }
     final response = await readWithRetry(
       () => sendBuffered(
         _inner,
         'POST',
-        WebGateway.endpoint('/api/web/proxy'),
+        _endpoint,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $credential',

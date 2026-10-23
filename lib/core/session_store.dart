@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/animeon_api.dart';
 import '../services/mbn_server.dart';
+import '../services/adult_access.dart';
 
 /// Server-backed login session (https://login.a.mbnpro.ir).
 ///
@@ -309,6 +310,7 @@ class SessionStore {
   /// so a failed delete can never silently restore the previous account on
   /// the next launch.
   Future<void> logout() async {
+    AdultAccess.instance.bind(null, '');
     Object? failure;
     try {
       final prefs = await SharedPreferences.getInstance();

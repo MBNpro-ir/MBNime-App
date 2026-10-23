@@ -147,13 +147,14 @@ test('source errors are sanitized without credentials, HTML or cookie details', 
   assert.equal(result.headers.get('Cache-Control'), 'no-store');
 });
 
-test('public worker supports approved web/native requests and never proxies arbitrary paths or methods', async () => {
+test('authorized worker supports approved web/native requests and never proxies arbitrary paths or methods', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ allowed: true }));
   let calls = 0;
   const env = { ALLOWED_ORIGINS: 'https://anime.mbnpro.ir', SOURCE_SESSION: {
     idFromName: () => 'one', get: () => ({ fetch: async () => { calls++; return Response.json({ id: 42, episodes: [] }); } }),
   } };
   const webRequest = (origin, method = 'GET', path = '/v1/titles/42') => new Request(`https://gateway.example${path}`, {
-    method, headers: origin ? { Origin: origin } : {},
+    method, headers: { Authorization: 'Bearer account-token', ...(origin ? { Origin: origin } : {}) },
   });
   const web = await worker.fetch(webRequest('https://anime.mbnpro.ir'), env);
   assert.equal(web.status, 200);
@@ -166,4 +167,29 @@ test('public worker supports approved web/native requests and never proxies arbi
     assert.equal((await worker.fetch(webRequest(null, 'GET', path), env)).status, 404);
   }
   assert.equal(calls, 2);
+});
+
+test('permission defaults off, is checked on every read, and fails closed before source access', async (t) => {
+  let allowed = false, upstream = 0, checks = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    checks++;
+    assert.equal(url, 'https://login.a.mbnpro.ir/api/anime/adult-access');
+    assert.equal(options.headers.Authorization, 'Bearer account-token');
+    assert.equal(options.redirect, 'manual');
+    if (allowed === 'offline') throw new Error('network down');
+    if (allowed === 'revoked') return new Response('', { status: 401 });
+    return Response.json({ allowed });
+  });
+  const env = { SOURCE_SESSION: { idFromName: () => 'one', get: () => ({ fetch: async () => { upstream++; return Response.json({ episodes: [] }); } }) } };
+  const request = (token = 'account-token') => new Request('https://gateway.example/v1/titles/42', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  assert.equal((await worker.fetch(request(null), env)).status, 401);
+  assert.equal(checks, 0);
+  for (const [value, status] of [[false, 403], [true, 200], [false, 403], ['true', 403], ['offline', 503], ['revoked', 401]]) {
+    allowed = value;
+    const result = await worker.fetch(request(), env);
+    assert.equal(result.status, status);
+    assert.equal(result.headers.get('Cache-Control'), 'no-store');
+  }
+  assert.equal(checks, 6);
+  assert.equal(upstream, 1);
 });

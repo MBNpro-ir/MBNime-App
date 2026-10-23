@@ -6,6 +6,7 @@ import 'web_gateway.dart';
 import 'cross_app_auth.dart';
 import 'network_gate.dart';
 import 'dart:convert';
+import 'account_json.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -52,8 +53,7 @@ class MbnServerClient {
   Future<Map<String, dynamic>> _decode(http.Response response) async {
     Map<String, dynamic> data;
     try {
-      data =
-          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      data = await decodeAccountJson(response.bodyBytes);
     } catch (_) {
       throw const MbnServerException('پاسخ سرور نامعتبر است.');
     }
@@ -92,7 +92,11 @@ class MbnServerClient {
     final generation = _generation;
     final uri = _uri(path, query);
     final headers = _headers(credential, json: body != null);
-    final encoded = body == null ? null : jsonEncode(body);
+    final encoded = body == null
+        ? null
+        : path == '/api/sync'
+        ? await encodeAccountJson(body)
+        : jsonEncode(body);
     try {
       final response = await _requests.run<http.Response>(
         '$method $uri $generation',

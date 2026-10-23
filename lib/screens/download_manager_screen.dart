@@ -1,3 +1,4 @@
+import '../services/adult_access.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
@@ -38,6 +39,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
   }
 
   Future<void> _play(Task task) async {
+    if (!manager.canAccess(task)) return;
     final path = await task.filePath();
     if (!mounted) return;
     if (!await File(path).exists()) {
@@ -52,7 +54,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
     }
     if (!mounted) return;
     final choice = await showDownloadPlaybackSheet(context);
-    if (choice == null || !mounted) return;
+    if (choice == null || !mounted || !manager.canAccess(task)) return;
     if (choice == 'internal') {
       Map<String, dynamic> metadata = {};
       try {
@@ -76,7 +78,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
         );
         if (saved != null && saved.isResumable) startAt = saved.position;
       } catch (_) {}
-      if (!mounted) return;
+      if (!mounted || !manager.canAccess(task)) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => PlayerScreen(
@@ -90,6 +92,7 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
               kind: ContentKind.movie,
               colors: const [],
               genres: const [],
+              isHentai: metadata['isHentai'] == true,
             ),
             episode: AnimeEpisode(
               id: episodeId,
@@ -175,10 +178,14 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
             ],
           ),
           body: ListenableBuilder(
-            listenable: manager,
+            listenable: Listenable.merge([
+              manager,
+              AdultAccess.instance.changes,
+            ]),
             builder: (context, _) {
               final records =
                   manager.records.values
+                      .where((r) => manager.canAccess(r.task))
                       .where(
                         (r) =>
                             r.task.displayName.toLowerCase().contains(
@@ -195,7 +202,9 @@ class _DownloadManagerScreenState extends State<DownloadManagerScreen> {
                       (a, b) =>
                           b.task.creationTime.compareTo(a.task.creationTime),
                     );
-              final allRecords = manager.records.values.toList(growable: false);
+              final allRecords = manager.records.values
+                  .where((r) => manager.canAccess(r.task))
+                  .toList(growable: false);
               final bundles = groupDownloadRecords(records);
               final fileCount = bundles.fold<int>(
                 0,

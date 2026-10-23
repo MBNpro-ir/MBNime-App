@@ -1,3 +1,4 @@
+import 'package:mbnime/services/adult_access.dart';
 import 'package:mbnime/core/episode_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +100,12 @@ const trailerContent = AnimeContent(
 );
 
 void main() {
+  setUp(() {
+    AdultAccess.instance.bind('adult-test', 'https://account.test');
+    AdultAccess.instance.observe('adult-test', true);
+  });
+  tearDown(() => AdultAccess.instance.bind(null, ''));
+
   testWidgets(
     'hentai picker retains red theme across its separate route and sheets',
     (tester) async {

@@ -1,3 +1,5 @@
+import '../services/playback_activity.dart';
+import '../widgets/adult_access_gate.dart';
 import '../widgets/account_profile_panel.dart';
 import '../services/device_performance.dart';
 import 'dart:async';
@@ -16,7 +18,6 @@ import '../models/anime_content.dart';
 import '../services/animeon_api.dart';
 import '../services/hentai_iran_api.dart';
 import '../services/mbn_server.dart';
-import '../services/mbn_sync.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/brand_mark.dart';
 import '../widgets/browsable_shelf.dart';
@@ -32,7 +33,7 @@ import 'update_screen.dart';
 typedef HentaiOpenContent =
     Future<void> Function(AnimeContent item, String tag);
 
-class HentaiSectionPage extends StatefulWidget {
+class HentaiSectionPage extends StatelessWidget {
   const HentaiSectionPage({
     super.key,
     required this.api,
@@ -60,10 +61,56 @@ class HentaiSectionPage extends StatefulWidget {
   final VoidCallback onLogout;
 
   @override
-  State<HentaiSectionPage> createState() => _HentaiSectionPageState();
+  Widget build(BuildContext context) => AdultAccessGate(
+    restricted: true,
+    builder: (_) => _AuthorizedHentaiSectionPage(
+      api: api,
+      onOpen: onOpen,
+      hentaiHistory: hentaiHistory,
+      onOpenHentaiHistory: onOpenHentaiHistory,
+      onClearHentaiHistory: onClearHentaiHistory,
+      hentaiFavorites: hentaiFavorites,
+      onOpenHentaiFavorites: onOpenHentaiFavorites,
+      onToggleHentaiFavorite: onToggleHentaiFavorite,
+      server: server,
+      email: email,
+      onLogout: onLogout,
+    ),
+  );
 }
 
-class _HentaiSectionPageState extends State<HentaiSectionPage> {
+class _AuthorizedHentaiSectionPage extends StatefulWidget {
+  const _AuthorizedHentaiSectionPage({
+    required this.api,
+    required this.onOpen,
+    required this.hentaiHistory,
+    required this.onOpenHentaiHistory,
+    required this.onClearHentaiHistory,
+    required this.hentaiFavorites,
+    required this.onOpenHentaiFavorites,
+    required this.onToggleHentaiFavorite,
+    required this.server,
+    required this.email,
+    required this.onLogout,
+  });
+  final HentaiIranApi api;
+  final HentaiOpenContent onOpen;
+  final List<AnimeContent> hentaiHistory;
+  final VoidCallback onOpenHentaiHistory;
+  final Future<void> Function() onClearHentaiHistory;
+  final List<AnimeContent> hentaiFavorites;
+  final VoidCallback onOpenHentaiFavorites;
+  final void Function(AnimeContent item, bool selected) onToggleHentaiFavorite;
+  final MbnServerClient server;
+  final String email;
+  final VoidCallback onLogout;
+
+  @override
+  State<_AuthorizedHentaiSectionPage> createState() =>
+      _HentaiSectionPageState();
+}
+
+class _HentaiSectionPageState extends State<_AuthorizedHentaiSectionPage> {
   late final PageController _pageController;
   final _homeKey = GlobalKey<_HentaiHomeTabState>();
   int _index = 0;
@@ -772,8 +819,11 @@ class _HentaiSectionDrawer extends StatelessWidget {
                 ),
               ),
             ),
-            TextButton.icon(onPressed: onLogout, icon: const Icon(Icons.logout_rounded, size: 17),
-              label: const Text('خارج شدن از اشتراک')),
+            TextButton.icon(
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout_rounded, size: 17),
+              label: const Text('خارج شدن از اشتراک'),
+            ),
           ],
         ),
       );
@@ -912,9 +962,6 @@ class _HentaiHomeTabState extends State<_HentaiHomeTab> {
 
   /// Reloads the +18 «ادامه تماشا» shelf (own slot, never mixed with normal).
   Future<void> refreshContinueWatch() async {
-    try {
-      await MbnSync.instance.syncProgressIfStale();
-    } catch (_) {}
     final last = await _lastWatchStore.load();
     if (mounted) setState(() => _lastWatch = last);
   }
@@ -1863,8 +1910,11 @@ class _HentaiTermsTabState extends State<_HentaiTermsTab> {
   );
 }
 
-PageRoute<void> _hentaiRoute(BuildContext context, Widget page) =>
-    slideUpRoute(Theme(data: hentaiTheme(Theme.of(context)), child: page));
+PageRoute<void> _hentaiRoute(BuildContext context, Widget page) => slideUpRoute(
+  AdultAccessGate(
+    builder: (_) => Theme(data: hentaiTheme(Theme.of(context)), child: page),
+  ),
+);
 
 class _HentaiTermResultsPage extends StatefulWidget {
   const _HentaiTermResultsPage({
@@ -2055,7 +2105,7 @@ class _HentaiHtmlListPageState extends State<_HentaiHtmlListPage> {
 
 // ------------------------------------------------------------------ search
 
-class HentaiSearchPage extends StatefulWidget {
+class HentaiSearchPage extends StatelessWidget {
   const HentaiSearchPage({
     super.key,
     required this.api,
@@ -2067,10 +2117,31 @@ class HentaiSearchPage extends StatefulWidget {
   final HentaiOpenContent onOpen;
 
   @override
-  State<HentaiSearchPage> createState() => HentaiSearchPageState();
+  Widget build(BuildContext context) => AdultAccessGate(
+    restricted: true,
+    builder: (_) => _AuthorizedHentaiSearchPage(
+      api: api,
+      initialQuery: initialQuery,
+      onOpen: onOpen,
+    ),
+  );
 }
 
-class HentaiSearchPageState extends State<HentaiSearchPage> {
+class _AuthorizedHentaiSearchPage extends StatefulWidget {
+  const _AuthorizedHentaiSearchPage({
+    required this.api,
+    required this.initialQuery,
+    required this.onOpen,
+  });
+  final HentaiIranApi api;
+  final String initialQuery;
+  final HentaiOpenContent onOpen;
+
+  @override
+  State<_AuthorizedHentaiSearchPage> createState() => HentaiSearchPageState();
+}
+
+class HentaiSearchPageState extends State<_AuthorizedHentaiSearchPage> {
   late final _controller = TextEditingController(text: widget.initialQuery);
   Timer? _debounce;
   List<AnimeContent> _results = [];
@@ -2471,11 +2542,13 @@ class _HentaiFeaturedState extends State<_HentaiFeatured> {
   @override
   void initState() {
     super.initState();
+    PlaybackActivity.changes.addListener(_restart);
     _restart();
   }
 
   @override
   void dispose() {
+    PlaybackActivity.changes.removeListener(_restart);
     _timer?.cancel();
     _controller.dispose();
     super.dispose();
@@ -2483,7 +2556,12 @@ class _HentaiFeaturedState extends State<_HentaiFeatured> {
 
   void _restart() {
     _timer?.cancel();
-    if (_count < 2 || isAndroidTv || DevicePerformance.lightweight) return;
+    if (PlaybackActivity.active ||
+        _count < 2 ||
+        isAndroidTv ||
+        DevicePerformance.lightweight) {
+      return;
+    }
     _timer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted || !_controller.hasClients) return;
       _go((_page + 1) % _count, restart: false);

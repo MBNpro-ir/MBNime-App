@@ -1,3 +1,5 @@
+import 'playback_activity.dart';
+import 'adult_access.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -425,11 +427,16 @@ class HentaiIranApi implements ContentApi {
 
   @override
   Future<AnimeContent> details(AnimeContent summary) async {
+    final credential = AdultAccess.instance.credential;
+    AdultAccess.instance.requireAllowed();
     // Public REST supplies metadata; the Worker reads the authenticated source
     // page for every detail refresh. Source credentials stay inside the Worker.
     var numeric = int.tryParse(summary.id);
     Future<AnimeContent?> cached() async {
       if (numeric == null) return null;
+      await PlaybackActivity.whenIdle();
+      AdultAccess.instance.requireAllowed();
+      if (credential != AdultAccess.instance.credential) return null;
       final row = await _readCachedRestDetail('$numeric');
       if (row == null) return null;
       try {
@@ -487,6 +494,10 @@ class HentaiIranApi implements ContentApi {
         try {
           final content = contentFromRest(row, summary: summary);
           if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
+            AdultAccess.instance.requireAllowed();
+            if (credential != AdultAccess.instance.credential) {
+              throw StateError("account changed");
+            }
             await _cacheRestDetail('$numeric', row);
             return content;
           }
@@ -1048,17 +1059,34 @@ class HentaiIranApi implements ContentApi {
   // ------------------------------------------------------------------ helpers
 
   Future<http.Response> _get(Uri uri) async {
+    await PlaybackActivity.whenIdle();
+    AdultAccess.instance.requireAllowed();
+    final credential = AdultAccess.instance.credential;
     try {
-      return await _requests.run(
-        'GET $uri',
-        () => sendBuffered(
+      final response = await _requests.run('GET $uri $credential', () async {
+        await PlaybackActivity.whenIdle();
+        AdultAccess.instance.requireAllowed();
+        if (credential != AdultAccess.instance.credential) {
+          throw StateError('account changed');
+        }
+        return sendBuffered(
           _client,
           'GET',
           uri,
-          headers: _headers,
+          headers: {
+            ..._headers,
+            if (uri.host == Uri.parse(episodeGateway).host)
+              'Authorization': 'Bearer $credential',
+          },
           timeout: const Duration(seconds: 25),
-        ),
-      );
+        );
+      });
+      await PlaybackActivity.whenIdle();
+      AdultAccess.instance.requireAllowed();
+      if (credential != AdultAccess.instance.credential) {
+        throw StateError('account changed');
+      }
+      return response;
     } on TimeoutException {
       throw const AnimeOnApiException('ارتباط با هنتای ایران زمان‌بر شد.');
     } on http.ClientException {

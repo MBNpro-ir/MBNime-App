@@ -22,7 +22,13 @@ ImageProvider imageProviderForUrl(
   if (viaUnstableRoute && Platform.isWindows) {
     return HentaiHttpImage(url);
   }
-  return NetworkImage(WebGateway.image(url));
+  return NetworkImage(
+    WebGateway.image(url),
+    headers: {
+      if (viaUnstableRoute && kIsWeb && WebGateway.token != null)
+        'Authorization': 'Bearer ${WebGateway.token}',
+    },
+  );
 }
 
 /// `NetworkImage` equivalent that downloads bytes through

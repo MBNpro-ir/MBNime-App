@@ -1,3 +1,4 @@
+import 'playback_activity.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'web_gateway.dart';
@@ -679,6 +680,7 @@ class AnimeOnApi implements ContentApi {
   }
 
   Future<http.Response> _get(Uri uri) async {
+    await PlaybackActivity.whenIdle();
     final cookie = _sessionCookie;
     final headers = _headers(uri);
     try {
@@ -686,6 +688,7 @@ class AnimeOnApi implements ContentApi {
         'GET $uri ${cookie ?? ''}',
         () async {
           try {
+            await PlaybackActivity.whenIdle();
             final response = await readWithRetry(
               () => sendBuffered(
                 _client,
@@ -696,6 +699,7 @@ class AnimeOnApi implements ContentApi {
               ),
               maxAttempts: 3,
             );
+            await PlaybackActivity.whenIdle();
             if (_sessionCookie == cookie) _captureCookie(response, uri);
             return response;
           } on TimeoutException {
@@ -716,6 +720,7 @@ class AnimeOnApi implements ContentApi {
     Uri uri, {
     required Map<String, String> body,
   }) async {
+    await PlaybackActivity.whenIdle();
     final headers = _headers(uri);
     final cookie = _sessionCookie;
     try {
@@ -732,6 +737,7 @@ class AnimeOnApi implements ContentApi {
             ),
             maxAttempts: 2,
           );
+          await PlaybackActivity.whenIdle();
           if (_sessionCookie == cookie) _captureCookie(response, uri);
           return response;
         } on TimeoutException {
