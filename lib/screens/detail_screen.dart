@@ -2785,6 +2785,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       generation == _mediaGeneration;
   Offset? _doubleTapPosition;
   final _subtitleLines = ValueNotifier<List<String>>(const []);
+  final _subtitleTextNormalizer = SubtitleTextNormalizer();
   List<String> get _subtitles => _subtitleLines.value;
   set _subtitles(List<String> value) {
     if (!listEquals(value, _subtitleLines.value)) _subtitleLines.value = value;
@@ -3486,7 +3487,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _subscriptions.add(_player.stream.error.listen(_handlePlaybackError));
     watchQuiet(_player.stream.subtitle, (value) {
-      if (_webSubtitle == null) _subtitles = value;
+      if (_webSubtitle == null && !_nativeSubtitleRendering) {
+        _subtitles = _subtitleTextNormalizer.normalize(
+          value,
+          track: (_mediaGeneration, _selectedSubtitle.id),
+        );
+      }
     });
     watchQuiet(_player.stream.videoParams, (value) {
       final aspect =
@@ -7107,6 +7113,7 @@ class _AnimeSubtitles extends StatelessWidget {
                       ),
                       child: PlayerSubtitleText(
                         lines: lines,
+                        normalized: true,
                         maxLines: isPictureInPicture ? 3 : null,
                         overflow: isPictureInPicture
                             ? TextOverflow.ellipsis
