@@ -1,0 +1,57 @@
+name: Refresh source episode catalog
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Refresh unchanged titles too
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 */6 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: source-catalog
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Test source parser
+        run: python -m unittest discover -s tools -p test_source_catalog.py
+      - name: Load published metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          git clone --depth=1 --single-branch --branch=source-catalog "https://github.com/$GITHUB_REPOSITORY.git" "$RUNNER_TEMP/catalog"
+      - name: Refresh links directly from source
+        id: refresh
+        env:
+          HENTAI_SOURCE_USERNAME: ${{ secrets.HENTAI_SOURCE_USERNAME }}
+          HENTAI_SOURCE_PASSWORD: ${{ secrets.HENTAI_SOURCE_PASSWORD }}
+          FORCE_REFRESH: ${{ inputs.force }}
+        shell: bash
+        run: |
+          options=()
+          if [[ "$FORCE_REFRESH" == true ]]; then options+=(--force); fi
+          python tools/source_catalog.py --output "$RUNNER_TEMP/catalog" "${options[@]}"
+      - name: Publish valid refreshed metadata
+        if: always() && steps.refresh.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/catalog"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add v1
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh source episode links"
+            git push origin HEAD:source-catalog
+          fi

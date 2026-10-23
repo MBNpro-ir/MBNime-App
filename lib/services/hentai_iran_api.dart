@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/anime_content.dart';
 import 'animeon_api.dart';
@@ -30,6 +31,9 @@ class HentaiIranApi implements ContentApi {
   }
 
   static const origin = 'https://hentaiiran.com';
+  static const _episodeCatalog =
+      'https://raw.githubusercontent.com/MBNpro-ir/MBNime-App/source-catalog/v1/titles';
+  static const _detailCachePrefix = 'mbnime_hentai_detail_cache_v1_';
 
   /// Taxonomy slugs exactly as exposed by `/wp-json/wp/v2/types`.
   static const taxonomyGenre = 'genre';
@@ -52,6 +56,30 @@ class HentaiIranApi implements ContentApi {
 
   final http.Client _client;
   final NetworkRequestGate _requests = NetworkRequestGate();
+
+  Future<void> _cacheRestDetail(String id, Map<String, dynamic> row) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_detailCachePrefix$id', jsonEncode(row));
+    } catch (_) {
+      // Cache failures must never block the catalogue or player.
+    }
+  }
+
+  Future<Map<String, dynamic>?> _readCachedRestDetail(String id) async {
+    try {
+      final raw = (await SharedPreferences.getInstance()).getString(
+        '$_detailCachePrefix$id',
+      );
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      return decoded is Map
+          ? decoded.map((key, value) => MapEntry('$key', value))
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Map<String, String> get _headers => const {
     'Accept': 'application/json, text/html',
@@ -400,10 +428,26 @@ class HentaiIranApi implements ContentApi {
     // The source now creates its download controls with JavaScript. The
     // structured endpoint carries the episode URLs on native and web alike.
     // Keep the old HTML adapter only as a fallback for native installations.
+    var numeric = int.tryParse(summary.id);
+    Future<AnimeContent?> cached() async {
+      if (numeric == null) return null;
+      final row = await _readCachedRestDetail('$numeric');
+      if (row == null) return null;
+      try {
+        final content = contentFromRest(row, summary: summary);
+        return content.seasons.any((season) => season.episodes.isNotEmpty)
+            ? content
+            : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    Map<String, dynamic>? publicDetail;
     try {
-      final numeric =
-          int.tryParse(summary.id) ??
-          int.tryParse((await _restSingle(summary))?['id']?.toString() ?? '');
+      numeric ??= int.tryParse(
+        (await _restSingle(summary))?['id']?.toString() ?? '',
+      );
       if (numeric != null) {
         final response = await _get(
           Uri.parse('$origin/wp-json/hanime/v1/anime/$numeric'),
@@ -411,16 +455,51 @@ class HentaiIranApi implements ContentApi {
         if (response.statusCode == 200) {
           final row = jsonDecode(response.body);
           if (row is Map<String, dynamic> && row['episodes'] is List) {
+            publicDetail = row;
             final content = contentFromRest(row, summary: summary);
             if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
+              unawaited(_cacheRestDetail('$numeric', row));
               return content;
             }
+            // A valid endpoint response can temporarily contain no links
+            // while the source is updating or requires a session. Keep the
+            // last complete response instead of deleting working episodes.
           }
         }
       }
     } catch (_) {
       // A native client can still use the legacy page when REST is unavailable.
     }
+    // Login-gated links are refreshed outside the account server by a trusted
+    // source-only CI job. Clients fetch metadata from GitHub and play directly
+    // from the source CDN; no source credentials are shipped in the app.
+    if (numeric != null) {
+      try {
+        final response = await _get(
+          Uri.parse('$_episodeCatalog/$numeric.json'),
+        );
+        if (response.statusCode != 200) throw const FormatException();
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['id']?.toString() != '$numeric') {
+          throw const FormatException();
+        }
+        final row = <String, dynamic>{
+          ...?publicDetail,
+          'id': numeric,
+          'title': publicDetail?['title'] ?? summary.title,
+          'episodes': data['episodes'],
+        };
+        final content = contentFromRest(row, summary: summary);
+        if (content.seasons.any((season) => season.episodes.isNotEmpty)) {
+          unawaited(_cacheRestDetail('$numeric', row));
+          return content;
+        }
+      } catch (_) {
+        // A failed refresh never replaces the last complete episode list.
+      }
+    }
+    final previous = await cached();
+    if (previous != null) return previous;
     if (kIsWeb) {
       throw const AnimeOnApiException(
         'لینک قسمت‌ها دریافت نشد؛ اتصال VPN را بررسی کن و دوباره تلاش کن.',
@@ -594,8 +673,10 @@ class HentaiIranApi implements ContentApi {
       rating: double.tryParse('${row['score']}') ?? 0,
       kind: ContentKind.anime,
       colors: summary?.colors ?? _paletteFor(title),
-      genres: names('genres'),
-      tags: names('tags'),
+      genres: row.containsKey('genres')
+          ? names('genres')
+          : summary?.genres ?? [],
+      tags: row.containsKey('tags') ? names('tags') : summary?.tags ?? [],
       isHentai: true,
       imageUrl: image,
       backdropUrl: row['poster_url']?.toString() ?? image,
