@@ -48,9 +48,39 @@ AnimeContent get fixture => AnimeContent(
   ],
 );
 
+AnimeContent get seriesFixture => AnimeContent(
+  id: 'preview-series',
+  title: 'سریال آزمایشی · فصل و قسمت',
+  subtitle: 'پیش‌نمایش محلی',
+  description: '',
+  year: 2026,
+  rating: 0,
+  kind: ContentKind.series,
+  colors: const [Color(0xFF172235), Color(0xFF0D1422)],
+  genres: const [],
+  seasons: [
+    for (var season = 1; season <= 2; season++)
+      AnimeSeason(
+        id: 's$season',
+        name: 'فصل $season',
+        episodes: [
+          for (var episode = 1; episode <= 3; episode++)
+            AnimeEpisode(
+              id: 's${season}e$episode',
+              name: 'قسمت $episode · 720p',
+              fileUrl: kIsWeb
+                  ? '/preview/media/clip.mp4'
+                  : '$_base/preview/media/clip.mp4',
+            ),
+        ],
+      ),
+  ],
+);
+
 class _Catalog implements ContentApi {
   @override
-  Future<AnimeContent> details(AnimeContent summary) async => fixture;
+  Future<AnimeContent> details(AnimeContent summary) async =>
+      summary.id == 'preview-series' ? seriesFixture : fixture;
   @override
   Future<List<AnimeComment>> comments(String id) async => [];
 }
@@ -71,7 +101,6 @@ Future<void> main() async {
   final auth = MbnServerClient(baseUrl: _base)
     ..token = data['token'].toString();
   MbnSync.instance.configure(server: auth);
-  AppParty.bind(_Catalog());
   await PartyHub.instance.client!.refresh();
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
@@ -94,77 +123,101 @@ Future<void> main() async {
 class _Preview extends StatelessWidget {
   const _Preview();
   @override
-  Widget build(BuildContext context) => Scaffold(
-    resizeToAvoidBottomInset: false,
-    appBar: AppBar(
-      leadingWidth: 100,
-      leading: Builder(
-        builder: (ctx) => Row(
-          children: [
-            IconButton(
-              onPressed: () => Scaffold.of(ctx).openDrawer(),
-              icon: const Icon(Icons.menu_rounded),
+  Widget build(BuildContext context) {
+    AppParty.bind(
+      _Catalog(),
+      openDetails: (item) async {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => DetailScreen(
+              content: item,
+              api: _Catalog(),
+              heroTag: 'preview-party',
+              isFavorite: false,
+              onFavoriteChanged: (_) {},
             ),
-            const PartyButton(),
-          ],
-        ),
-      ),
-      title: const Text('MBNime · پیش‌نمایش پارتی'),
-    ),
-    drawer: const Drawer(child: Center(child: Text('محیط آزمایشی محلی'))),
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          ),
+        );
+      },
+    );
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      appBar: AppBar(
+        leadingWidth: 100,
+        leading: Builder(
+          builder: (ctx) => Row(
             children: [
-              const Icon(
-                Icons.diversity_2_rounded,
-                size: 72,
-                color: Color(0xFF83E9C5),
+              IconButton(
+                onPressed: () => Scaffold.of(ctx).openDrawer(),
+                icon: const Icon(Icons.menu_rounded),
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'پارتی · با هم تماشا می‌کنیم',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'این پیش‌نمایش با حساب‌ها و ویدیوی آزمایشی روی همین سیستم اجرا می‌شود.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              FilledButton.icon(
-                onPressed: () => openParty(context),
-                icon: const Icon(Icons.chat_rounded),
-                label: const Text('دوستان و گفت‌وگوها'),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => AppParty.send(context, fixture),
-                icon: const Icon(Icons.send_rounded),
-                label: const Text('ارسال فیلم و دعوت به تماشا'),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PlayerScreen(
-                      content: fixture,
-                      episode: fixture.seasons.first.episodes.first,
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.movie_rounded),
-                label: const Text('پلیر · تست رهاکردن صدا و زیرنویس'),
-              ),
+              const PartyButton(),
             ],
           ),
         ),
+        title: const Text('MBNime · پیش‌نمایش پارتی'),
       ),
-    ),
-  );
+      drawer: const Drawer(child: Center(child: Text('محیط آزمایشی محلی'))),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.diversity_2_rounded,
+                  size: 72,
+                  color: Color(0xFF83E9C5),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'پارتی · با هم تماشا می‌کنیم',
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'این پیش‌نمایش با حساب‌ها و ویدیوی آزمایشی روی همین سیستم اجرا می‌شود.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
+                FilledButton.icon(
+                  onPressed: () => openParty(context),
+                  icon: const Icon(Icons.chat_rounded),
+                  label: const Text('دوستان و گفت‌وگوها'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => AppParty.send(context, fixture),
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('ارسال فیلم و دعوت به تماشا'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => AppParty.send(context, seriesFixture),
+                  icon: const Icon(Icons.video_library_outlined),
+                  label: const Text('ارسال سریال · انتخاب فصل و قسمت'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PlayerScreen(
+                        content: fixture,
+                        episode: fixture.seasons.first.episodes.first,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.movie_rounded),
+                  label: const Text('پلیر · تست رهاکردن صدا و زیرنویس'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

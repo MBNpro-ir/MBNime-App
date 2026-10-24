@@ -7,9 +7,11 @@ import 'device_performance.dart';
 abstract final class PlayerSystemUi {
   static int _generation = 0;
   static bool _active = false;
+  static Object? _owner;
 
-  static Future<void> enter() async {
+  static Future<void> enter({Object? owner}) async {
     final generation = ++_generation;
+    _owner = owner;
     _active = true;
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -20,8 +22,10 @@ abstract final class PlayerSystemUi {
     if (generation != _generation && !_active) await _showAppUi();
   }
 
-  static Future<void> exit() async {
+  static Future<void> exit({Object? owner}) async {
+    if (owner != null && !identical(owner, _owner)) return;
     ++_generation;
+    _owner = null;
     _active = false;
     await SystemChrome.setPreferredOrientations(
       isAndroidTv

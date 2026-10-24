@@ -13,6 +13,13 @@ String partyNonce() => List.generate(
   (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
 ).join();
 
+String partyMediaApp(PartyJson media) =>
+    media['adult'] == true ||
+        media['source'] == 'anime' ||
+        media['source'] == 'hentai'
+    ? 'anime'
+    : 'movie';
+
 class PartyException implements Exception {
   const PartyException(
     this.message, {
@@ -345,8 +352,11 @@ class PartyClient extends ChangeNotifier with WidgetsBindingObserver {
   Future<PartyJson> room(String id) async => Map<String, dynamic>.from(
     (await call('GET', '/api/party/rooms/$id'))['room'] as Map,
   );
-  Future<PartyJson> messages(String id, {int before = 0}) =>
-      call('GET', '/api/party/rooms/$id/messages?before=$before');
+  Future<PartyJson> messages(String id, {int before = 0, int around = 0}) =>
+      call(
+        'GET',
+        '/api/party/rooms/$id/messages?before=$before&around=$around',
+      );
   Future<PartyJson> message(int id) async => Map<String, dynamic>.from(
     (await call('GET', '/api/party/messages/$id'))['message'] as Map,
   );
@@ -504,6 +514,7 @@ class PartyHub extends ChangeNotifier {
   static final instance = PartyHub._();
   PartyClient? client;
   PartyOpenMedia? openMedia;
+  Future<void> Function(BuildContext, PartyJson)? openDetails;
   bool reduceMotion = false;
   void configure(PartyClient? value) {
     client?.removeListener(_changed);

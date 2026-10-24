@@ -77,7 +77,12 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    AppParty.bind(widget.api);
+    AppParty.bind(
+      widget.api,
+      openDetails: (item) async {
+        if (mounted) await _open(item, 'party-${item.id}');
+      },
+    );
     MbnSync.instance.changes.addListener(_onRemoteSync);
     _pageController = PageController();
     _restore();

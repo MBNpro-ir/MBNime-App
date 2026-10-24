@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'browser_features.dart';
 import 'package:flutter/material.dart';
 import 'package:mbn_party/mbn_party.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,9 +14,16 @@ import 'hentai_iran_api.dart';
 /// resolves its own authorized stream and preferred quality.
 class AppParty {
   static ContentApi? api;
-  static void bind(ContentApi value) {
+  static void bind(
+    ContentApi value, {
+    required Future<void> Function(AnimeContent) openDetails,
+  }) {
     api = value;
     PartyHub.instance.openMedia = open;
+    PartyHub.instance.openDetails = (context, media) async {
+      final summary = await _summary(media);
+      if (context.mounted) await openDetails(summary);
+    };
   }
 
   static PartyJson metadata(AnimeContent item, EpisodeGroup group) => {
@@ -22,6 +31,12 @@ class AppParty {
     'episode_id': group.id,
     'title': item.title,
     'episode_title': group.name,
+    'season_title':
+        EpisodeCatalog.from(item).seasons
+            .where((s) => s.episodes.any((e) => e.id == group.id))
+            .firstOrNull
+            ?.name ??
+        '',
     'kind': item.kind.name,
     'poster': item.imageUrl ?? '',
     'adult': item.isHentai,
@@ -29,10 +44,21 @@ class AppParty {
   };
 
   static Future<void> send(BuildContext context, AnimeContent item) async {
+    final seasons = EpisodeCatalog.from(item).seasons
+        .where((s) => !s.isTrailerSeason)
+        .map(
+          (s) => PartySeasonChoice(s.id, s.name, [
+            for (final g in s.episodes)
+              if (!g.isTrailer && g.variants.isNotEmpty)
+                PartyEpisodeChoice(g.id, g.name),
+          ]),
+        )
+        .where((s) => s.episodes.isNotEmpty)
+        .toList();
     final groups = EpisodeCatalog.from(
       item,
-    ).episodes.where((g) => !g.isTrailer).toList();
-    if (groups.isEmpty) {
+    ).episodes.where((g) => !g.isTrailer && g.variants.isNotEmpty).toList();
+    if (groups.isEmpty || seasons.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('قسمت قابل پخشی پیدا نشد.')));
@@ -40,43 +66,23 @@ class AppParty {
     }
     EpisodeGroup? group = groups.first;
     if (groups.length > 1) {
-      group = await showDialog<EpisodeGroup>(
+      final id = await showDialog<String>(
         context: context,
-        builder: (ctx) => SimpleDialog(
-          title: const Text('کدام قسمت را می‌فرستی؟'),
-          children: [
-            SizedBox(
-              width: 420,
-              height: 360,
-              child: ListView.builder(
-                itemCount: groups.length,
-                itemBuilder: (_, i) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(ctx, groups[i]),
-                  child: Text(groups[i].name),
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('انصراف'),
-            ),
-          ],
-        ),
+        builder: (_) => PartyEpisodePicker(seasons: seasons),
       );
+      group = groups.where((g) => g.id == id).firstOrNull;
     }
     if (group != null && context.mounted) {
       await sendPartyMedia(context, metadata(item, group));
     }
   }
 
-  static Future<void> open(
-    BuildContext context,
-    PartyJson media,
-    String? sessionId,
-  ) async {
-    final source = api;
-    if (source == null) {
-      throw const PartyException('کاتالوگ هنوز آماده نشده است.');
+  static Future<AnimeContent> _summary(PartyJson media) async {
+    final source = partyMediaApp(media);
+    if (source != 'anime') {
+      throw const PartyException(
+        'این فیلم یا سریال برای این اپ نیست؛ برای اپ MBNMovie است.',
+      );
     }
     final restricted = media['adult'] == true || media['source'] == 'hentai';
     if (restricted) {
@@ -85,7 +91,7 @@ class AppParty {
         throw const PartyException('اجازهٔ دسترسی به این محتوا فعال نیست.');
       }
     }
-    final summary = AnimeContent(
+    return AnimeContent(
       id: media['content_id'].toString(),
       title: media['title']?.toString() ?? '',
       subtitle: '',
@@ -97,7 +103,42 @@ class AppParty {
       genres: const [],
       isHentai: restricted,
     );
-    final item = await (restricted ? HentaiIranApi() : source).details(summary);
+  }
+
+  static Future<void> open(
+    BuildContext context,
+    PartyJson media,
+    String? sessionId,
+  ) async {
+    final browserReservation = kIsWeb ? BrowserFeatures.preparePlayer() : null;
+    try {
+      await _openPlayer(context, media, sessionId);
+    } finally {
+      if (browserReservation != null) {
+        await BrowserFeatures.releasePlayer(browserReservation);
+      }
+    }
+  }
+
+  static Future<void> _openPlayer(
+    BuildContext context,
+    PartyJson media,
+    String? sessionId,
+  ) async {
+    final source = api;
+    if (source == null) {
+      throw const PartyException('کاتالوگ هنوز آماده نشده است.');
+    }
+    final summary = await _summary(media);
+    final restricted = summary.isHentai;
+    final item = await (restricted ? HentaiIranApi() : source)
+        .details(summary)
+        .timeout(
+          const Duration(seconds: 35),
+          onTimeout: () => throw const PartyException(
+            'دریافت قسمت‌ها بیش از حد طول کشید؛ دوباره تلاش کن.',
+          ),
+        );
     if (!context.mounted) return;
     final catalog = EpisodeCatalog.from(item),
         id = media['episode_id']?.toString() ?? '';

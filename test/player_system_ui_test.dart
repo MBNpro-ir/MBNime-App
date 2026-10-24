@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:mbnime/services/browser_features.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mbnime/core/platform_ui.dart';
@@ -60,6 +61,50 @@ void main() {
       'SystemUiOverlay.bottom',
     ]);
   });
+  test(
+    'Disposing replaced player cannot rotate its successor to portrait',
+    () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+      final first = Object(), second = Object();
+      await PlayerSystemUi.enter(owner: first);
+      await PlayerSystemUi.enter(owner: second);
+      final before = calls.length;
+      await PlayerSystemUi.exit(owner: first);
+      expect(calls.length, before);
+      await PlayerSystemUi.exit(owner: second);
+      expect(
+        calls
+            .where((c) => c.method == 'SystemChrome.setPreferredOrientations')
+            .last
+            .arguments,
+        ['DeviceOrientation.portraitUp'],
+      );
+    },
+  );
+  test(
+    'Browser handoff ignores cleanup from launch and replaced player',
+    () async {
+      final launch = BrowserFeatures.preparePlayer();
+      final first = Object();
+      BrowserFeatures.setPlayerActive(true, owner: first);
+      expect(BrowserFeatures.setPlayerActive(false, owner: launch), isFalse);
+      final nextLaunch = BrowserFeatures.preparePlayer();
+      expect(BrowserFeatures.setPlayerActive(false, owner: first), isFalse);
+      final second = Object();
+      BrowserFeatures.setPlayerActive(true, owner: second);
+      expect(
+        BrowserFeatures.setPlayerActive(false, owner: nextLaunch),
+        isFalse,
+      );
+      expect(BrowserFeatures.setPlayerActive(false, owner: second), isTrue);
+      expect(BrowserFeatures.setPlayerActive(false, owner: first), isFalse);
+    },
+  );
   test('TV restores its persistent landscape immersive shell', () async {
     isAndroidTv = true;
     final calls = <MethodCall>[];

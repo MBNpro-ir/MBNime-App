@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'client.dart';
 import 'watch_controller.dart';
+import 'message_interaction.dart';
 
 const _mint = Color(0xFF83E9C5),
     _violet = Color(0xFFA79BFF),
@@ -184,6 +185,12 @@ class _PartyScreenState extends State<PartyScreen> {
   bool _loading = false, _sending = false, _more = false;
   String? _failure, _lastAttempt, _attemptNonce;
   int _tab = 0, _generation = 0, _event = 0;
+  final _messageKeys = <int, GlobalKey>{};
+  final _mediaErrors = <String, String>{};
+  String? _openingMedia;
+  int? _highlightedMessage;
+  Timer? _highlightTimer;
+  bool _jumpingReply = false, _historyWindow = false;
   PartyClient get client => widget.client;
 
   @override
@@ -196,6 +203,7 @@ class _PartyScreenState extends State<PartyScreen> {
 
   @override
   void dispose() {
+    _highlightTimer?.cancel();
     client.removeListener(_changed);
     _release();
     _draft.dispose();
@@ -231,6 +239,11 @@ class _PartyScreenState extends State<PartyScreen> {
   }
 
   Future<void> _refreshMessage(int id) async {
+    // A quoted-history window stays contiguous. New messages remain unread
+    // until the user returns to the current chat instead of splicing a gap.
+    if (_historyWindow && !_messages.any((m) => partyInt(m['id']) == id)) {
+      return;
+    }
     final generation = _generation;
     try {
       final message = await client.message(id);
@@ -246,6 +259,8 @@ class _PartyScreenState extends State<PartyScreen> {
           _messages = _messages.sublist(_messages.length - 300);
           _more = true;
         }
+        final retained = _messages.map((m) => partyInt(m['id'])).toSet();
+        _messageKeys.removeWhere((id, _) => !retained.contains(id));
       });
       unawaited(
         client.read(_room!['id'].toString(), id).catchError((Object _) {}),
@@ -259,6 +274,8 @@ class _PartyScreenState extends State<PartyScreen> {
       _loading = true;
       _failure = null;
       _reply = null;
+      _historyWindow = false;
+      _messageKeys.clear();
       _draft.clear();
     });
     try {
@@ -337,6 +354,7 @@ class _PartyScreenState extends State<PartyScreen> {
         setState(() {
           _messages = _rows(page['messages']);
           _more = page['has_more'] == true;
+          _historyWindow = false;
         });
       }
       if (_scroll.hasClients) {
@@ -357,7 +375,7 @@ class _PartyScreenState extends State<PartyScreen> {
     final value = await _input(
       context,
       'پیداکردن دوست',
-      'آیدی MBN یا نام کاربری کامل',
+      'نام کاربری سرور (حروف انگلیسی، عدد و زیرخط)',
       ltr: true,
     );
     if (value == null || !mounted) return;
@@ -734,7 +752,7 @@ class _PartyScreenState extends State<PartyScreen> {
     if (!await _confirm(
       context,
       action == 'block' ? 'مسدودکردن دوست' : 'حذف دوست',
-      'ارتباط خصوصی با ${_name(user)} غیرفعال می‌شود.',
+      'دوستی با ${_name(user)} قطع می‌شود و تمام پیام‌های گفت‌وگوی خصوصی برای هر دو نفر در هر دو اپ پاک می‌شوند. این کار قابل بازگشت نیست.',
     )) {
       return;
     }
@@ -861,6 +879,11 @@ class _PartyScreenState extends State<PartyScreen> {
           ),
         ),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
+        if (_historyWindow)
+          TextButton(
+            onPressed: () => _select(room['id'].toString()),
+            child: const Text('بازگشت به پیام‌های جدید'),
+          ),
         if (_failure != null)
           TextButton(
             onPressed: () => _select(room['id'].toString()),
@@ -976,161 +999,168 @@ class _PartyScreenState extends State<PartyScreen> {
     final direction = first != null && RegExp(r'[A-Za-z]').hasMatch(first)
         ? TextDirection.ltr
         : TextDirection.rtl;
-    final reply = _messages
-        .where((m) => m['id'] == message['reply_to'])
-        .firstOrNull;
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 530),
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: 10,
-            left: mine ? 28 : 0,
-            right: mine ? 0 : 28,
-          ),
-          child: GestureDetector(
-            onLongPress: deleted ? null : () => _messageMenu(message),
-            onSecondaryTap: deleted ? null : () => _messageMenu(message),
-            child: AnimatedContainer(
-              duration: Duration(
-                milliseconds: PartyHub.instance.reduceMotion ? 0 : 180,
-              ),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: mine ? const Color(0xFF253D46) : _panel,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(19),
-                  topRight: const Radius.circular(19),
-                  bottomLeft: Radius.circular(mine ? 19 : 5),
-                  bottomRight: Radius.circular(mine ? 5 : 19),
+    final reply =
+        _messages.where((m) => m['id'] == message['reply_to']).firstOrNull ??
+        (message['reply'] is Map
+            ? Map<String, dynamic>.from(message['reply'] as Map)
+            : null);
+    final id = partyInt(message['id']);
+    return PartyMessageInteraction(
+      key: ValueKey('party-message-$id'),
+      onReply: deleted ? null : () => setState(() => _reply = message),
+      onReaction: deleted ? null : () => _messageMenu(message),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          key: _messageKeys.putIfAbsent(id, () => GlobalKey()),
+          constraints: const BoxConstraints(maxWidth: 530),
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: 10,
+              left: mine ? 28 : 0,
+              right: mine ? 0 : 28,
+            ),
+            child: GestureDetector(
+              onLongPress: deleted ? null : () => _messageMenu(message),
+              onSecondaryTap: deleted ? null : () => _messageMenu(message),
+              child: AnimatedContainer(
+                duration: Duration(
+                  milliseconds: PartyHub.instance.reduceMotion ? 0 : 180,
                 ),
-                border: Border.all(
-                  color: mine
-                      ? _mint.withValues(alpha: .12)
-                      : Colors.white.withValues(alpha: .04),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _highlightedMessage == id
+                      ? _violet.withValues(alpha: .5)
+                      : mine
+                      ? const Color(0xFF253D46)
+                      : _panel,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(19),
+                    topRight: const Radius.circular(19),
+                    bottomLeft: Radius.circular(mine ? 19 : 5),
+                    bottomRight: Radius.circular(mine ? 5 : 19),
+                  ),
+                  border: Border.all(
+                    color: mine
+                        ? _mint.withValues(alpha: .12)
+                        : Colors.white.withValues(alpha: .04),
+                  ),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!mine && _room?['kind'] == 'group')
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        _name(sender),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: _mint,
-                          fontWeight: FontWeight.bold,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!mine && _room?['kind'] == 'group')
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          _name(sender),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _mint,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                  if (message['reply_to'] != null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black12,
-                        borderRadius: BorderRadius.circular(8),
-                        border: const Border(
-                          right: BorderSide(color: _violet, width: 2),
-                        ),
-                      ),
-                      child: Text(
-                        reply?['body']?.toString().isNotEmpty == true
-                            ? reply!['body'].toString()
-                            : 'پاسخ به پیام قبلی',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  if (deleted)
-                    const Text(
-                      'این پیام حذف شده است.',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    )
-                  else if (message['kind'] == 'media')
-                    _mediaCard(message)
-                  else
-                    SelectableText(
-                      text,
-                      textDirection: direction,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.65,
-                        color: message['kind'] == 'restricted'
-                            ? Colors.white38
-                            : Colors.white,
-                      ),
-                    ),
-                  const SizedBox(height: 5),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _clockLabel(partyInt(message['created_at'])),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white38,
-                        ),
-                      ),
-                      if (message['edited_at'] != null)
-                        const Text(
-                          ' · ویرایش‌شده',
-                          style: TextStyle(fontSize: 10, color: Colors.white38),
-                        ),
-                      if (!deleted) ...[
-                        const SizedBox(width: 6),
-                        InkResponse(
-                          onTap: () => _messageMenu(message),
-                          radius: 18,
-                          child: const Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.add_reaction_outlined,
-                              size: 15,
-                              color: Colors.white38,
+                    if (message['reply_to'] != null)
+                      InkWell(
+                        key: ValueKey('party-reply-${message['id']}'),
+                        onTap: _jumpingReply
+                            ? null
+                            : () => _jumpToReply(partyInt(message['reply_to'])),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black12,
+                            borderRadius: BorderRadius.circular(8),
+                            border: const Border(
+                              right: BorderSide(color: _violet, width: 2),
+                            ),
+                          ),
+                          child: Text(
+                            reply?['body']?.toString().isNotEmpty == true
+                                ? reply!['body'].toString()
+                                : 'پاسخ به پیام قبلی',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 11,
                             ),
                           ),
                         ),
-                      ],
-                    ],
-                  ),
-                  if (_rows(message['reactions']).isNotEmpty)
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 4,
-                      children: _rows(message['reactions'])
-                          .map(
-                            (r) => ActionChip(
-                              visualDensity: VisualDensity.compact,
-                              label: Text(
-                                '${r['emoji']} ${r['count']}',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                              backgroundColor: _yes(r['mine'])
-                                  ? _violet.withValues(alpha: .25)
-                                  : Colors.white10,
-                              onPressed: () => _react(
-                                message,
-                                r['emoji'].toString(),
-                                !_yes(r['mine']),
-                              ),
+                      ),
+                    if (deleted)
+                      const Text(
+                        'این پیام حذف شده است.',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    else if (message['kind'] == 'media')
+                      _mediaCard(message)
+                    else
+                      SelectableText(
+                        text,
+                        textDirection: direction,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.65,
+                          color: message['kind'] == 'restricted'
+                              ? Colors.white38
+                              : Colors.white,
+                        ),
+                      ),
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _clockLabel(partyInt(message['created_at'])),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white38,
+                          ),
+                        ),
+                        if (message['edited_at'] != null)
+                          const Text(
+                            ' · ویرایش‌شده',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white38,
                             ),
-                          )
-                          .toList(),
+                          ),
+                      ],
                     ),
-                ],
+                    if (_rows(message['reactions']).isNotEmpty)
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: _rows(message['reactions'])
+                            .map(
+                              (r) => ActionChip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text(
+                                  '${r['emoji']} ${r['count']}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                backgroundColor: _yes(r['mine'])
+                                    ? _violet.withValues(alpha: .25)
+                                    : Colors.white10,
+                                onPressed: () => _react(
+                                  message,
+                                  r['emoji'].toString(),
+                                  !_yes(r['mine']),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1139,72 +1169,144 @@ class _PartyScreenState extends State<PartyScreen> {
     );
   }
 
+  Future<void> _jumpToReply(int id) async {
+    if (_jumpingReply || _room == null) return;
+    final generation = _generation;
+    setState(() => _jumpingReply = true);
+    try {
+      if (_messageKeys[id]?.currentContext == null) {
+        final page = await client.messages(_room!['id'].toString(), around: id);
+        if (!mounted || generation != _generation) return;
+        // Show a contiguous history window ending at the quoted message. It is
+        // the newest row in this window, so even very tall messages do not
+        // require guessed scroll offsets or building an entire chat history.
+        final contextMessages = _rows(
+          page['messages'],
+        ).where((m) => partyInt(m['id']) <= id).toList();
+        if (!contextMessages.any((m) => partyInt(m['id']) == id)) {
+          throw const PartyException('پیام پاسخ پیدا نشد.');
+        }
+        setState(() {
+          _messages = contextMessages;
+          _more = page['has_more'] == true;
+          _historyWindow = true;
+          _messageKeys.clear();
+        });
+        if (_scroll.hasClients) _scroll.jumpTo(0);
+        await WidgetsBinding.instance.endOfFrame;
+      }
+      if (!mounted || generation != _generation) return;
+      final target = _messageKeys[id]?.currentContext;
+      if (target == null || !target.mounted) {
+        throw const PartyException(
+          'نمایش پیام پاسخ انجام نشد؛ دوباره تلاش کن.',
+        );
+      }
+      await Scrollable.ensureVisible(
+        target,
+        alignment: .5,
+        duration: const Duration(milliseconds: 240),
+      );
+      if (!mounted || generation != _generation) return;
+      _highlightTimer?.cancel();
+      setState(() => _highlightedMessage = id);
+      _highlightTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted) setState(() => _highlightedMessage = null);
+      });
+    } catch (e) {
+      if (mounted && generation == _generation) _notice(context, e);
+    } finally {
+      if (mounted) setState(() => _jumpingReply = false);
+    }
+  }
+
   Widget _mediaCard(PartyJson message) {
     final media = Map<String, dynamic>.from(message['payload'] as Map? ?? {}),
         session = message['session'] as Map?;
     final closed = session?['state'] == 'closed';
+    final mediaKey = '${media['content_id']}|${media['episode_id']}';
+    final loading = _openingMedia == mediaKey;
+    final source = partyMediaApp(media);
+    final otherApp =
+        (source == 'movie' || source == 'anime') && source != client.app;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 54,
-              height: 74,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(9),
-                color: Colors.black26,
+        InkWell(
+          key: ValueKey('party-media-details-${message['id']}'),
+          onTap: _openingMedia != null
+              ? null
+              : () => _openMedia(media, null, details: true),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 74,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(9),
+                  color: Colors.black26,
+                ),
+                child: media['poster']?.toString().isNotEmpty == true
+                    ? Image.network(
+                        media['poster'].toString(),
+                        fit: BoxFit.cover,
+                        cacheWidth: 160,
+                        errorBuilder: (_, _, _) =>
+                            const Icon(Icons.movie_outlined, color: _violet),
+                      )
+                    : const Icon(Icons.movie_outlined, color: _violet),
               ),
-              child: media['poster']?.toString().isNotEmpty == true
-                  ? Image.network(
-                      media['poster'].toString(),
-                      fit: BoxFit.cover,
-                      cacheWidth: 160,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Icons.movie_outlined, color: _violet),
-                    )
-                  : const Icon(Icons.movie_outlined, color: _violet),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    media['title']?.toString() ?? '',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  if (media['episode_title']?.toString().isNotEmpty == true)
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      media['episode_title'].toString(),
-                      maxLines: 1,
+                      media['title']?.toString() ?? '',
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (media['episode_title']?.toString().isNotEmpty == true)
+                      Text(
+                        [media['season_title'], media['episode_title']]
+                            .where((v) => v != null && '$v'.isNotEmpty)
+                            .join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                    Text(
+                      session == null
+                          ? 'یک پیشنهاد برای تماشا'
+                          : closed
+                          ? 'این پارتی بسته شده است'
+                          : 'دعوت به تماشای هم‌زمان',
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white60,
+                        color: closed ? Colors.white38 : _mint,
                       ),
                     ),
-                  const SizedBox(height: 6),
-                  Text(
-                    session == null
-                        ? 'یک پیشنهاد برای تماشا'
-                        : closed
-                        ? 'این پارتی بسته شده است'
-                        : 'دعوت به تماشای هم‌زمان',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: closed ? Colors.white38 : _mint,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+        if (otherApp)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'این فیلم یا سریال برای این اپ نیست؛ برای اپ ${source == 'movie' ? 'MBNMovie' : 'MBNime'} است.',
+              style: const TextStyle(color: _violet, fontSize: 12),
+            ),
+          ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -1212,28 +1314,71 @@ class _PartyScreenState extends State<PartyScreen> {
           children: [
             if (session != null && !closed)
               FilledButton.icon(
-                onPressed: () => _openMedia(media, session['id'].toString()),
+                onPressed: _openingMedia != null
+                    ? null
+                    : () => _openMedia(media, session['id'].toString()),
                 icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                label: const Text('پیوستن به پارتی'),
+                label: Text(loading ? 'در حال بارگذاری…' : 'پیوستن به پارتی'),
               ),
             OutlinedButton.icon(
-              onPressed: () => _openMedia(media, null),
+              onPressed: _openingMedia != null
+                  ? null
+                  : () => _openMedia(media, null),
               icon: const Icon(Icons.movie_outlined, size: 18),
-              label: Text(session == null ? 'دیدن عنوان' : 'تماشای مستقل'),
+              label: Text(loading ? 'در حال بارگذاری…' : 'تماشای مستقل'),
             ),
           ],
         ),
+        if (_mediaErrors[mediaKey] != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _mediaErrors[mediaKey]!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ),
       ],
     );
   }
 
-  Future<void> _openMedia(PartyJson media, String? sid) async {
+  Future<void> _openMedia(
+    PartyJson media,
+    String? sid, {
+    bool details = false,
+  }) async {
+    if (_openingMedia != null) return;
+    final key = '${media['content_id']}|${media['episode_id']}';
+    setState(() {
+      _openingMedia = key;
+      _mediaErrors.remove(key);
+    });
     try {
-      final open = PartyHub.instance.openMedia;
-      if (open == null) throw const PartyException('مسیر پخش هنوز آماده نیست.');
-      await open(context, media, sid);
+      final source = partyMediaApp(media);
+      if ((source == 'movie' || source == 'anime') && source != client.app) {
+        throw PartyException(
+          'این فیلم یا سریال برای این اپ نیست؛ برای اپ ${source == 'movie' ? 'MBNMovie' : 'MBNime'} است.',
+        );
+      }
+      if (details) {
+        final open = PartyHub.instance.openDetails;
+        if (open == null) {
+          throw const PartyException('صفحهٔ عنوان هنوز آماده نیست.');
+        }
+        await open(context, media);
+      } else {
+        final open = PartyHub.instance.openMedia;
+        if (open == null) {
+          throw const PartyException('مسیر پخش هنوز آماده نیست.');
+        }
+        await open(context, media, sid);
+      }
     } catch (e) {
-      if (mounted) _notice(context, e);
+      if (mounted) {
+        setState(() => _mediaErrors[key] = '$e');
+        _notice(context, e);
+      }
+    } finally {
+      if (mounted) setState(() => _openingMedia = null);
     }
   }
 
@@ -1251,7 +1396,12 @@ class _PartyScreenState extends State<PartyScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          s['state'] == 'waiting' ? 'منتظر همراه' : 'تماشا در جریان است',
+          _openingMedia ==
+                  '${(s['payload'] as Map?)?['content_id']}|${(s['payload'] as Map?)?['episode_id']}'
+              ? 'در حال بارگذاری…'
+              : s['state'] == 'waiting'
+              ? 'منتظر همراه'
+              : 'تماشا در جریان است',
           style: const TextStyle(fontSize: 11, color: Colors.white60),
         ),
         trailing: partyInt(s['host_id']) == client.userId
@@ -1278,10 +1428,12 @@ class _PartyScreenState extends State<PartyScreen> {
                 },
               )
             : const Icon(Icons.arrow_outward_rounded, size: 18, color: _mint),
-        onTap: () => _openMedia(
-          Map<String, dynamic>.from(s['payload'] as Map),
-          s['id'].toString(),
-        ),
+        onTap: _openingMedia != null
+            ? null
+            : () => _openMedia(
+                Map<String, dynamic>.from(s['payload'] as Map),
+                s['id'].toString(),
+              ),
       ),
     ),
   );

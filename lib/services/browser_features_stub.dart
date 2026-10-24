@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'browser_player_ownership.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 
 abstract final class BrowserFeatures {
@@ -8,7 +9,19 @@ abstract final class BrowserFeatures {
     List<String> fonts = const [],
   }) async {}
   static void clearAss() {}
-  static void setPlayerActive(bool active) {}
+  static final _playerOwnership = BrowserPlayerOwnership();
+  static bool setPlayerActive(bool active, {Object? owner}) =>
+      _playerOwnership.update(active, owner: owner);
+  static Object preparePlayer() {
+    final reservation = Object();
+    setPlayerActive(true, owner: reservation);
+    return reservation;
+  }
+
+  static Future<void> releasePlayer(Object owner) async {
+    if (setPlayerActive(false, owner: owner)) await fullscreen(false);
+  }
+
   static ({double left, double top, double right, double bottom})
   get safeArea => (left: 0, top: 0, right: 0, bottom: 0);
   static bool get isMobileBrowser => false;

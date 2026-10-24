@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'browser_player_ownership.dart';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
@@ -29,11 +30,30 @@ abstract final class BrowserFeatures {
         double.infinity,
       );
 
-  static void setPlayerActive(bool active) {
+  static final _playerOwnership = BrowserPlayerOwnership();
+  static bool setPlayerActive(bool active, {Object? owner}) {
+    if (!_playerOwnership.update(active, owner: owner)) return false;
     globalContext.setProperty('mbnPlayerActive'.toJS, active.toJS);
     // Restore the full CSS viewport even if a hidden search field retained
     // focus while navigating into the player.
     web.window.dispatchEvent(web.Event('mbn-player-state-change'));
+    return true;
+  }
+
+  // Request fullscreen synchronously in the click handler, before catalog IO.
+  static Object preparePlayer() {
+    final reservation = Object();
+    setPlayerActive(true, owner: reservation);
+    unawaited(fullscreen(true));
+    return reservation;
+  }
+
+  static Future<void> releasePlayer(Object owner) async {
+    if (!setPlayerActive(false, owner: owner)) return;
+    clearPlayPrompt();
+    clearAudio();
+    clearSubtitle();
+    await fullscreen(false);
   }
 
   static final safeAreaChanges = ValueNotifier<int>(0);

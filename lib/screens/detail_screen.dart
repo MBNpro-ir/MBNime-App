@@ -476,7 +476,7 @@ class _DetailScreenState extends State<_AuthorizedDetailScreen> {
     AnimeEpisode episode, {
     Duration startAt = Duration.zero,
   }) async {
-    if (kIsWeb) unawaited(BrowserFeatures.fullscreen(true));
+    final browserReservation = kIsWeb ? BrowserFeatures.preparePlayer() : null;
     try {
       await Navigator.of(context).push(
         slideUpRoute(
@@ -489,7 +489,9 @@ class _DetailScreenState extends State<_AuthorizedDetailScreen> {
         ),
       );
     } finally {
-      if (kIsWeb) await BrowserFeatures.fullscreen(false);
+      if (browserReservation != null) {
+        await BrowserFeatures.releasePlayer(browserReservation);
+      }
     }
   }
 
@@ -802,6 +804,7 @@ Future<void> askAndResumeLastWatch(
   LastWatch last, {
   required ContentApi api,
 }) async {
+  Object? browserReservation;
   final go = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -821,7 +824,7 @@ Future<void> askAndResumeLastWatch(
         ),
         FilledButton.icon(
           onPressed: () {
-            if (kIsWeb) unawaited(BrowserFeatures.fullscreen(true));
+            if (kIsWeb) browserReservation = BrowserFeatures.preparePlayer();
             Navigator.pop(dialogContext, true);
           },
           icon: const Icon(Icons.play_arrow_rounded),
@@ -830,7 +833,12 @@ Future<void> askAndResumeLastWatch(
       ],
     ),
   );
-  if (go != true || !context.mounted) return;
+  if (go != true || !context.mounted) {
+    if (browserReservation != null) {
+      await BrowserFeatures.releasePlayer(browserReservation!);
+    }
+    return;
+  }
   final messenger = ScaffoldMessenger.of(context);
   messenger.showSnackBar(
     const SnackBar(content: Text('در حال دریافت قسمت‌ها و کیفیت‌ها…')),
@@ -885,7 +893,9 @@ Future<void> askAndResumeLastWatch(
       );
     }
   } finally {
-    if (kIsWeb) await BrowserFeatures.fullscreen(false);
+    if (browserReservation != null) {
+      await BrowserFeatures.releasePlayer(browserReservation!);
+    }
   }
 }
 
@@ -3041,7 +3051,7 @@ class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
     _releasePlaybackWork = MbnSync.instance.holdPlayback();
     MbnSync.instance.changes.addListener(_remotePreferencesChanged);
     if (kIsWeb) {
-      BrowserFeatures.setPlayerActive(true);
+      BrowserFeatures.setPlayerActive(true, owner: this);
       WidgetsBinding.instance.addObserver(this);
       unawaited(
         BrowserFeatures.fullscreen(true).then((full) {
@@ -3052,7 +3062,7 @@ class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
     _episode = widget.episode;
     _episodeCatalog = EpisodeCatalog.from(widget.content);
     if (isDesktopWindow) windowManager.addListener(this);
-    if (!kIsWeb) unawaited(PlayerSystemUi.enter());
+    if (!kIsWeb) unawaited(PlayerSystemUi.enter(owner: this));
     _pip.addListener(_handlePipModeChanged);
     _player = Player(
       configuration: PlayerConfiguration(
@@ -5156,7 +5166,7 @@ class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
         if (kIsWeb) {
           await BrowserFeatures.fullscreen(false);
         } else {
-          await PlayerSystemUi.exit();
+          await PlayerSystemUi.exit(owner: this);
         }
       },
       navigateBack: () {
@@ -5377,16 +5387,12 @@ class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
     MbnSync.instance.changes.removeListener(_remotePreferencesChanged);
     if (kIsWeb) {
       WidgetsBinding.instance.removeObserver(this);
-      unawaited(BrowserFeatures.fullscreen(false));
-      BrowserFeatures.clearPlayPrompt();
-      BrowserFeatures.clearAudio();
-      BrowserFeatures.clearSubtitle();
+      unawaited(BrowserFeatures.releasePlayer(this));
     }
     // Invalidate every in-flight media operation first so late probe/relay
     // continuations abort before creating resources or touching the player.
     _mediaGeneration++;
     _playerTornDown = true;
-    if (kIsWeb) BrowserFeatures.setPlayerActive(false);
     _transitioning = false;
     _changingEpisode = false;
     _switchingQuality = false;
@@ -5442,7 +5448,7 @@ class _PlayerScreenState extends State<_ConfiguredPlayerScreen>
         }
       }),
     );
-    if (!kIsWeb) unawaited(PlayerSystemUi.exit());
+    if (!kIsWeb) unawaited(PlayerSystemUi.exit(owner: this));
     super.dispose();
   }
 

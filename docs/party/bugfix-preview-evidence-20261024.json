@@ -1,0 +1,76 @@
+{
+  "recorded_at_utc": "2026-10-24T15:32:14.504933+00:00",
+  "status": "party_release_authorized_video_investigation_deferred",
+  "release": {
+    "committed": false,
+    "pushed": false,
+    "actions_dispatched": false,
+    "production_deployed": false,
+    "movie_version": "1.1.0+90",
+    "anime_version": "2.1.0+77",
+    "base_heads": {
+      "server": "4439634d420f7ca7dd98ced757a2da453b64ea86",
+      "delfan_flutter": "35c89728179d2e57987ae78970109f5817cb23e5",
+      "animeon_flutter": "85f6cb20384651add461e98b8ee2a2938a8e9408"
+    },
+    "target_movie_version": "1.1.1+91",
+    "target_anime_version": "2.1.1+78",
+    "target_dashboard_version": "1.1.1+3"
+  },
+  "bugs": {
+    "1": "requires_same_media_reproduction; no confirmed fix",
+    "2-11": "implemented_in_both_clients_and_backend; local tests and preview"
+  },
+  "tests": {
+    "backend_full": {
+      "run": 145,
+      "skipped": 1,
+      "result": "pass",
+      "log": "audit/party-revision-backend-final-full.log"
+    },
+    "backend_party_after_username_collision_test": {
+      "run": 20,
+      "result": "pass",
+      "log": "audit/party-revision-backend.log"
+    },
+    "movie_full": {
+      "passed": 380,
+      "skipped": 1
+    },
+    "anime_full": {
+      "passed": 392,
+      "skipped": 1
+    },
+    "focused_each_app": {
+      "run": 21,
+      "result": "pass"
+    },
+    "windows_native_compilation": "movie frame probe and anime main app, local Flutter 3.47.5",
+    "android_compilation": "both app-debug.apk, Flutter 3.32.8, proxy required",
+    "web_compilation": "both synthetic preview targets, Flutter 3.32.8",
+    "physical_devices": "none attached to adb; no fresh Huawei, TV or iPhone validation",
+    "dashboard_full": {
+      "passed": 23
+    }
+  },
+  "video": {
+    "installed_root_core_hash": "04E4D27DC385DC18DDD93FBE69C75E635B864F3C6EC53A9122DF54C2F7842F4A",
+    "monitor_hz": 165,
+    "presentmon": "access denied; no valid ETW capture",
+    "internal_trace_validation": "12 second synthetic 1080p30 H264; audit/video-trace-validation/summary.json",
+    "same_reported_movie_captured": true,
+    "last_saved_stream_was_different": "Silo episode 3, 720, H264 High 24000/1001fps",
+    "same_movie_result": "60 second isolated Flutter 3.32.8 trace; user reported smooth; initial-minute issue remains open and deferred by user",
+    "diagnostic_native_changes_in_party_release": false
+  },
+  "preview": {
+    "movie": "http://127.0.0.1:18641/preview/movie/",
+    "anime": "http://127.0.0.1:18641/preview/anime/",
+    "shared_room_count": 3,
+    "same_direct_message_ids_in_both_apps": true
+  },
+  "documentation": [
+    "docs/party/BUGFIX_PREVIEW_20261024_FA.md",
+    "docs/performance/VIDEO_STUTTER_20261024_FA.md"
+  ]
+}
