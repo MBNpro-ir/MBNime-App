@@ -7,7 +7,7 @@ on:
       release_tag:
         description: Stable release tag matching pubspec.yaml and Persian changelog
         required: true
-        default: v2.0.76
+        default: v2.1.76
         type: string
 
 permissions:
@@ -73,8 +73,9 @@ jobs:
       - name: Analyze and test both device layouts
         run: |
           flutter pub get
-          flutter analyze lib test integration_test packages/flutter_secure_storage_windows/lib
+          flutter analyze lib test integration_test packages/flutter_secure_storage_windows/lib packages/mbn_party/lib
           flutter test
+          flutter test packages/mbn_party/test
           node tools/test_web_access.cjs
           node tools/test_web_viewport.cjs
 

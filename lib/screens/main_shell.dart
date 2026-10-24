@@ -1,3 +1,5 @@
+import 'package:mbn_party/mbn_party.dart';
+import '../services/app_party.dart';
 import '../services/playback_activity.dart';
 import '../widgets/adult_access_gate.dart';
 import '../services/adult_access.dart';
@@ -75,6 +77,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    AppParty.bind(widget.api);
     MbnSync.instance.changes.addListener(_onRemoteSync);
     _pageController = PageController();
     _restore();
@@ -747,7 +750,7 @@ class _TopBar extends StatelessWidget {
     // On narrow Android screens with large buttons there is no room for the
     // wordmark next to the logo: show logo only to keep the title centered
     // without overflow.
-    final hideWordmark = width < 380;
+    final hideWordmark = width < 470;
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -769,6 +772,7 @@ class _TopBar extends StatelessWidget {
                   iconSize: isCompact ? 26 : 28,
                   buttonSize: isCompact ? 38 : 42,
                 ),
+                const PartyButton(),
                 const Spacer(),
                 // Wide-screen actions (favorites/history are on bottom nav for phone)
                 if (!isCompact) ...[

@@ -63,6 +63,9 @@ void main() {
       expect(find.text('تماشا نشده'), findsNothing);
       expect(find.text('قسمت اول'), findsWidgets);
     } finally {
+        // Account services outlive routes; dispose before widget-test timer
+        // invariants, which run before the outer tearDown callback.
+        MbnSync.instance.clear();
       await tester.pumpWidget(const SizedBox.shrink());
       response.complete(http.Response('{}', 200));
       await tester.pumpAndSettle();
@@ -122,6 +125,7 @@ void main() {
       isTrue,
     );
     expect(find.text('تماشا نشده'), findsNothing);
+    MbnSync.instance.clear();
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
