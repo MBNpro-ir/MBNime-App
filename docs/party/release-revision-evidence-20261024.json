@@ -1,0 +1,225 @@
+{
+  "status": "published_and_live_verified",
+  "checked_at_utc": "2026-10-24T17:15:51.764311+00:00",
+  "apps": {
+    "movie": {
+      "version": {
+        "app_name": "mbnmovie",
+        "version": "1.1.1",
+        "build_number": "91",
+        "package_name": "mbnmovie"
+      },
+      "release_url": "https://github.com/MBNpro-ir/MBNMovie-App/releases/tag/v1.1.1",
+      "release_commit": "91bc76f69e3435a509cae2a137b2a211d965b952",
+      "workflow_url": "https://github.com/MBNpro-ir/MBNMovie-App/actions/runs/40113100479",
+      "workflow_conclusion": "success",
+      "jobs": [
+        {
+          "name": "Test Android API 23 android-tv",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build Windows x64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser-qa / browsers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Android API 32 default",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build Android",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Android API 23 default",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish GitHub release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish live web and iOS PWA / publish",
+          "conclusion": "success"
+        }
+      ],
+      "web_manifest": {
+        "app": "movie",
+        "tag": "v1.1.1",
+        "asset": "MBNMovie-Web-1.1.1.tar.gz",
+        "bytes": 13218165,
+        "sha256": "5c19e750fc07d8b560b4d55f1730186cede854e9f90d8528f163f184a90e73bc",
+        "assetVersion": "8d1f8b87dedb"
+      },
+      "immutable_assets_http_200": true,
+      "assets": [
+        {
+          "name": "MBNMovie-Windows-x64-1.1.1.zip",
+          "bytes": 74402783,
+          "digest": "sha256:cb7fa9ac40c515837c7ef53a21b6654c9fb14061d08ac018231cbf0e3abb750e"
+        },
+        {
+          "name": "MBNMovie-Android-arm64-v8a-1.1.1.apk",
+          "bytes": 39452407,
+          "digest": "sha256:7cee3f6b125cb0b702b10536324b8d235dc394f3e65ef5981a1944bb0ff1113f"
+        },
+        {
+          "name": "MBNMovie-Android-armeabi-v7a-1.1.1.apk",
+          "bytes": 36584680,
+          "digest": "sha256:bc3921e3d4c92b0da67896f2a5ebfeb9e6a116fbf1352a6aefc6bbee14ca5410"
+        },
+        {
+          "name": "MBNMovie-Web-1.1.1.tar.gz",
+          "bytes": 13218165,
+          "digest": "sha256:5c19e750fc07d8b560b4d55f1730186cede854e9f90d8528f163f184a90e73bc"
+        },
+        {
+          "name": "MBNMovie-Web.json",
+          "bytes": 200,
+          "digest": "sha256:1bff5678588fa2779fb7e9f11f1451fc5fd625f7b0004ab2ebdbc1c87f9dc1a0"
+        }
+      ]
+    },
+    "anime": {
+      "version": {
+        "app_name": "mbnime",
+        "version": "2.1.1",
+        "build_number": "78",
+        "package_name": "mbnime"
+      },
+      "release_url": "https://github.com/MBNpro-ir/MBNime-App/releases/tag/v2.1.1",
+      "release_commit": "f1660863c6fb77b9f3adfa8174218f38e48252ca",
+      "workflow_url": "https://github.com/MBNpro-ir/MBNime-App/actions/runs/40113097120",
+      "workflow_conclusion": "success",
+      "jobs": [
+        {
+          "name": "Build Android",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Android API 23 android-tv",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Android API 23 default",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build Windows x64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser-qa / browsers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Test Android API 32 default",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish GitHub release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish live web and iOS PWA / publish",
+          "conclusion": "success"
+        }
+      ],
+      "web_manifest": {
+        "app": "anime",
+        "tag": "v2.1.1",
+        "asset": "MBNime-Web-2.1.1.tar.gz",
+        "bytes": 10998546,
+        "sha256": "edfec9bc0bc6cf6f05598c59c6cf589caf82d9705946b6ce4653d556ffa20aa0",
+        "assetVersion": "2e559556437d"
+      },
+      "immutable_assets_http_200": true,
+      "assets": [
+        {
+          "name": "MBNime-Windows-x64-2.1.1.zip",
+          "bytes": 72244060,
+          "digest": "sha256:922f464105edcbb51973a643a23d051b8c9984b14c9c4739db411dd89c5dedea"
+        },
+        {
+          "name": "MBNime-Android-arm64-v8a-2.1.1.apk",
+          "bytes": 37227985,
+          "digest": "sha256:4bf1ebacf1b9fca05452c2999e1dc6cf82dc5cc27f454dcf55e51e540516a4c1"
+        },
+        {
+          "name": "MBNime-Android-armeabi-v7a-2.1.1.apk",
+          "bytes": 34425783,
+          "digest": "sha256:87c413e56a5963e674078698975faed7b18eb74b54fc34ae74a31e01818484d0"
+        },
+        {
+          "name": "MBNime-Web-2.1.1.tar.gz",
+          "bytes": 10998546,
+          "digest": "sha256:edfec9bc0bc6cf6f05598c59c6cf589caf82d9705946b6ce4653d556ffa20aa0"
+        },
+        {
+          "name": "MBNime-Web.json",
+          "bytes": 198,
+          "digest": "sha256:1f9d38e4c28848af5b1303d592df85a2f1445cbfb4c09259088116afee6099d9"
+        }
+      ]
+    }
+  },
+  "dashboard": {
+    "version": "1.1.1",
+    "build": 3,
+    "server_commit": "71ae9cded2ff6405c1173dccb1f6a08ee0697c51",
+    "party": true,
+    "shared_chats": true,
+    "asset_version": "3cc29d6ea3b386cc",
+    "main_sha256_matches_local": true
+  },
+  "landing_source_commit": "752676684130d879ef0ef649779ccdb0d312eedf",
+  "landing_html_download_links_current": true,
+  "landing_js_sha256": "eac112b733e4f25c5a8610479ce01f7d06bd1b8c06d43bd663148cc7674d56b1",
+  "api_health": true,
+  "authenticated_live_api": {
+    "checks": [
+      "shared_identity_and_friendship_over_live_https",
+      "shared_chats_server_username_persian_reactions_and_reply_context",
+      "integrated_admin_api_permissions_and_message_edit",
+      "wrong_app_media_join_denied_with_named_app",
+      "waiting_ready_scheduled_start_peer_pause_seek_rejoin_and_close",
+      "remove_friend_deletes_both_app_histories_fresh_readd_block_warning_and_unblock"
+    ],
+    "synthetic_only": true,
+    "result": "passed",
+    "synthetic_accounts_removed": true
+  },
+  "backups": {
+    "backend_and_dashboard": "/var/backups/mbn-party-release-20261024.Zqp2KH",
+    "landing": "/var/backups/mbn-landing-release-20261024.Vf14I4",
+    "movie_web": "/var/backups/mbn-web-movie-20261024T171515-8d1f8b87dedb"
+  },
+  "verification": {
+    "movie_tests_passed": 380,
+    "movie_tests_skipped": 1,
+    "anime_tests_passed": 392,
+    "anime_tests_skipped": 1,
+    "focused_tests_each_app": 21,
+    "backend_tests_run": 145,
+    "backend_tests_skipped": 1,
+    "dashboard_tests_passed": 23,
+    "landing_network_order_tests_passed": 5,
+    "android_emulator_matrix_each_app": [
+      "API 23 phone",
+      "API 32 phone",
+      "API 23 Android TV"
+    ],
+    "physical_device_tests_this_release": false
+  },
+  "release_incidents": {
+    "movie_attempt_1": "Android TV emulator boot timeout before app tests; attempt 2 passed and workflow succeeded",
+    "movie_web": "server-to-GitHub download timeouts; official release archive relayed through approved proxy, SHA256/size/embedded versions checked, existing publisher backed up and deployed it; workflow live check passed"
+  },
+  "ios_distribution": "web/PWA; no native IPA workflow",
+  "video_lag": "unresolved; deferred by user; native diagnostic changes excluded from both release commits",
+  "historical_preview_evidence": "bugfix-preview-evidence-20261024.json records the pre-release state; this file records the completed publication"
+}
